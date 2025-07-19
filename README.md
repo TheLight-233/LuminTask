@@ -46,7 +46,7 @@ async LuminTask<string> DemoAsync()
     await LuminTask.WhenAll(task1, task2);
 
     // you can wait when any task complete
-    await LuminTask.WhenAll(task1, task2);
+    await LuminTask.WhenAny(task1, task2);
 
     // you can foreach when each
     await foreach(var v in LuminTask.WhenEach(task1, task2)) {}
