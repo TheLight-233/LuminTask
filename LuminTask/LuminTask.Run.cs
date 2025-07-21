@@ -1,8 +1,6 @@
 using System;
 using System.Runtime.CompilerServices;
 using System.Threading;
-using System.Threading.Tasks;
-using Lumin.Threading.Source;
 
 namespace Lumin.Threading.Tasks;
 
@@ -117,4 +115,116 @@ public readonly ref partial struct LuminTask
             return func(state);
         }
     }
+    
+    /// <summary>Run action on the threadPool and return to main thread if configureAwait = true.</summary>
+    public static async LuminTask RunOnThreadPool(Action action, bool configureAwait = true, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        await LuminTask.SwitchToThreadPool();
+
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (configureAwait)
+        {
+            try
+            {
+                action();
+            }
+            finally
+            {
+                await LuminTask.Yield();
+            }
+        }
+        else
+        {
+            action();
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+    }
+
+    /// <summary>Run action on the threadPool and return to main thread if configureAwait = true.</summary>
+    public static async LuminTask RunOnThreadPool(Action<object> action, object state, bool configureAwait = true, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        await LuminTask.SwitchToThreadPool();
+
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (configureAwait)
+        {
+            try
+            {
+                action(state);
+            }
+            finally
+            {
+                await LuminTask.Yield();
+            }
+        }
+        else
+        {
+            action(state);
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+    }
+    
+
+    /// <summary>Run action on the threadPool and return to main thread if configureAwait = true.</summary>
+    public static async LuminTask<T> RunOnThreadPool<T>(Func<T> func, bool configureAwait = true, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        await LuminTask.SwitchToThreadPool();
+
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (configureAwait)
+        {
+            try
+            {
+                return func();
+            }
+            finally
+            {
+                await LuminTask.Yield();
+                cancellationToken.ThrowIfCancellationRequested();
+            }
+        }
+        else
+        {
+            return func();
+        }
+    }
+
+    /// <summary>Run action on the threadPool and return to main thread if configureAwait = true.</summary>
+    public static async LuminTask<T> RunOnThreadPool<T>(Func<object, T> func, object state, bool configureAwait = true, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        await LuminTask.SwitchToThreadPool();
+
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (configureAwait)
+        {
+            try
+            {
+                return func(state);
+            }
+            finally
+            {
+                await LuminTask.Yield();
+                cancellationToken.ThrowIfCancellationRequested();
+            }
+        }
+        else
+        {
+            return func(state);
+        }
+    }
+    
 }

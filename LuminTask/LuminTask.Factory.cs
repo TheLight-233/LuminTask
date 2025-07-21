@@ -3,7 +3,6 @@ using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.ExceptionServices;
 using System.Threading;
-using Lumin.Threading.Core;
 using Lumin.Threading.Interface;
 using Lumin.Threading.Source;
 using Lumin.Threading.Tasks.Utility;

@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using Lumin.Threading.Source;
@@ -7,6 +8,7 @@ namespace Lumin.Threading.Tasks
 {
     public readonly ref partial struct LuminTask
     {
+        [DebuggerHidden]
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static LuminTask Delay(int millisecondsDelay, CancellationToken cancellationToken = default)
         {
@@ -39,6 +41,7 @@ namespace Lumin.Threading.Tasks
             return new LuminTask(source, source.Token);
         }
 
+        [DebuggerHidden]
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static LuminTask Delay(TimeSpan delay, CancellationToken cancellationToken = default)
         {

@@ -120,7 +120,6 @@ internal sealed class LuminTaskSource : IDisposable, ILuminTaskSource
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private void ExecuteContinuation()
     {
-        if (_continuation is null) Console.WriteLine("kong");
         if (_continuation != null)
         {
             ExecuteContinuation(_continuation, _state);
