@@ -4,6 +4,7 @@ using System.Runtime.ExceptionServices;
 using System.Runtime.InteropServices;
 using System.Threading;
 using LuminThread.Interface;
+using LuminThread.Utility;
 
 namespace LuminThread;
 
@@ -11,8 +12,10 @@ namespace LuminThread;
 public static class LuminTaskBag
 {
     public static readonly LuminTaskItem[] TaskBag = new LuminTaskItem[MaxBagCount];
+    public static readonly int[] IndexList = new int[MaxBagCount];
+    private static volatile int _head;
     public const int MaxBagCount = 255;
-    public static byte Next = 0;
+    public const short End = 0;
     
     static LuminTaskBag()
     {
@@ -20,6 +23,39 @@ public static class LuminTaskBag
         {
             TaskBag[i] = new LuminTaskItem(i);
         }
+
+        for (short i = 1; i < MaxBagCount; i++)
+        {
+            IndexList[i] = (short)(i + 1);
+        }
+        IndexList[0] = End;
+        _head = 1; //第一个索引
+    }
+    
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static short GetId()
+    {
+        int current, idx;
+        do
+        {
+            current = _head;          // 低 8 位 = 索引
+            idx = current & 0xFF;
+            if (idx == End) LuminTaskExceptionHelper.ThrowTaskItemExhausted();
+        } while (Interlocked.CompareExchange(ref _head,
+                     IndexList[idx],  
+                     current) != current);
+        return (short)idx;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static void ResetId(short idx)
+    {
+        int current;
+        do
+        {
+            current = _head;
+            IndexList[idx] = current;
+        } while (Interlocked.CompareExchange(ref _head, idx, current) != current);
     }
 }
 
@@ -48,11 +84,13 @@ public unsafe struct LuminTaskItem
     [FieldOffset(56)] public object? ResultRef;
     [FieldOffset(64)] public fixed byte ResultValue[64];
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal LuminTaskItem(short id)
     {
         Id = id;
     }
     
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void Reset()
     {
         Status = LuminTaskStatus.Pending;
