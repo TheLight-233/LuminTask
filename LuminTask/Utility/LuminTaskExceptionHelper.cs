@@ -23,4 +23,11 @@ public static class LuminTaskExceptionHelper
     public static void ThrowTaskItemExhausted() => 
         throw new InvalidOperationException("TaskItem exhausted");
 
+    [DoesNotReturn]
+    public static void ThrowArgumentNullException<T>(T value, string paramName)
+        where T : class
+    {
+        if (value == null) 
+            throw new ArgumentNullException(paramName);
+    }
 }

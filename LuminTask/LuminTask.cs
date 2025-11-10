@@ -127,14 +127,14 @@ public readonly unsafe partial struct LuminTask<T>
     }
     
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static implicit operator ValueTask(LuminTask<T> self)
+    public static implicit operator ValueTask<T>(LuminTask<T> self)
     {
         if (self._taskSource is null)
         {
             return default;
         }
         
-        return new ValueTask(new ValueTaskSource<T>(self._vTable, self._taskSource), self._id);
+        return new ValueTask<T>(new ValueTaskSource<T>(self._vTable, self._taskSource), self._id);
     }
     
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
