@@ -1,0 +1,23 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <Nullable>enable</Nullable>
+        <LangVersion>13</LangVersion>
+        <TargetFrameworks>netstandard2.1;net8.0;net9.0</TargetFrameworks>
+        <NoWarn>$(NoWarn);CS1591;CA2255</NoWarn>
+    </PropertyGroup>
+
+    <PropertyGroup Condition=" '$(Configuration)' == 'Release' ">
+        <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    </PropertyGroup>
+
+    <PropertyGroup Condition=" '$(Configuration)' == 'Debug' ">
+      <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <PackageReference Include="System.Runtime.CompilerServices.Unsafe" Version="6.1.2" />
+        <PackageReference Include="System.Threading.Tasks.Extensions" Version="4.6.3" />
+    </ItemGroup>
+
+</Project>

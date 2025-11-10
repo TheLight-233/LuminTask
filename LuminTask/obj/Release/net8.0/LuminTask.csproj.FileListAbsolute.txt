@@ -1,0 +1,11 @@
+C:\Users\xiaoxi\RiderProjects\LuminTask\LuminTask\bin\Release\net8.0\LuminTask.deps.json
+C:\Users\xiaoxi\RiderProjects\LuminTask\LuminTask\bin\Release\net8.0\LuminTask.dll
+C:\Users\xiaoxi\RiderProjects\LuminTask\LuminTask\bin\Release\net8.0\LuminTask.pdb
+C:\Users\xiaoxi\RiderProjects\LuminTask\LuminTask\obj\Release\net8.0\LuminTask.GeneratedMSBuildEditorConfig.editorconfig
+C:\Users\xiaoxi\RiderProjects\LuminTask\LuminTask\obj\Release\net8.0\LuminTask.AssemblyInfoInputs.cache
+C:\Users\xiaoxi\RiderProjects\LuminTask\LuminTask\obj\Release\net8.0\LuminTask.AssemblyInfo.cs
+C:\Users\xiaoxi\RiderProjects\LuminTask\LuminTask\obj\Release\net8.0\LuminTask.csproj.CoreCompileInputs.cache
+C:\Users\xiaoxi\RiderProjects\LuminTask\LuminTask\obj\Release\net8.0\LuminTask.dll
+C:\Users\xiaoxi\RiderProjects\LuminTask\LuminTask\obj\Release\net8.0\refint\LuminTask.dll
+C:\Users\xiaoxi\RiderProjects\LuminTask\LuminTask\obj\Release\net8.0\LuminTask.pdb
+C:\Users\xiaoxi\RiderProjects\LuminTask\LuminTask\obj\Release\net8.0\ref\LuminTask.dll
