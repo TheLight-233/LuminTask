@@ -17,6 +17,7 @@ public unsafe struct NeverPromise<T>
         GetStatus    = &GetStatus,
         UnsafeGetStatus = &UnsafeGetStatus,
         OnCompleted  = &OnCompleted,
+        Dispose = &Dispose,
     };
 
     static readonly Action<object> _cancellationCallback = CancellationCallback;
@@ -46,11 +47,14 @@ public unsafe struct NeverPromise<T>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     static void CancellationCallback(object state)
     {
-        ref var self = ref Unsafe.AsRef<NeverPromise<T>>(((IntPtr)state).ToPointer());
+        var ptr = ((IntPtr)state).ToPointer();
+        ref var self = ref Unsafe.AsRef<NeverPromise<T>>(ptr);
         ref var item = ref LuminTaskMarshal.GetTaskItem(self.Id);
         item.Error = new OperationCanceledException(item.CancellationToken);
         
         item.Continuation?.Invoke(item.State!);
+        
+        Dispose(ptr);
     }
     
     
@@ -69,7 +73,7 @@ public unsafe struct NeverPromise<T>
             {
                 throw oce;
             }
-            throw new InvalidOperationException("Critical: invalid error type");
+            LuminTaskExceptionHelper.ThrowInvalidError();
         }
     }
 
@@ -112,12 +116,15 @@ public unsafe struct NeverPromise<T>
     {
         ref var item = ref LuminTaskMarshal.GetTaskItem(Unsafe.AsRef<NeverPromise<T>>(ptr).Id);
 
-        if (item.Continuation is null)
+        object? oldContinuation = item.Continuation;
+        
+        if (oldContinuation is null)
         {
             item.State = state;
-            item.Continuation = continuation;
+            oldContinuation = Interlocked.CompareExchange(ref item.Continuation, continuation, null);
         }
-        else
+        
+        if (oldContinuation != null)
         {
             continuation(state);
         }
@@ -129,8 +136,10 @@ public unsafe struct NeverPromise<T>
         ref var source = ref Unsafe.AsRef<ExceptionResultSource<T>>(ptr);
         ref var item = ref LuminTaskMarshal.GetTaskItem(source.Id);
         
-        item.Reset();
+        LuminTaskBag.ResetId(item.Id);
         
+        item.Reset();
+  
         MemoryHelper.Free(ptr);
     }
 }

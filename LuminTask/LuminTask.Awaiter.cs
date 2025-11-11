@@ -22,7 +22,13 @@ public readonly unsafe struct LuminTaskAwaiter : ICriticalNotifyCompletion
     public bool IsCompleted
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        get => _source.GetStatus(_taskSource, _id).IsCompleted();
+        get
+        {
+            if (_source.GetStatus == null)
+                return true;
+                
+            return _source.GetStatus(_taskSource, _id).IsCompleted();
+        }
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -81,7 +87,13 @@ public readonly unsafe struct LuminTaskAwaiter<T> : ICriticalNotifyCompletion
     public bool IsCompleted
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        get => _source.GetStatus(_taskSource, _id).IsCompleted();
+        get
+        {
+            if (_source.GetStatus == null)
+                return true;
+                
+            return _source.GetStatus(_taskSource, _id).IsCompleted();
+        }
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]

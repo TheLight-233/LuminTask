@@ -86,6 +86,8 @@ public readonly unsafe partial struct LuminTask
     /// <summary>
     /// Never complete.
     /// </summary>
+    [DebuggerHidden]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static LuminTask Never(CancellationToken cancellationToken)
     {
         var source = NeverPromise<AsyncUnit>.Create(cancellationToken);
@@ -95,14 +97,44 @@ public readonly unsafe partial struct LuminTask
     /// <summary>
     /// Never complete.
     /// </summary>
+    [DebuggerHidden]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static LuminTask<T> Never<T>(CancellationToken cancellationToken)
     {
         var source = NeverPromise<T>.Create(cancellationToken);
         return new LuminTask<T>(NeverPromise<T>.MethodTable, source , source->Id);
     }
+    
+    [DebuggerHidden]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static LuminTask Create(Func<LuminTask> factory)
+    {
+        return factory();
+    }
+
+    [DebuggerHidden]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static LuminTask Create(Func<CancellationToken, LuminTask> factory, CancellationToken cancellationToken)
+    {
+        return factory(cancellationToken);
+    }
+
+    [DebuggerHidden]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static LuminTask Create<T>(T state, Func<T, LuminTask> factory)
+    {
+        return factory(state);
+    }
+
+    [DebuggerHidden]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static LuminTask<T> Create<T>(Func<LuminTask<T>> factory)
+    {
+        return factory();
+    }
 }
 
-public readonly ref partial struct LuminTask<T>
+public readonly partial struct LuminTask<T>
 {
     [DebuggerHidden]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]

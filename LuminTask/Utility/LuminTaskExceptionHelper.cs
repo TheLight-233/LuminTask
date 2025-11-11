@@ -30,4 +30,8 @@ public static class LuminTaskExceptionHelper
         if (value == null) 
             throw new ArgumentNullException(paramName);
     }
+    
+    [DoesNotReturn]
+    public static void ThrowInvalidError() => 
+        throw new InvalidOperationException("Critical: invalid error type");
 }

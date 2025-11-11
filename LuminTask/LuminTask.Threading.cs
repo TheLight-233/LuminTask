@@ -3,12 +3,11 @@ using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
-using Lumin.Threading.Unity;
 using LuminThread.Utility;
 
 namespace LuminThread;
 
-public readonly ref partial struct LuminTask
+public readonly partial struct LuminTask
 {
     
     /// <summary>

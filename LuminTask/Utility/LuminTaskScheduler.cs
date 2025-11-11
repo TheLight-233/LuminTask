@@ -1,6 +1,6 @@
 ﻿using System;
 
-namespace Lumin.Threading.Tasks.Utility;
+namespace LuminThread.Utility;
 
 public static class LuminTaskScheduler
 {

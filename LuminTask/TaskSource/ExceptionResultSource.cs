@@ -4,7 +4,6 @@ using System;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.ExceptionServices;
-using Lumin.Threading.Tasks.Utility;
 
 namespace LuminThread.TaskSource;
 
@@ -35,7 +34,7 @@ public unsafe struct ExceptionResultSource<T>
     {
         ExceptionResultSource<T>* ptr = (ExceptionResultSource<T>*)MemoryHelper.Alloc((nuint)Unsafe.SizeOf<LuminTaskSourceCore<T>>());
         
-        ptr->Id = 0;
+        ptr->Id = LuminTaskBag.GetId();
         
         LuminTaskMarshal.GetTaskItem(ptr->Id).Exception = ExceptionDispatchInfo.Capture(exception);
         
@@ -105,6 +104,8 @@ public unsafe struct ExceptionResultSource<T>
     {
         ref var source = ref Unsafe.AsRef<ExceptionResultSource<T>>(ptr);
         ref var item = ref LuminTaskMarshal.GetTaskItem(source.Id);
+        
+        LuminTaskBag.ResetId(item.Id);
         
         item.Reset();
         

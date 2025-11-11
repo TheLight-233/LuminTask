@@ -31,7 +31,7 @@ public unsafe struct CanceledResultSource<T>
     {
         CanceledResultSource<T>* ptr = (CanceledResultSource<T>*)MemoryHelper.Alloc((nuint)Unsafe.SizeOf<LuminTaskSourceCore<T>>());
         
-        ptr->Id = 0;
+        ptr->Id = LuminTaskBag.GetId();
         
         LuminTaskMarshal.GetTaskItem(ptr->Id).CancellationToken = cancellationToken;
         
@@ -86,6 +86,8 @@ public unsafe struct CanceledResultSource<T>
     {
         ref var source = ref Unsafe.AsRef<ExceptionResultSource<T>>(ptr);
         ref var item = ref LuminTaskMarshal.GetTaskItem(source.Id);
+        
+        LuminTaskBag.ResetId(item.Id);
         
         item.Reset();
         
