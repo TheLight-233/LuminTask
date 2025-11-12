@@ -1,5 +1,6 @@
-﻿using System;
+using System;
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading.Tasks;
@@ -78,6 +79,12 @@ public readonly unsafe partial struct LuminTask
     }
     
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public bool Equals(LuminTask other)
+    {
+        return other._taskSource == _taskSource && other._id == _id;
+    }
+    
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public override string ToString()
     {
         if (_taskSource is null) return "()";
@@ -94,6 +101,8 @@ public readonly unsafe partial struct LuminTask<T>
     internal readonly short _id;
     internal readonly T? _result;
 
+    public T? Result => _result;
+    
     public short Id => _id;
     
     [DebuggerHidden]
@@ -136,7 +145,13 @@ public readonly unsafe partial struct LuminTask<T>
         
         return new ValueTask<T>(new ValueTaskSource<T>(self._vTable, self._taskSource), self._id);
     }
-    
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public bool Equals(LuminTask<T> other)
+    {
+        return other._taskSource == _taskSource && other._id == _id;
+    }
+
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public override string? ToString()
     {
