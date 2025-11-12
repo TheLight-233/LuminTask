@@ -42,7 +42,7 @@ public unsafe struct VTable
 public readonly unsafe partial struct LuminTask
 {
     private readonly VTable _vTable;
-    private readonly void* _taskSource;
+    internal readonly void* _taskSource;
     internal readonly short _id;
     
     public short Id => _id;
@@ -66,6 +66,7 @@ public readonly unsafe partial struct LuminTask
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         get => _vTable.GetStatus(_taskSource, _id);
     }
+
     
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static implicit operator ValueTask(in LuminTask self)
@@ -133,6 +134,17 @@ public readonly unsafe partial struct LuminTask<T>
         [DebuggerHidden]
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         get => _vTable.GetStatus(_taskSource, _id);
+    }
+    
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static implicit operator LuminTask(LuminTask<T> self)
+    {
+        if (self._taskSource is null)
+        {
+            return LuminTask.CompletedTask();
+        }
+        
+        return new LuminTask(self._vTable, self._taskSource, self._id);
     }
     
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
