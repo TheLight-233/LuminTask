@@ -26,32 +26,7 @@ namespace LuminThread.CompilerServices
         {
             [DebuggerHidden]
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            get
-            {
-                if (_isCompleted && _source == null)
-                    return LuminTask.FromResult();
-
-                if (_exception != null && _source == null)
-                {
-                    var src = LuminTaskSourceCore<AsyncUnit>.Create(_continueOnCapturedContext);
-                    LuminTaskSourceCore<AsyncUnit>.TrySetException(src, _exception);
-                    return new LuminTask(LuminTaskSourceCore<AsyncUnit>.MethodTable, src, src->Id);
-                }
-
-                if (_source == null)
-                {
-                    _source = LuminTaskSourceCore<AsyncUnit>.Create(_continueOnCapturedContext);
-                }
-                
-        
-                // 若已设置状态，同步到新 source
-                if (_isCompleted)
-                    LuminTaskSourceCore<AsyncUnit>.TrySetResult(_source);
-                else if (_exception != null)
-                    LuminTaskSourceCore<AsyncUnit>.TrySetException(_source, _exception);
-
-                return new LuminTask( LuminTaskSourceCore<AsyncUnit>.MethodTable, _source, _source->Id);
-            }
+            get => new (LuminTaskSourceCore<AsyncUnit>.MethodTable, _source, _source->Id);
         }
 
         [DebuggerHidden]
@@ -112,7 +87,12 @@ namespace LuminThread.CompilerServices
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void Start<TStateMachine>(ref TStateMachine stateMachine)
             where TStateMachine : IAsyncStateMachine
-            => stateMachine.MoveNext();
+        {
+            if (_source is null)
+                _source = LuminTaskSourceCore<AsyncUnit>.Create();
+            
+            stateMachine.MoveNext();
+        }
 
         [DebuggerHidden]
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -152,31 +132,7 @@ namespace LuminThread.CompilerServices
         {
             [DebuggerHidden]
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            get
-            {
-                if (_haveResult && _source == null && _exception == null)
-                {
-                    return LuminTask<T>.FromResult(_result);
-                }
-
-                if (_source == null)
-                {
-                    _source = LuminTaskSourceCore<T>.Create(_continueOnCapturedContext);
-
-                    if (_haveResult)
-                    {
-                        LuminTaskSourceCore<T>.TrySetResult(_source, _result);
-                        _haveResult = false;
-                    }
-                    else if (_exception != null)
-                    {
-                        LuminTaskSourceCore<T>.TrySetException(_source, _exception);
-                        _exception = null;
-                    }
-                }
-
-                return new LuminTask<T>(LuminTaskSourceCore<T>.MethodTable, _source, _source->Id);
-            }
+            get => new (LuminTaskSourceCore<T>.MethodTable, _source, _source->Id);
         }
 
         [DebuggerHidden]
@@ -238,7 +194,11 @@ namespace LuminThread.CompilerServices
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void Start<TStateMachine>(ref TStateMachine stateMachine)
             where TStateMachine : IAsyncStateMachine
-            => stateMachine.MoveNext();
+        {
+            if (_source is null)
+                _source = LuminTaskSourceCore<T>.Create(_continueOnCapturedContext);
+            stateMachine.MoveNext();
+        }
 
         [DebuggerHidden]
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
