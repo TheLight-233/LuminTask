@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using LuminThread.TaskSource;
@@ -8,11 +8,12 @@ namespace LuminThread.AsyncEx
     public sealed class AsyncConditionVariable
     {
         internal readonly AsyncLock _asyncLock;
-        private volatile WaiterNode _waiters;
+        private readonly AsyncWaitQueue<AsyncLock.ReleaseScope> _waitQueue;
 
         public AsyncConditionVariable(AsyncLock asyncLock)
         {
             _asyncLock = asyncLock ?? throw new ArgumentNullException(nameof(asyncLock));
+            _waitQueue = new AsyncWaitQueue<AsyncLock.ReleaseScope>();
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -20,187 +21,170 @@ namespace LuminThread.AsyncEx
         {
             if (cancellationToken.IsCancellationRequested)
             {
-                return new LuminTask<AsyncLock.ReleaseScope>(default);
+                return LuminTask.FromCanceled<AsyncLock.ReleaseScope>(cancellationToken);
             }
 
-            var node = WaiterNode.Rent(this, cancellationToken);
-            node.PushInto(ref _waiters);
-            return node.Task;
+            return _waitQueue.Enqueue(cancellationToken);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void Notify()
         {
-            var node = WaiterNode.PopFrom(ref _waiters);
-            if (node != null && node.IsValid)
+            if (!_waitQueue.IsEmpty)
             {
-                node.TrySetResult();
+                _waitQueue.Dequeue(new AsyncLock.ReleaseScope(_asyncLock));
             }
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void NotifyAll()
         {
-            WaiterNode node;
-            while ((node = WaiterNode.PopFrom(ref _waiters)) != null)
+            if (!_waitQueue.IsEmpty)
             {
-                if (node.IsValid)
-                {
-                    node.TrySetResult();
-                }
+                _waitQueue.DequeueAll(new AsyncLock.ReleaseScope(_asyncLock));
             }
         }
 
-        private sealed unsafe class WaiterNode
+        // 内部使用的简单等待队列实现
+        private sealed class AsyncWaitQueue<T> : IAsyncWaitQueue<T>
         {
-            private static readonly object PoolLock = new object();
-            private static WaiterNode _pool;
+            private readonly LuminDeque<Waiter> _waiters = new();
+            private readonly object _syncLock = new();
 
-            private LuminTaskSourceCore<AsyncLock.ReleaseScope>* _core;
-            private CancellationTokenRegistration _ctr;
-            private WaiterNode _next;
-            private AsyncConditionVariable _parent;
-            private volatile bool _isCompleted;
-            private volatile bool _isValid = true;
-
-            public bool IsValid => _isValid && _core != null && !_isCompleted;
-
-            public LuminTask<AsyncLock.ReleaseScope> Task
+            public bool IsEmpty
             {
-                get
+                get { lock (_syncLock) return _waiters.Count == 0; }
+            }
+
+            public LuminTask<T> Enqueue()
+            {
+                return Enqueue(CancellationToken.None);
+            }
+
+            public LuminTask<T> Enqueue(CancellationToken cancellationToken)
+            {
+                lock (_syncLock)
                 {
-                    if (_core == null) return default;
-                    
-                    return new LuminTask<AsyncLock.ReleaseScope>(
-                        LuminTaskSourceCore<AsyncLock.ReleaseScope>.MethodTable, 
-                        _core, 
-                        _core->Id);
+                    var waiter = new Waiter(cancellationToken);
+                    _waiters.PushBack(waiter);
+                    return waiter.Task;
                 }
             }
 
-            private WaiterNode() { }
-
-            public static WaiterNode Rent(AsyncConditionVariable parent, CancellationToken token)
+            public void Dequeue(T? result = default)
             {
-                WaiterNode node;
-
-                lock (PoolLock)
+                Waiter waiter;
+                lock (_syncLock)
                 {
-                    node = _pool;
-                    if (node != null)
+                    if (_waiters.Count == 0) return;
+                    waiter = _waiters.PopFront();
+                }
+
+                waiter.TrySetResult(result);
+            }
+
+            public void DequeueAll(T? result = default)
+            {
+                lock (_syncLock)
+                {
+                    foreach (var waiter in _waiters)
                     {
-                        _pool = node._next;
-                        node._next = null;
+                        waiter.TrySetResult(result!);
+                    }
+                }
+                
+            }
+
+            public bool TryCancel(LuminTask task, CancellationToken cancellationToken)
+            {
+                lock (_syncLock)
+                {
+                    for (int i = 0; i < _waiters.Count; i++)
+                    {
+                        if (_waiters[i].Task.Equals(task))
+                        {
+                            _waiters[i].TrySetCanceled(cancellationToken);
+                            _waiters.RemoveAt(i);
+                            return true;
+                        }
+                    }
+                }
+                return false;
+            }
+
+            public void CancelAll(CancellationToken cancellationToken)
+            {
+                lock (_syncLock)
+                {
+                    foreach (var waiter in _waiters)
+                    {
+                        waiter.TrySetCanceled(cancellationToken);
+                    }
+                }
+            }
+
+            private sealed unsafe class Waiter
+            {
+                private readonly LuminTaskSourceCore<T>* _core;
+                private readonly CancellationTokenRegistration _cancellationRegistration;
+                private volatile bool _isCompleted;
+
+                public LuminTask<T> Task => new LuminTask<T>(
+                    LuminTaskSourceCore<T>.MethodTable, 
+                    _core, 
+                    _core->Id);
+
+                public Waiter(CancellationToken cancellationToken)
+                {
+                    _core = LuminTaskSourceCore<T>.Create();
+
+                    if (cancellationToken.CanBeCanceled)
+                    {
+                        _cancellationRegistration = cancellationToken.Register(() =>
+                        {
+                            if (!_isCompleted)
+                            {
+                                TrySetCanceled(cancellationToken);
+                            }
+                        });
                     }
                 }
 
-                if (node == null)
+                public bool TrySetResult(T result)
                 {
-                    node = new WaiterNode();
-                }
-
-                if (node._core == null)
-                {
-                    node._core = LuminTaskSourceCore<AsyncLock.ReleaseScope>.Create();
-                }
-
-                node._parent = parent;
-                node._isCompleted = false;
-                node._isValid = true;
-
-                if (token.CanBeCanceled)
-                {
-                    node._ctr = token.Register(static n =>
-                    {
-                        var waiterNode = (WaiterNode)n;
-                        if (waiterNode.IsValid)
-                        {
-                            waiterNode.TrySetCanceled();
-                        }
-                    }, node);
-                }
-
-                return node;
-            }
-
-            private void Return()
-            {
-                if (!_isValid) return;
-
-                lock (PoolLock)
-                {
-                    _isValid = false;
-                    _isCompleted = true;
-                    _parent = null;
-                    _ctr.Dispose();
-                    _next = _pool;
-                    _pool = this;
+                    if (_isCompleted) return false;
                     
+                    if (LuminTaskSourceCore<T>.TrySetResult(_core, result))
+                    {
+                        Complete();
+                        return true;
+                    }
+                    return false;
+                }
+
+                public bool TrySetCanceled(CancellationToken cancellationToken = default)
+                {
+                    if (_isCompleted) return false;
+
+                    if (LuminTaskSourceCore<T>.TrySetCanceled(_core))
+                    {
+                        Complete();
+                        return true;
+                    }
+                    return false;
+                }
+
+                [MethodImpl(MethodImplOptions.AggressiveInlining)]
+                private void Complete()
+                {
+                    _isCompleted = true;
+                    _cancellationRegistration.Dispose();
+
                     if (_core != null)
                     {
-                        LuminTaskSourceCore<AsyncLock.ReleaseScope>.Dispose(_core);
+                        LuminTaskSourceCore<T>.Dispose(_core);
                     }
                 }
-            }
-
-            public void PushInto(ref WaiterNode head)
-            {
-                if (!IsValid) return;
-
-                WaiterNode current;
-                do
-                {
-                    current = head;
-                    _next = current;
-                }
-                while (Interlocked.CompareExchange(ref head, this, current) != current);
-            }
-
-            public static WaiterNode PopFrom(ref WaiterNode head)
-            {
-                WaiterNode current, next;
-                do
-                {
-                    current = head;
-                    if (current == null) return null;
-                    next = current._next;
-                }
-                while (Interlocked.CompareExchange(ref head, next, current) != current);
-
-                current._next = null;
-                return current;
-            }
-
-            public bool TrySetResult()
-            {
-                if (!IsValid || _core == null) return false;
-
-                if (LuminTaskSourceCore<AsyncLock.ReleaseScope>.TrySetResult(_core))
-                {
-                    CompleteWait();
-                    
-                    return true;
-                }
-                return false;
-            }
-
-            public bool TrySetCanceled()
-            {
-                if (!IsValid || _core == null) return false;
-
-                if (LuminTaskSourceCore<AsyncLock.ReleaseScope>.TrySetCanceled(_core))
-                {
-                    CompleteWait();
-                    return true;
-                }
-                return false;
-            }
-
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            private void CompleteWait()
-            {
-                _isCompleted = true;
-                Return();
             }
         }
     }
@@ -215,9 +199,7 @@ namespace LuminThread.AsyncEx
             if (conditionVariable == null) throw new ArgumentNullException(nameof(conditionVariable));
 
             currentLock.Dispose();
-
             var waitTask = conditionVariable.WaitAsync();
-            
             return WaitAndRetakeLock(waitTask, conditionVariable._asyncLock);
         }
 
