@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Collections;
 using LuminThread.TaskSource;
@@ -91,17 +91,11 @@ internal sealed unsafe class DefaultAsyncWaitQueue<T> : IAsyncWaitQueue<T>
 
     void IAsyncWaitQueue<T>.DequeueAll(T? result)
     {
-        IntPtr[] items;
         lock (_queueLock)
         {
-            if (_queue.Count == 0) return;
-            items = _queue.ToArray();
-            _queue.Clear();
+            foreach (var source in _queue)
+                LuminTaskSourceCore<T>.TrySetCanceled(source.ToPointer());
         }
-        
-        // 在锁外设置结果
-        foreach (var source in items)
-            LuminTaskSourceCore<T>.TrySetResult(source.ToPointer(), result);
     }
 
     bool IAsyncWaitQueue<T>.TryCancel(LuminTask task, CancellationToken cancellationToken)
@@ -123,16 +117,11 @@ internal sealed unsafe class DefaultAsyncWaitQueue<T> : IAsyncWaitQueue<T>
 
     void IAsyncWaitQueue<T>.CancelAll(CancellationToken cancellationToken)
     {
-        IntPtr[] items;
         lock (_queueLock)
         {
-            if (_queue.Count == 0) return;
-            items = _queue.ToArray();
-            _queue.Clear();
+            foreach (var source in _queue)
+                LuminTaskSourceCore<T>.TrySetCanceled(source.ToPointer());
         }
-        
-        foreach (var source in items)
-            LuminTaskSourceCore<T>.TrySetCanceled(source.ToPointer());
     }
 }
 
