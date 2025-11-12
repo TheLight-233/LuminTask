@@ -163,6 +163,12 @@ public readonly unsafe partial struct LuminTask<T>
     {
         return other._taskSource == _taskSource && other._id == _id;
     }
+    
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public bool Equals(LuminTask other)
+    {
+        return other._taskSource == _taskSource && other._id == _id;
+    }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public override string? ToString()
