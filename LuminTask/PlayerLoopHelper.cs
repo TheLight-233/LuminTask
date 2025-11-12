@@ -2,7 +2,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Threading;
-using Lumin.Threading.Interface;
+using LuminThread.Interface;
 
 namespace LuminThread
 {
@@ -66,12 +66,12 @@ namespace LuminThread
             strategy!.AddAction(item);
         }
         
-        public static void AddAction(PlayerLoopTiming timing, IntPtr source, MoveNext moveNext)
+        public static void AddAction(PlayerLoopTiming timing, LuminTaskState state, MoveNext moveNext)
         {
             var strategy = _strategies[(byte)timing];
             if (strategy is null) 
                 ThrowInvalidLoopTiming(timing);
-            strategy!.AddAction(source, moveNext);
+            strategy!.AddAction(state, moveNext);
         }
 
         public static void AddContinuation(PlayerLoopTiming timing, Action continuation)
@@ -107,10 +107,10 @@ namespace LuminThread
             private const int SleepWhenIdle = 10; // ms
             
             private readonly ConcurrentStack<IPlayLoopItem> _incomingQueue = new();
-            private readonly ConcurrentStack<(IntPtr, MoveNext)> _incomingQueue2 = new();
+            private readonly ConcurrentStack<(LuminTaskState, MoveNext)> _incomingQueue2 = new();
             private readonly ConcurrentBag<Action> _continuations = new();
             private readonly List<IPlayLoopItem> _activeTasks = new();
-            private readonly List<(IntPtr, MoveNext)> _activeTasks2 = new();
+            private readonly List<(LuminTaskState, MoveNext)> _activeTasks2 = new();
             private readonly CancellationTokenSource _cts = new();
             private Thread _workerThread;
             private volatile bool _disposed;
@@ -139,7 +139,7 @@ namespace LuminThread
                 _incomingQueue.Push(item);
             }
             
-            void IPlayLoopStrategy.AddAction(IntPtr ptr, MoveNext item)
+            void IPlayLoopStrategy.AddAction(LuminTaskState state, MoveNext item)
             {
                 if (_disposed) 
                     throw new ObjectDisposedException(nameof(StandardPlayLoopStrategy));
@@ -149,7 +149,7 @@ namespace LuminThread
                     _workerThread.Start();
                 }
                 
-                _incomingQueue2.Push((ptr, item));
+                _incomingQueue2.Push((state, item));
             }
 
             void IPlayLoopStrategy.AddContinuation(Action continuation)
@@ -248,7 +248,7 @@ namespace LuminThread
                     try
                     {
                         var task = _activeTasks2[i];
-                        bool shouldContinue = task.Item2(task.Item1.ToPointer());
+                        bool shouldContinue = task.Item2(task.Item1);
                         
                         if (!shouldContinue)
                         {

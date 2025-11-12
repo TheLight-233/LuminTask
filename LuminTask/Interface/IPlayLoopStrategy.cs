@@ -1,12 +1,12 @@
 using System;
 
-namespace Lumin.Threading.Interface;
+namespace LuminThread.Interface;
 
 public interface IPlayLoopStrategy : IDisposable
 {
     void AddAction(IPlayLoopItem item);
     
-    void AddAction(IntPtr source, MoveNext item);
+    void AddAction(LuminTaskState state, MoveNext item);
     
     void AddContinuation(Action action);
     

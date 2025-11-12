@@ -1,6 +1,6 @@
-namespace Lumin.Threading.Interface;
+namespace LuminThread.Interface;
 
-public unsafe delegate bool MoveNext(void* ptr);
+public delegate bool MoveNext(in LuminTaskState state);
 
 public interface IPlayLoopItem
 {

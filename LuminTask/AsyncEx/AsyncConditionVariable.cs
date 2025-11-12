@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using LuminThread.TaskSource;
@@ -44,8 +44,7 @@ namespace LuminThread.AsyncEx
                 _waitQueue.DequeueAll(new AsyncLock.ReleaseScope(_asyncLock));
             }
         }
-
-        // 内部使用的简单等待队列实现
+        
         private sealed class AsyncWaitQueue<T> : IAsyncWaitQueue<T>
         {
             private readonly LuminDeque<Waiter> _waiters = new();

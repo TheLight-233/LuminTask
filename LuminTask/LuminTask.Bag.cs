@@ -103,3 +103,28 @@ public unsafe struct LuminTaskItem
         ResultRef = null;
     }
 }
+
+public readonly unsafe struct LuminTaskState
+{
+    public readonly void* Source;
+    public readonly CancellationToken CancellationToken;
+    public readonly object State;
+    
+    public LuminTaskState(void* source)
+    {
+        Source = source;
+    }
+    
+    public LuminTaskState(void* source, CancellationToken token)
+    {
+        Source = source;
+        CancellationToken = token;
+    }
+
+    public LuminTaskState(void* source, CancellationToken token, object state)
+    {
+        Source = source;
+        CancellationToken = token;
+        State = state;
+    }
+}

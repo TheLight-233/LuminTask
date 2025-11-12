@@ -48,7 +48,7 @@ public unsafe struct YieldPromise
             }, new IntPtr(ptr));
         }
 
-        PlayerLoopHelper.AddAction(timing, new IntPtr(ptr), MoveNext);
+        PlayerLoopHelper.AddAction(timing, new LuminTaskState(ptr), MoveNext);
             
         token = ptr->Id;
         
@@ -121,9 +121,9 @@ public unsafe struct YieldPromise
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static bool MoveNext(void* ptr)
+    public static bool MoveNext(in LuminTaskState state)
     {
-        ref var source = ref Unsafe.AsRef<YieldPromise>(ptr);
+        ref var source = ref Unsafe.AsRef<YieldPromise>(state.Source);
         ref var item = ref LuminTaskMarshal.GetTaskItem(source.Id);
         
         if (item.CancellationToken.IsCancellationRequested)
