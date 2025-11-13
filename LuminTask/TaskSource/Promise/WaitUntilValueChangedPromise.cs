@@ -3,17 +3,13 @@ using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using LuminThread.Interface;
+using LuminThread.Utility;
 
 namespace LuminThread.TaskSource.Promise;
 
 public unsafe struct WaitUntilValueChangedPromise<TTarget, TValue>
 {
-    TTarget _target;
-    Func<TTarget, TValue> _monitorFunction;
-    TValue _currentValue;
-    IEqualityComparer<TValue> _equalityComparer;
     CancellationToken _cancellationToken;
-    CancellationTokenRegistration _cancellationTokenRegistration;
     bool _cancelImmediately;
 
     LuminTaskSourceCore<TValue>* _core;
@@ -34,16 +30,17 @@ public unsafe struct WaitUntilValueChangedPromise<TTarget, TValue>
 
         var waitPromise = new WaitUntilValueChangedPromise<TTarget, TValue>();
         waitPromise._core = core;
-        waitPromise._target = target;
-        waitPromise._monitorFunction = monitorFunction;
-        waitPromise._currentValue = monitorFunction(target);
-        waitPromise._equalityComparer = equalityComparer ?? EqualityComparer<TValue>.Default;
         waitPromise._cancellationToken = cancellationToken;
         waitPromise._cancelImmediately = cancelImmediately;
 
         token = core->Id;
         
-        PlayerLoopHelper.AddAction(timing, new LuminTaskState(core), waitPromise.MoveNext);
+        var currentValue = monitorFunction(target);
+        var comparer = equalityComparer;
+        
+        var stateTuple = StateTuple.Create(target, currentValue, comparer);
+        
+        PlayerLoopHelper.AddAction(timing, new LuminTaskState(core, cancellationToken, monitorFunction, stateTuple), &MoveNext);
         
         return waitPromise;
     }
@@ -78,40 +75,45 @@ public unsafe struct WaitUntilValueChangedPromise<TTarget, TValue>
         LuminTaskSourceCore<TValue>.OnCompleted(_core, continuation, state, token);
     }
 
-    public bool MoveNext(in LuminTaskState state)
+    private static bool MoveNext(in LuminTaskState state)
     {
-        if (_cancellationToken.IsCancellationRequested)
+        Func<TTarget, TValue> func = Unsafe.As<Func<TTarget, TValue>>(state.State);
+        StateTuple<TTarget, TValue, IEqualityComparer<TValue>> stateTuple = 
+            Unsafe.As<StateTuple<TTarget, TValue, IEqualityComparer<TValue>>>(state.StateTuple);
+        
+        if (state.CancellationToken.IsCancellationRequested)
         {
             LuminTaskSourceCore<TValue>.TrySetCanceled(state.Source);
+            LuminTaskSourceCore<TValue>.Dispose(state.Source);
+            stateTuple.Dispose();
             return false;
         }
 
         try
         {
-            var nextValue = _monitorFunction(_target);
-            if (_equalityComparer.Equals(_currentValue, nextValue))
+            var nextValue = func(stateTuple.Item1);
+            if (stateTuple.Item3.Equals(stateTuple.Item2, nextValue))
             {
                 return true;
             }
             
             LuminTaskSourceCore<TValue>.TrySetResult(state.Source, nextValue);
+            LuminTaskSourceCore<TValue>.Dispose(state.Source);
+            stateTuple.Dispose();
             return false;
         }
         catch (Exception ex)
         {
             LuminTaskSourceCore<TValue>.TrySetException(state.Source, ex);
+            LuminTaskSourceCore<TValue>.Dispose(state.Source);
+            stateTuple.Dispose();
             return false;
         }
     }
 
     void Dispose()
     {
-        _target = default;
-        _monitorFunction = default;
-        _currentValue = default;
-        _equalityComparer = default;
         _cancellationToken = default;
-        _cancellationTokenRegistration.Dispose();
         _cancelImmediately = default;
 
         if (_core != null)

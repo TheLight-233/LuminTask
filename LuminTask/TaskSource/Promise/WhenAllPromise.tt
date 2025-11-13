@@ -1,0 +1,79 @@
+<#@ template language="C#" #>
+<#@ assembly name="System.Core" #>
+<#@ import namespace="System.Linq" #>
+<#@ import namespace="System.Text" #>
+<#@ import namespace="System.Collections.Generic" #>
+
+using System;
+using System.Threading;
+
+namespace LuminThread.TaskSource.Promise;
+
+<#
+for (int i = 2; i <= 15; i++)
+{
+    var typeParams = string.Join(", ", Enumerable.Range(1, i).Select(n => $"T{n}"));
+    var tupleType = $"({typeParams})";
+    var taskParams = string.Join(", ", Enumerable.Range(1, i).Select(n => $"LuminTask<T{n}> task{n}"));
+    var createParams = string.Join(", ", Enumerable.Range(1, i).Select(n => $"task{n}"));
+#>
+public sealed unsafe class WhenAllPromise<<#= typeParams #>>
+{
+<# for (int j = 1; j <= i; j++) { #>
+    T<#= j #> t<#= j #> = default;
+<# } #>
+    int completedCount;
+    internal LuminTaskSourceCore<<#= tupleType #>>* core;
+
+    public static WhenAllPromise<<#= typeParams #>> Create(<#= taskParams #>)
+    {
+        return new WhenAllPromise<<#= typeParams #>>(<#= createParams #>);
+    }
+    
+    public WhenAllPromise(<#= taskParams #>)
+    {
+        core = LuminTaskSourceCore<<#= tupleType #>>.Create();
+        
+        this.completedCount = 0;
+<# for (int j = 1; j <= i; j++) { #>
+        {
+            var awaiter = task<#= j #>.GetAwaiter();
+            if (awaiter.IsCompleted)
+            {
+                TryInvokeContinuationT<#= j #>(this, awaiter);
+            }
+            else
+            {
+                awaiter.SourceOnCompleted(static state =>
+                {
+                    var t = (Tuple<WhenAllPromise<<#= typeParams #>>, LuminTaskAwaiter<T<#= j #>>>)state;
+                    TryInvokeContinuationT<#= j #>(t.Item1, t.Item2);
+                }, Tuple.Create(this, awaiter));
+            }
+        }
+<# } #>
+    }
+
+<# for (int j = 1; j <= i; j++) { #>
+    static void TryInvokeContinuationT<#= j #>(WhenAllPromise<<#= typeParams #>> self, in LuminTaskAwaiter<T<#= j #>> awaiter)
+    {
+        try
+        {
+            self.t<#= j #> = awaiter.GetResult();
+        }
+        catch (Exception ex)
+        {
+            LuminTaskSourceCore<<#= tupleType #>>.TrySetException(self.core, ex);
+            return;
+        }
+                
+        if (Interlocked.Increment(ref self.completedCount) == <#= i #>)
+        {
+            LuminTaskSourceCore<<#= tupleType #>>.TrySetResult(self.core, (self.t1<# for (int k = 2; k <= i; k++) { #>, self.t<#= k #><# } #>));
+        }
+    }
+
+<# } #>
+}
+
+<# } #>

@@ -2,6 +2,7 @@
 using System.Runtime.CompilerServices;
 using System.Threading;
 using LuminThread.Interface;
+using LuminThread.Utility;
 
 namespace LuminThread.TaskSource.Promise;
 
@@ -31,7 +32,7 @@ public unsafe struct WaitUntilPromise<T>
         
         token = core->Id;
         
-        PlayerLoopHelper.AddAction(timing, new LuminTaskState(core, cancellationToken, predicate), MoveNext);
+        PlayerLoopHelper.AddAction(timing, new LuminTaskState(core, cancellationToken, predicate), &MoveNext);
         
         return waitPromise;
     }
@@ -68,16 +69,19 @@ public unsafe struct WaitUntilPromise<T>
 
     private static bool MoveNext(in LuminTaskState state)
     {
+        Func<bool> predicate = Unsafe.As<Func<bool>>(state.State);
+        
         if (state.CancellationToken.IsCancellationRequested)
         {
             LuminTaskSourceCore<T>.TrySetCanceled(state.Source);
+            LuminTaskSourceCore<T>.Dispose(state.Source);
             
             return false;
         }
 
         try
         {
-            if (!((Func<bool>)state.State)())
+            if (!predicate())
             {
                 return true;
             }
@@ -85,10 +89,12 @@ public unsafe struct WaitUntilPromise<T>
         catch (Exception ex)
         {
             LuminTaskSourceCore<T>.TrySetException(state.Source, ex);
+            LuminTaskSourceCore<T>.Dispose(state.Source);
             return false;
         }
 
         LuminTaskSourceCore<T>.TrySetResult(state.Source);
+        LuminTaskSourceCore<T>.Dispose(state.Source);
         return false;
     }
 
@@ -131,8 +137,31 @@ public unsafe struct WaitUntilPromise<TState, TResult>
         waitPromise._cancelImmediately = cancelImmediately;
 
         token = core->Id;
+
+        if (TypeMeta<TState>.IsValueType)
+        {
+#if NET8_0_OR_GREATER
+            if (LuminTask.Model is LuminTaskModel.Unsafe || !TypeMeta<TState>.IsReferenceOrContainsReferences)
+            {
+                var ptr = MemoryHelper.Alloc(TypeMeta<TState>.Size);
+                Unsafe.WriteUnaligned(ptr, state);
+                PlayerLoopHelper.AddAction(timing, new LuminTaskState(core, cancellationToken, predicate, ptr), &MoveNextValue);
+            }
+            else
+            {
+                PlayerLoopHelper.AddAction(timing, new LuminTaskState(core, cancellationToken, predicate, StateTuple.Create(state)), &MoveNextValueContainsReference);
+            }
+#else 
+            var ptr = MemoryHelper.Alloc(TypeMeta<TState>.Size);
+            Unsafe.WriteUnaligned(ptr, state);
+            PlayerLoopHelper.AddAction(timing, new LuminTaskState(core, cancellationToken, predicate, ptr), &MoveNextValue);
+#endif
+        }
+        else
+        {
+            PlayerLoopHelper.AddAction(timing, new LuminTaskState(core, cancellationToken, predicate, state!), &MoveNextReference);
+        }
         
-        PlayerLoopHelper.AddAction(timing, new LuminTaskState(core, cancellationToken, predicate), waitPromise.MoveNext);
         
         return waitPromise;
     }
@@ -167,8 +196,11 @@ public unsafe struct WaitUntilPromise<TState, TResult>
         LuminTaskSourceCore<TResult>.OnCompleted(_core, continuation, state, token);
     }
 
-    private bool MoveNext(in LuminTaskState state)
+    private static bool MoveNextReference(in LuminTaskState state)
     {
+        Func<TState, bool> predicate = Unsafe.As<Func<TState, bool>>(state.State);
+        TState tState = (TState)state.StateTuple;
+        
         if (state.CancellationToken.IsCancellationRequested)
         {
             LuminTaskSourceCore<TResult>.TrySetCanceled(state.Source);
@@ -178,7 +210,7 @@ public unsafe struct WaitUntilPromise<TState, TResult>
 
         try
         {
-            if (!_predicate(_state))
+            if (!predicate(tState))
             {
                 return true;
             }
@@ -192,6 +224,78 @@ public unsafe struct WaitUntilPromise<TState, TResult>
 
         LuminTaskSourceCore<TResult>.TrySetResult(state.Source);
         LuminTaskSourceCore<TResult>.Dispose(state.Source);
+        
+        
+        return false;
+    }
+    
+    private static bool MoveNextValue(in LuminTaskState state)
+    {
+        Func<TState, bool> predicate = Unsafe.As<Func<TState, bool>>(state.State);
+        TState tState = Unsafe.ReadUnaligned<TState>(state.ValueState);
+        
+        if (state.CancellationToken.IsCancellationRequested)
+        {
+            LuminTaskSourceCore<TResult>.TrySetCanceled(state.Source);
+            LuminTaskSourceCore<TResult>.Dispose(state.Source);
+            MemoryHelper.Free(state.ValueState);
+            return false;
+        }
+
+        try
+        {
+            if (!predicate(tState))
+            {
+                return true;
+            }
+        }
+        catch (Exception ex)
+        {
+            LuminTaskSourceCore<TResult>.TrySetException(state.Source, ex);
+            LuminTaskSourceCore<TResult>.Dispose(state.Source);
+            MemoryHelper.Free(state.ValueState);
+            return false;
+        }
+
+        LuminTaskSourceCore<TResult>.TrySetResult(state.Source);
+        LuminTaskSourceCore<TResult>.Dispose(state.Source);
+        MemoryHelper.Free(state.ValueState);
+        
+        return false;
+    }
+    
+    private static bool MoveNextValueContainsReference(in LuminTaskState state)
+    {
+        Func<TState, bool> predicate = Unsafe.As<Func<TState, bool>>(state.State);
+        StateTuple<TState> stateTuple = Unsafe.As<StateTuple<TState>>(state.StateTuple);
+        
+        if (state.CancellationToken.IsCancellationRequested)
+        {
+            LuminTaskSourceCore<TResult>.TrySetCanceled(state.Source);
+            LuminTaskSourceCore<TResult>.Dispose(state.Source);
+            stateTuple.Dispose();
+            return false;
+        }
+
+        try
+        {
+            if (!predicate(stateTuple.Item1))
+            {
+                return true;
+            }
+        }
+        catch (Exception ex)
+        {
+            LuminTaskSourceCore<TResult>.TrySetException(state.Source, ex);
+            LuminTaskSourceCore<TResult>.Dispose(state.Source);
+            stateTuple.Dispose();
+            return false;
+        }
+
+        LuminTaskSourceCore<TResult>.TrySetResult(state.Source);
+        LuminTaskSourceCore<TResult>.Dispose(state.Source);
+        stateTuple.Dispose();
+        
         return false;
     }
 

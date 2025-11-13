@@ -69,7 +69,7 @@ public readonly partial struct LuminTask
         T target,
         Func<T, U> monitorFunction,
         PlayerLoopTiming monitorTiming = PlayerLoopTiming.DotNet,
-        IEqualityComparer<U> equalityComparer = default,
+        IEqualityComparer<U>? equalityComparer = null,
         CancellationToken cancellationToken = default,
         bool cancelImmediately = false)
     {
@@ -78,6 +78,8 @@ public readonly partial struct LuminTask
             return LuminTask.FromCanceled<U>(cancellationToken);
         }
 
+        equalityComparer ??= EqualityComparer<U>.Default;
+        
         var promise = WaitUntilValueChangedPromise<T, U>.Create(
             target, monitorFunction, equalityComparer, monitorTiming,
             cancellationToken, cancelImmediately, out var id);

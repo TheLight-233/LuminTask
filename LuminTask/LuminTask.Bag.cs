@@ -104,27 +104,59 @@ public unsafe struct LuminTaskItem
     }
 }
 
-public readonly unsafe struct LuminTaskState
+[Preserve]
+[StructLayout(LayoutKind.Explicit)]
+public unsafe struct LuminTaskState
 {
+    [FieldOffset(0)]
     public readonly void* Source;
+    [FieldOffset(8)]
     public readonly CancellationToken CancellationToken;
-    public readonly object State;
+    [FieldOffset(16)]
+    public object State;
+    [FieldOffset(24)]
+    public object StateTuple;
+    [FieldOffset(32)]
+    public void* ValueState;
     
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public LuminTaskState(void* source)
     {
         Source = source;
     }
     
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public LuminTaskState(void* source, CancellationToken token)
     {
         Source = source;
         CancellationToken = token;
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public LuminTaskState(void* source, CancellationToken token, object state)
     {
         Source = source;
         CancellationToken = token;
         State = state;
     }
+    
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public LuminTaskState(void* source, CancellationToken token, object state, object stateTuple)
+    {
+        Source = source;
+        CancellationToken = token;
+        State = state;
+        StateTuple = stateTuple;
+    }
+    
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public LuminTaskState(void* source, CancellationToken token, object state, void* valueState)
+    {
+        Source = source;
+        CancellationToken = token;
+        State = state;
+        ValueState = valueState;
+    }
+    
+    
 }

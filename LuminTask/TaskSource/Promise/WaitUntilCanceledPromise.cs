@@ -2,6 +2,7 @@
 using System.Runtime.CompilerServices;
 using System.Threading;
 using LuminThread.Interface;
+using LuminThread.Utility;
 
 namespace LuminThread.TaskSource.Promise;
 
@@ -26,6 +27,8 @@ public unsafe struct WaitUntilCanceledPromise<T>
         waitPromise._cancelImmediately = cancelImmediately;
 
         token = core->Id;
+        
+        PlayerLoopHelper.AddAction(timing, new LuminTaskState(core, cancellationToken), &MoveNext);
         
         return waitPromise;
     }
@@ -60,11 +63,12 @@ public unsafe struct WaitUntilCanceledPromise<T>
         LuminTaskSourceCore<T>.OnCompleted(_core, continuation, state, token);
     }
 
-    public bool MoveNext()
+    private static bool MoveNext(in LuminTaskState state)
     {
-        if (_cancellationToken.IsCancellationRequested)
+        if (state.CancellationToken.IsCancellationRequested)
         {
-            LuminTaskSourceCore<T>.TrySetResult(_core);
+            LuminTaskSourceCore<T>.TrySetResult(state.Source);
+            LuminTaskSourceCore<T>.Dispose(state.Source);
             return false;
         }
 

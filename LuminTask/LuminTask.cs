@@ -10,6 +10,12 @@ using LuminThread.TaskSource;
 
 namespace LuminThread;
 
+public enum LuminTaskModel
+{
+    Safe,
+    Unsafe,
+}
+
 [StructLayout(LayoutKind.Explicit)]
 public unsafe struct VTable
 {
@@ -46,6 +52,8 @@ public readonly unsafe partial struct LuminTask
     internal readonly short _id;
     
     public short Id => _id;
+    
+    public static LuminTaskModel Model = LuminTaskModel.Safe;
 
     [DebuggerHidden]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]

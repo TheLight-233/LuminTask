@@ -73,6 +73,14 @@ namespace LuminThread
                 ThrowInvalidLoopTiming(timing);
             strategy!.AddAction(state, moveNext);
         }
+        
+        public static unsafe void AddAction(PlayerLoopTiming timing, LuminTaskState state, delegate*<in LuminTaskState, bool> moveNext)
+        {
+            var strategy = _strategies[(byte)timing];
+            if (strategy is null) 
+                ThrowInvalidLoopTiming(timing);
+            strategy!.AddAction(state, moveNext);
+        }
 
         public static void AddContinuation(PlayerLoopTiming timing, Action continuation)
         {
@@ -104,21 +112,24 @@ namespace LuminThread
         private sealed class StandardPlayLoopStrategy : IPlayLoopStrategy
         {
             private const int MaxTasksPerFrame = 1000;
-            private const int SleepWhenIdle = 10; // ms
-            
-            private readonly ConcurrentStack<IPlayLoopItem> _incomingQueue = new();
-            private readonly ConcurrentStack<(LuminTaskState, MoveNext)> _incomingQueue2 = new();
-            private readonly ConcurrentBag<Action> _continuations = new();
-            private readonly List<IPlayLoopItem> _activeTasks = new();
+            private const int SleepWhenIdle = 1;
+    
+            private readonly ConcurrentQueue<IPlayLoopItem> _incomingQueue1 = new();
+            private readonly ConcurrentQueue<(LuminTaskState, MoveNext)> _incomingQueue2 = new();
+            private readonly ConcurrentQueue<(LuminTaskState, IntPtr)> _incomingQueue3 = new();
+            private readonly List<IPlayLoopItem> _activeTasks1 = new();
             private readonly List<(LuminTaskState, MoveNext)> _activeTasks2 = new();
+            private readonly List<(LuminTaskState, IntPtr)> _activeTasks3 = new();
+            private readonly ConcurrentQueue<Action> _continuations = new();
             private readonly CancellationTokenSource _cts = new();
             private Thread _workerThread;
             private volatile bool _disposed;
             private volatile bool _running;
+            private readonly ManualResetEventSlim _workAvailable = new();
 
             public StandardPlayLoopStrategy()
             {
-                _workerThread = new Thread(((IPlayLoopStrategy)this).RunCore)
+                _workerThread = new Thread(RunCore)
                 {
                     IsBackground = true,
                     Name = "PlayerLoopWorker",
@@ -130,42 +141,48 @@ namespace LuminThread
             {
                 if (_disposed) 
                     throw new ObjectDisposedException(nameof(StandardPlayLoopStrategy));
-                if (!_running) 
-                {
-                    _running = true;
-                    _workerThread.Start();
-                }
-                
-                _incomingQueue.Push(item);
+                StartIfNeeded();
+                _incomingQueue1.Enqueue(item);
+                _workAvailable.Set();
             }
-            
+    
             void IPlayLoopStrategy.AddAction(LuminTaskState state, MoveNext item)
             {
                 if (_disposed) 
                     throw new ObjectDisposedException(nameof(StandardPlayLoopStrategy));
-                if (!_running) 
-                {
-                    _running = true;
-                    _workerThread.Start();
-                }
-                
-                _incomingQueue2.Push((state, item));
+                StartIfNeeded();
+                _incomingQueue2.Enqueue((state, item));
+                _workAvailable.Set();
+            }
+    
+            unsafe void IPlayLoopStrategy.AddAction(LuminTaskState state, delegate*<in LuminTaskState, bool> item)
+            {
+                if (_disposed) 
+                    throw new ObjectDisposedException(nameof(StandardPlayLoopStrategy));
+                StartIfNeeded();
+                _incomingQueue3.Enqueue((state, new IntPtr(item)));
+                _workAvailable.Set();
             }
 
             void IPlayLoopStrategy.AddContinuation(Action continuation)
             {
                 if (_disposed) 
                     throw new ObjectDisposedException(nameof(StandardPlayLoopStrategy));
-                if (!_running) 
+                StartIfNeeded();
+                _continuations.Enqueue(continuation);
+                _workAvailable.Set();
+            }
+
+            private void StartIfNeeded()
+            {
+                if (!_running)
                 {
                     _running = true;
                     _workerThread.Start();
                 }
-                
-                _continuations.Add(continuation);
             }
 
-            void IPlayLoopStrategy.RunCore()
+            public void RunCore()
             {
                 try
                 {
@@ -173,19 +190,18 @@ namespace LuminThread
                     {
                         ProcessIncomingTasks();
                         ProcessActiveTasks();
-                        ProcessActiveTasks2();
                         ProcessContinuations();
-                        
-                        // 没有任务时休眠
-                        if (_activeTasks.Count is 0 && _incomingQueue.IsEmpty)
+                
+                        if (_activeTasks1.Count == 0 && _activeTasks2.Count == 0 && _activeTasks3.Count == 0 && 
+                            _incomingQueue1.IsEmpty && _incomingQueue2.IsEmpty && _incomingQueue3.IsEmpty)
                         {
-                            Thread.Sleep(SleepWhenIdle);
+                            _workAvailable.Wait(SleepWhenIdle, _cts.Token);
+                            _workAvailable.Reset();
                         }
                     }
                 }
-                catch (ThreadAbortException)
+                catch (OperationCanceledException)
                 {
-                    // 正常退出
                 }
                 catch (Exception ex)
                 {
@@ -199,105 +215,163 @@ namespace LuminThread
 
             private void ProcessIncomingTasks()
             {
-                // 将新任务从队列转移到活动列表
-                for (int i = 0; i < MaxTasksPerFrame && _incomingQueue.TryPop(out var item); i++)
+                for (int i = 0; i < MaxTasksPerFrame && _incomingQueue1.TryDequeue(out var item); i++)
                 {
-                    _activeTasks.Add(item);
+                    _activeTasks1.Add(item);
                 }
-                
-                for (int i = 0; i < MaxTasksPerFrame && _incomingQueue2.TryPop(out var item); i++)
+        
+                for (int i = 0; i < MaxTasksPerFrame && _incomingQueue2.TryDequeue(out var item); i++)
                 {
                     _activeTasks2.Add(item);
+                }
+        
+                for (int i = 0; i < MaxTasksPerFrame && _incomingQueue3.TryDequeue(out var item); i++)
+                {
+                    _activeTasks3.Add(item);
                 }
             }
 
             private void ProcessActiveTasks()
             {
-                for (int i = _activeTasks.Count - 1; i >= 0; i--)
-                {
-                    if (_cts.IsCancellationRequested) return;
-                    
-                    try
-                    {
-                        var task = _activeTasks[i];
-                        bool shouldContinue = task.MoveNext();
-                        
-                        if (!shouldContinue)
-                        {
-                            _activeTasks.RemoveAt(i);
-                            
-                            if (task is IDisposable disposable)
-                                disposable.Dispose();
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        _activeTasks.RemoveAt(i);
-                        Console.WriteLine($"Task execution error: {ex}");
-                    }
-                }
-                
+                ProcessActiveTasks1();
+                ProcessActiveTasks2();
+                ProcessActiveTasks3();
             }
-            
-            private unsafe void ProcessActiveTasks2()
+
+            private void ProcessActiveTasks1()
             {
-                for (int i = _activeTasks2.Count - 1; i >= 0; i--)
+                if (_activeTasks1.Count == 0) return;
+
+                int writeIndex = 0;
+                for (int readIndex = 0; readIndex < _activeTasks1.Count; readIndex++)
                 {
-                    if (_cts.IsCancellationRequested) return;
-                    
+                    if (_cts.IsCancellationRequested) break;
+            
+                    var task = _activeTasks1[readIndex];
+                    bool shouldContinue = false;
+            
                     try
                     {
-                        var task = _activeTasks2[i];
-                        bool shouldContinue = task.Item2(task.Item1);
-                        
-                        if (!shouldContinue)
-                        {
-                            _activeTasks2.RemoveAt(i);
-                        }
+                        shouldContinue = task.MoveNext();
                     }
                     catch (Exception ex)
                     {
-                        _activeTasks2.RemoveAt(i);
                         Console.WriteLine($"Task execution error: {ex}");
+                        shouldContinue = false;
+                    }
+            
+                    if (shouldContinue)
+                    {
+                        _activeTasks1[writeIndex++] = task;
+                    }
+                    else
+                    {
+                        if (task is IDisposable disposable)
+                            disposable.Dispose();
                     }
                 }
-                
+        
+                _activeTasks1.RemoveRange(writeIndex, _activeTasks1.Count - writeIndex);
+            }
+    
+            private void ProcessActiveTasks2()
+            {
+                if (_activeTasks2.Count == 0) return;
+
+                int writeIndex = 0;
+                for (int readIndex = 0; readIndex < _activeTasks2.Count; readIndex++)
+                {
+                    if (_cts.IsCancellationRequested) break;
+            
+                    var (state, moveNext) = _activeTasks2[readIndex];
+                    bool shouldContinue = false;
+            
+                    try
+                    {
+                        shouldContinue = moveNext(state);
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"Task execution error: {ex}");
+                        shouldContinue = false;
+                    }
+            
+                    if (shouldContinue)
+                    {
+                        _activeTasks2[writeIndex++] = (state, moveNext);
+                    }
+                }
+        
+                _activeTasks2.RemoveRange(writeIndex, _activeTasks2.Count - writeIndex);
+            }
+    
+            private unsafe void ProcessActiveTasks3()
+            {
+                if (_activeTasks3.Count == 0) return;
+
+                int writeIndex = 0;
+                for (int readIndex = 0; readIndex < _activeTasks3.Count; readIndex++)
+                {
+                    if (_cts.IsCancellationRequested) break;
+            
+                    var (state, ptr) = _activeTasks3[readIndex];
+                    bool shouldContinue = false;
+            
+                    try
+                    {
+                        shouldContinue = ((delegate*<in LuminTaskState, bool>)ptr)(state);
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"Task execution error: {ex}");
+                        shouldContinue = false;
+                    }
+            
+                    if (shouldContinue)
+                    {
+                        _activeTasks3[writeIndex++] = (state, ptr);
+                    }
+                }
+        
+                _activeTasks3.RemoveRange(writeIndex, _activeTasks3.Count - writeIndex);
             }
 
             private void ProcessContinuations()
             {
-                foreach (var continuation in _continuations)
+                while (_continuations.TryDequeue(out var continuation))
                 {
                     continuation();
                 }
-                
-                _continuations.Clear();
             }
 
             private void Cleanup()
             {
-                // 清理所有剩余任务
-                while (_incomingQueue.TryPop(out var item))
+                while (_incomingQueue1.TryDequeue(out var item))
                 {
                     (item as IDisposable)?.Dispose();
                 }
-                
-                foreach (var task in _activeTasks)
+        
+                while (_incomingQueue2.TryDequeue(out _)) { }
+                while (_incomingQueue3.TryDequeue(out _)) { }
+        
+                foreach (var task in _activeTasks1)
                 {
                     (task as IDisposable)?.Dispose();
                 }
-                
-                _activeTasks.Clear();
+        
+                _activeTasks1.Clear();
                 _activeTasks2.Clear();
+                _activeTasks3.Clear();
             }
 
             public void Dispose()
             {
                 if (_disposed) return;
-                
+        
                 _disposed = true;
                 _cts.Cancel();
-                
+                _workAvailable.Set();
+        
                 if (_workerThread != null)
                 {
                     if (!_workerThread.Join(TimeSpan.FromSeconds(2)))
@@ -306,8 +380,9 @@ namespace LuminThread
                     }
                     _workerThread = null;
                 }
-                
+        
                 _cts.Dispose();
+                _workAvailable.Dispose();
                 Cleanup();
             }
         }
