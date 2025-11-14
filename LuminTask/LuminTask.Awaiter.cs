@@ -34,6 +34,9 @@ public readonly unsafe struct LuminTaskAwaiter : ICriticalNotifyCompletion
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void GetResult()
     {
+        if (_taskSource == null)
+            return;
+        
         _source.GetResult(_taskSource, _id);
     }
 

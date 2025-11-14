@@ -39,6 +39,8 @@ public unsafe struct LuminTaskSourceCore<T>
         ptr->Id = LuminTaskBag.GetId();
         ref var item = ref LuminTaskMarshal.GetTaskItem(ptr->Id);
         
+        item.Reset();
+        
         item.ContinueOnCapturedContext = continueOnCapturedContext;
         
         return ptr;
@@ -130,7 +132,7 @@ public unsafe struct LuminTaskSourceCore<T>
         if (token != source.Id) LuminTaskExceptionHelper.ThrowTokenMismatch();
         
         ref var item = ref LuminTaskMarshal.GetTaskItem(source.Id);
-
+        
         if (item.Status != LuminTaskStatus.Pending)
         {
             ExecuteContinuation(ref item);
@@ -245,7 +247,7 @@ public unsafe struct LuminTaskSourceCore<T>
         
         LuminTaskBag.ResetId(item.Id);
         
-        item.Reset();
+        //item.Reset();
         
         MemoryHelper.Free(ptr);
     }

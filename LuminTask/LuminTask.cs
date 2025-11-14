@@ -72,10 +72,10 @@ public readonly unsafe partial struct LuminTask
     {
         [DebuggerHidden]
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        get => _vTable.GetStatus(_taskSource, _id);
+        get => _taskSource == null ? LuminTaskStatus.Succeeded : _vTable.GetStatus(_taskSource, _id);
     }
 
-    
+
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static implicit operator ValueTask(in LuminTask self)
     {
@@ -141,7 +141,7 @@ public readonly unsafe partial struct LuminTask<T>
     {
         [DebuggerHidden]
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        get => _vTable.GetStatus(_taskSource, _id);
+        get => _taskSource == null ? LuminTaskStatus.Succeeded : _vTable.GetStatus(_taskSource, _id);
     }
     
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
