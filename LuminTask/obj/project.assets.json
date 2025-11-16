@@ -134,20 +134,21 @@
     ]
   },
   "packageFolders": {
-    "C:\\Users\\xiaoxi\\.nuget\\packages\\": {}
+    "C:\\Users\\28027\\.nuget\\packages\\": {}
   },
   "project": {
     "version": "1.0.0",
     "restore": {
-      "projectUniqueName": "C:\\Users\\xiaoxi\\RiderProjects\\LuminTask\\LuminTask\\LuminTask.csproj",
+      "projectUniqueName": "C:\\Users\\28027\\Desktop\\C#\\LuminTask-main\\LuminTask-main\\LuminTask\\LuminTask.csproj",
       "projectName": "LuminTask",
-      "projectPath": "C:\\Users\\xiaoxi\\RiderProjects\\LuminTask\\LuminTask\\LuminTask.csproj",
-      "packagesPath": "C:\\Users\\xiaoxi\\.nuget\\packages\\",
-      "outputPath": "C:\\Users\\xiaoxi\\RiderProjects\\LuminTask\\LuminTask\\obj\\",
+      "projectPath": "C:\\Users\\28027\\Desktop\\C#\\LuminTask-main\\LuminTask-main\\LuminTask\\LuminTask.csproj",
+      "packagesPath": "C:\\Users\\28027\\.nuget\\packages\\",
+      "outputPath": "C:\\Users\\28027\\Desktop\\C#\\LuminTask-main\\LuminTask-main\\LuminTask\\obj\\",
       "projectStyle": "PackageReference",
       "crossTargeting": true,
       "configFilePaths": [
-        "C:\\Users\\xiaoxi\\AppData\\Roaming\\NuGet\\NuGet.Config"
+        "C:\\Users\\28027\\AppData\\Roaming\\NuGet\\NuGet.Config",
+        "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.Offline.config"
       ],
       "originalTargetFrameworks": [
         "net8.0",
@@ -155,6 +156,7 @@
         "netstandard2.1"
       ],
       "sources": {
+        "C:\\Program Files (x86)\\Microsoft SDKs\\NuGetPackages\\": {},
         "https://api.nuget.org/v3/index.json": {}
       },
       "frameworks": {
@@ -207,26 +209,12 @@
         ],
         "assetTargetFallback": true,
         "warn": true,
-        "downloadDependencies": [
-          {
-            "name": "Microsoft.AspNetCore.App.Ref",
-            "version": "[8.0.20, 8.0.20]"
-          },
-          {
-            "name": "Microsoft.NETCore.App.Ref",
-            "version": "[8.0.20, 8.0.20]"
-          },
-          {
-            "name": "Microsoft.WindowsDesktop.App.Ref",
-            "version": "[8.0.20, 8.0.20]"
-          }
-        ],
         "frameworkReferences": {
           "Microsoft.NETCore.App": {
             "privateAssets": "all"
           }
         },
-        "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\9.0.305/PortableRuntimeIdentifierGraph.json"
+        "runtimeIdentifierGraphPath": "C:\\Program Files (x86)\\dotnet\\sdk\\9.0.307/PortableRuntimeIdentifierGraph.json"
       },
       "net9.0": {
         "targetAlias": "net9.0",
@@ -256,7 +244,7 @@
             "privateAssets": "all"
           }
         },
-        "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\9.0.305/PortableRuntimeIdentifierGraph.json"
+        "runtimeIdentifierGraphPath": "C:\\Program Files (x86)\\dotnet\\sdk\\9.0.307/PortableRuntimeIdentifierGraph.json"
       },
       "netstandard2.1": {
         "targetAlias": "netstandard2.1",
@@ -286,7 +274,7 @@
             "privateAssets": "all"
           }
         },
-        "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\9.0.305\\RuntimeIdentifierGraph.json"
+        "runtimeIdentifierGraphPath": "C:\\Program Files (x86)\\dotnet\\sdk\\9.0.307\\RuntimeIdentifierGraph.json"
       }
     }
   }

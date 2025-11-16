@@ -1,10 +1,12 @@
-﻿using System;
+﻿
+using System;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
 
 namespace LuminThread.AsyncEx
 {
+    //有问题，以后修
     public sealed class AsyncMonitor
     {
         private readonly AsyncLock _asyncLock;
@@ -28,7 +30,7 @@ namespace LuminThread.AsyncEx
             if (lockScope.Equals(default))
                 throw new ArgumentException("Lock scope is not valid", nameof(lockScope));
 
-            return _conditionVariable.WaitWithLockAsync(lockScope, cancellationToken);
+            return _conditionVariable.WaitWithLockAsync(lockScope);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -62,9 +64,9 @@ namespace LuminThread.AsyncEx
             return lockScope.DisposeAsync();
         }
 
-        public readonly struct MonitorScope : IDisposable, IAsyncDisposable
+        public struct MonitorScope : IDisposable, IAsyncDisposable
         {
-            private readonly AsyncLock.ReleaseScope _lockScope;
+            private AsyncLock.ReleaseScope _lockScope;
             private readonly AsyncMonitor _monitor;
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -133,29 +135,6 @@ namespace LuminThread.AsyncEx
         public static LuminTask<AsyncMonitor.MonitorScope> EnterScopeAsync(this AsyncMonitor monitor, CancellationToken cancellationToken = default)
         {
             return AsyncMonitor.EnterScopeAsync(monitor, cancellationToken);
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static LuminTask<AsyncLock.ReleaseScope> WaitWithLockAsync(
-            this AsyncConditionVariable conditionVariable,
-            AsyncLock.ReleaseScope currentLock,
-            CancellationToken cancellationToken = default)
-        {
-            if (conditionVariable == null) throw new ArgumentNullException(nameof(conditionVariable));
-
-            currentLock.Dispose();
-
-            var waitTask = conditionVariable.WaitAsync(cancellationToken);
-            
-            return WaitAndRetakeLock(waitTask, conditionVariable._asyncLock);
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private static async LuminTask<AsyncLock.ReleaseScope> WaitAndRetakeLock(
-            LuminTask<AsyncLock.ReleaseScope> waitTask, AsyncLock asyncLock)
-        {
-            await waitTask;
-            return await asyncLock.LockAsync();
         }
     }
 }

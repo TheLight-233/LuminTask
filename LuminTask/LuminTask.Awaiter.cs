@@ -7,16 +7,12 @@ namespace LuminThread;
 
 public readonly unsafe struct LuminTaskAwaiter : ICriticalNotifyCompletion
 {
-    private readonly VTable _source;
-    private readonly void* _taskSource;
-    private readonly short _id;
+    private readonly LuminTask _task;
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal LuminTaskAwaiter(VTable source, void* taskSource, short id)
+    internal LuminTaskAwaiter(in LuminTask task)
     {
-        _source = source;
-        _taskSource = taskSource;
-        _id = id;
+        _task = task;
     }
 
     public bool IsCompleted
@@ -24,32 +20,32 @@ public readonly unsafe struct LuminTaskAwaiter : ICriticalNotifyCompletion
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         get
         {
-            if (_source.GetStatus == null)
+            if (_task._vTable.GetStatus == null)
                 return true;
                 
-            return _source.GetStatus(_taskSource, _id).IsCompleted();
+            return _task._vTable.GetStatus(_task._taskSource, _task._id).IsCompleted();
         }
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void GetResult()
     {
-        if (_taskSource == null)
+        if (_task._vTable.GetResult == null)
             return;
         
-        _source.GetResult(_taskSource, _id);
+        _task._vTable.GetResult(_task._taskSource, _task._id);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void OnCompleted(Action continuation)
     {
-        if (_source.OnCompleted == null)
+        if (_task._vTable.OnCompleted == null)
         {
             continuation();
         }
         else
         {
-            _source.OnCompleted(_taskSource, static s => ((Action)s)(), continuation, _id);
+            _task._vTable.OnCompleted(_task._taskSource, static s => ((Action)s)(), continuation, _task._id);
         }
     }
         
@@ -57,13 +53,13 @@ public readonly unsafe struct LuminTaskAwaiter : ICriticalNotifyCompletion
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void SourceOnCompleted(Action<object> continuation, object state)
     {
-        if (_source.OnCompleted == null)
+        if (_task._vTable.OnCompleted == null)
         {
             continuation(state);
         }
         else
         {
-            _source.OnCompleted(_taskSource, continuation, state, _id);
+            _task._vTable.OnCompleted(_task._taskSource, continuation, state, _task._id);
         }
     }
 
@@ -73,18 +69,12 @@ public readonly unsafe struct LuminTaskAwaiter : ICriticalNotifyCompletion
 
 public readonly unsafe struct LuminTaskAwaiter<T> : ICriticalNotifyCompletion
 {
-    private readonly VTable _source;
-    private readonly void* _taskSource;
-    private readonly short _id;
-    private readonly T? _result;
+    private readonly LuminTask<T> _task;
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal LuminTaskAwaiter(VTable source, void* taskSource, short id, T? result = default)
+    internal LuminTaskAwaiter(in LuminTask<T> task)
     {
-        _source = source;
-        _taskSource = taskSource;
-        _id = id;
-        _result = result;
+        _task = task;
     }
 
     public bool IsCompleted
@@ -92,20 +82,20 @@ public readonly unsafe struct LuminTaskAwaiter<T> : ICriticalNotifyCompletion
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         get
         {
-            if (_source.GetStatus == null)
+            if (_task._vTable.GetStatus == null)
                 return true;
-                
-            return _source.GetStatus(_taskSource, _id).IsCompleted();
+           
+            return _task._vTable.GetStatus(_task._taskSource, _task._id).IsCompleted();
         }
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public T GetResult()
     {
-        if (_source.GetResultValue == null)
-            return _result!;
-
-        var result = ((delegate*<void*, short, T>)_source.GetResultValue)(_taskSource, _id);
+        if (_task._vTable.GetResultValue == null)
+            return _task._result!;
+        
+        var result = ((delegate*<void*, short, T>)_task._vTable.GetResultValue)(_task._taskSource, _task._id);
             
         return result;
     }
@@ -113,13 +103,13 @@ public readonly unsafe struct LuminTaskAwaiter<T> : ICriticalNotifyCompletion
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void OnCompleted(Action continuation)
     {
-        if (_source.OnCompleted == null)
+        if (_task._vTable.OnCompleted == null)
         {
             continuation();
         }
         else
         {
-            _source.OnCompleted(_taskSource, static s => ((Action)s)(), continuation, _id);
+            _task._vTable.OnCompleted(_task._taskSource, static s => ((Action)s)(), continuation, _task._id);
         }
     }
         
@@ -127,13 +117,13 @@ public readonly unsafe struct LuminTaskAwaiter<T> : ICriticalNotifyCompletion
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void SourceOnCompleted(Action<object> continuation, object state)
     {
-        if (_source.OnCompleted == null)
+        if (_task._vTable.OnCompleted == null)
         {
             continuation(state);
         }
         else
         {
-            _source.OnCompleted(_taskSource, continuation, state, _id);
+            _task._vTable.OnCompleted(_task._taskSource, continuation, state, _task._id);
         }
     }
 

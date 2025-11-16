@@ -10,8 +10,6 @@ namespace LuminThread.TaskSource;
 
 public unsafe struct LuminTaskSourceCore<T>
 {
-    static readonly bool IsContainsReference = RuntimeHelpers.IsReferenceOrContainsReferences<T>();
-
     public static readonly VTable MethodTable = new VTable
     {
         GetResult = &GetResult,
@@ -25,6 +23,7 @@ public unsafe struct LuminTaskSourceCore<T>
     };
 
     public short Id;
+    public static bool ShouldClearResult = TypeMeta<T>.Size > 64;
 
     public LuminTaskSourceCore(short id)
     {
@@ -44,6 +43,21 @@ public unsafe struct LuminTaskSourceCore<T>
         item.ContinueOnCapturedContext = continueOnCapturedContext;
         
         return ptr;
+    }
+    
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static LuminTaskSourceCore<T> CreateSafe(bool continueOnCapturedContext = true)
+    {
+        LuminTaskSourceCore<T> core = new LuminTaskSourceCore<T>();
+        
+        core.Id = LuminTaskBag.GetId();
+        ref var item = ref LuminTaskMarshal.GetTaskItem(core.Id);
+        
+        item.Reset();
+        
+        item.ContinueOnCapturedContext = continueOnCapturedContext;
+        
+        return core;
     }
 
     [DebuggerHidden]
@@ -96,17 +110,53 @@ public unsafe struct LuminTaskSourceCore<T>
     public static T GetResultValue(void* ptr, short token)
     {
         ref var source = ref Unsafe.AsRef<LuminTaskSourceCore<T>>(ptr);
-        
+    
         if (token != source.Id) LuminTaskExceptionHelper.ThrowTokenMismatch();
-        
+    
         ref var item = ref LuminTaskMarshal.GetTaskItem(source.Id);
-
+        
         switch (item.Status)
         {
             case LuminTaskStatus.Succeeded:
-                return IsContainsReference 
-                    ? (T)item.ResultRef! 
-                    : Unsafe.ReadUnaligned<T>(Unsafe.AsPointer(ref item.ResultValue[0]));
+                if (TypeMeta<T>.IsValueType)
+                {
+#if NET8_0_OR_GREATER
+                    if (LuminTask.Model is LuminTaskModel.Unsafe || !TypeMeta<T>.IsReferenceOrContainsReferences)
+                    {
+                        if (TypeMeta<T>.Size > 64)
+                        {
+                            var resultPtr = (void*)Unsafe.ReadUnaligned<nint>(ref item.ResultValue[0]);
+                            var result = Unsafe.ReadUnaligned<T>(resultPtr);
+                            
+                            return result;
+                        }
+                        
+                        return Unsafe.ReadUnaligned<T>(ref item.ResultValue[0]);
+                    }
+                    else
+                    {
+                        if (item.ResultRef is StateTuple<T> stateTuple)
+                        {
+                            var result = stateTuple.Item1;
+                            return result;
+                        }
+                        return default!;
+                    }
+#else 
+                    if (TypeMeta<T>.Size > 64)
+                    {
+                        var resultPtr = (void*)Unsafe.ReadUnaligned<nint>(ref item.ResultValue[0]);
+                        var result = Unsafe.ReadUnaligned<T>(resultPtr);
+                        
+                        return result;
+                    }
+                    else
+                    {
+                        return Unsafe.ReadUnaligned<T>(ref item.ResultValue[0]);
+                    }
+#endif
+                }
+                return (T)item.ResultRef!;
             case LuminTaskStatus.Faulted:
                 item.Exception?.Throw();
                 item.Exception = null;
@@ -120,7 +170,7 @@ public unsafe struct LuminTaskSourceCore<T>
                 LuminTaskExceptionHelper.ThrowInvalidOperation("Task not completed");
                 break;
         }
-        
+    
         throw new InvalidOperationException("Unreachable code");
     }
     
@@ -169,14 +219,47 @@ public unsafe struct LuminTaskSourceCore<T>
         ref var item = ref LuminTaskMarshal.GetTaskItem(source.Id);
         
         if (item.Status != LuminTaskStatus.Pending) return false;
-        if (IsContainsReference)
+        
+        
+        if (TypeMeta<T>.IsValueType)
         {
-            item.ResultRef = result;
+#if NET8_0_OR_GREATER
+            if (LuminTask.Model is LuminTaskModel.Unsafe || !TypeMeta<T>.IsReferenceOrContainsReferences)
+            {
+                if (TypeMeta<T>.Size > 64)
+                {
+                    var resultPtr = MemoryHelper.Alloc(TypeMeta<T>.Size);
+                    Unsafe.WriteUnaligned(resultPtr, result);
+                    Unsafe.WriteUnaligned(ref item.ResultValue[0], (nint)resultPtr);
+                }
+                else
+                {
+                    Unsafe.WriteUnaligned(ref item.ResultValue[0], result);
+                }
+            }
+            else
+            {
+                var stateTuple = StateTuple.Create(result);
+                item.ResultRef = stateTuple;
+            }
+#else 
+            if (TypeMeta<T>.Size > 64)
+            {
+                var resultPtr = MemoryHelper.Alloc(TypeMeta<T>.Size);
+                Unsafe.WriteUnaligned(resultPtr, result);
+                Unsafe.WriteUnaligned(ref item.ResultValue[0], (nint)resultPtr);
+            }
+            else
+            {
+                Unsafe.WriteUnaligned(ref item.ResultValue[0], result);
+            }
+#endif
         }
         else
         {
-            Unsafe.WriteUnaligned(ref item.ResultValue[0], result);
+            item.ResultRef = result;
         }
+        
         item.Status = LuminTaskStatus.Succeeded;
         
         ExecuteContinuation(ref item);
@@ -245,11 +328,55 @@ public unsafe struct LuminTaskSourceCore<T>
         ref var source = ref Unsafe.AsRef<LuminTaskSourceCore<T>>(ptr);
         ref var item = ref LuminTaskMarshal.GetTaskItem(source.Id);
         
+#if NET8_0_OR_GREATER
+        if (LuminTask.Model != LuminTaskModel.Unsafe && 
+            TypeMeta<T>.IsValueType && TypeMeta<T>.IsReferenceOrContainsReferences && 
+            item.ResultRef is StateTuple<T> stateTuple)
+        {
+            stateTuple.Dispose();
+            item.ResultRef = null;
+        }
+#endif
+        
+        if (ShouldClearResult)
+        {
+            var resultPtr = (void*)Unsafe.ReadUnaligned<nint>(ref item.ResultValue[0]);
+            if (resultPtr != null)
+            {
+                MemoryHelper.Free(resultPtr);
+            }
+        }
+        
         LuminTaskBag.ResetId(item.Id);
         
-        //item.Reset();
-        
         MemoryHelper.Free(ptr);
+    }
+    
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static void DisposeSafe(LuminTaskSourceCore<T> source)
+    {
+        ref var item = ref LuminTaskMarshal.GetTaskItem(source.Id);
+        
+#if NET8_0_OR_GREATER
+        if (LuminTask.Model != LuminTaskModel.Unsafe && 
+            TypeMeta<T>.IsValueType && TypeMeta<T>.IsReferenceOrContainsReferences && 
+            item.ResultRef is StateTuple<T> stateTuple)
+        {
+            stateTuple.Dispose();
+            item.ResultRef = null;
+        }
+#endif
+        
+        if (ShouldClearResult)
+        {
+            var resultPtr = (void*)Unsafe.ReadUnaligned<nint>(ref item.ResultValue[0]);
+            if (resultPtr != null)
+            {
+                MemoryHelper.Free(resultPtr);
+            }
+        }
+        
+        LuminTaskBag.ResetId(item.Id);
     }
     
 }

@@ -6,6 +6,8 @@
 
 using System;
 using System.Threading;
+using System.Collections.Generic;
+using System.Linq;
 
 namespace LuminThread.TaskSource.Promise;
 
@@ -64,12 +66,14 @@ public sealed unsafe class WhenAllPromise<<#= typeParams #>>
         catch (Exception ex)
         {
             LuminTaskSourceCore<<#= tupleType #>>.TrySetException(self.core, ex);
+            LuminTaskSourceCore<<#= tupleType #>>.Dispose(self.core);
             return;
         }
                 
         if (Interlocked.Increment(ref self.completedCount) == <#= i #>)
         {
             LuminTaskSourceCore<<#= tupleType #>>.TrySetResult(self.core, (self.t1<# for (int k = 2; k <= i; k++) { #>, self.t<#= k #><# } #>));
+            LuminTaskSourceCore<<#= tupleType #>>.Dispose(self.core);
         }
     }
 
@@ -77,3 +81,145 @@ public sealed unsafe class WhenAllPromise<<#= typeParams #>>
 }
 
 <# } #>
+
+public sealed unsafe class WhenAllPromise<T>
+{
+    private T[] _results;
+    private int _completedCount;
+    private int _totalCount;
+    internal LuminTaskSourceCore<T[]>* _core;
+
+    public static WhenAllPromise<T> Create(params LuminTask<T>[] tasks)
+    {
+        return new WhenAllPromise<T>(tasks);
+    }
+    
+    public static WhenAllPromise<T> Create(IEnumerable<LuminTask<T>> tasks)
+    {
+        return new WhenAllPromise<T>(tasks.ToArray());
+    }
+    
+    public WhenAllPromise(LuminTask<T>[]? tasks)
+    {
+        if (tasks == null || tasks.Length == 0)
+        {
+            _results = Array.Empty<T>();
+            _core = LuminTaskSourceCore<T[]>.Create();
+            LuminTaskSourceCore<T[]>.TrySetResult(_core, _results);
+            return;
+        }
+
+        _totalCount = tasks.Length;
+        _results = new T[_totalCount];
+        _core = LuminTaskSourceCore<T[]>.Create();
+        _completedCount = 0;
+
+        for (int i = 0; i < tasks.Length; i++)
+        {
+            var index = i;
+            var awaiter = tasks[i].GetAwaiter();
+            
+            if (awaiter.IsCompleted)
+            {
+                TryInvokeContinuation(this, awaiter, index);
+            }
+            else
+            {
+                awaiter.SourceOnCompleted(static state =>
+                {
+                    var tuple = (Tuple<WhenAllPromise<T>, LuminTaskAwaiter<T>, int>)state;
+                    TryInvokeContinuation(tuple.Item1, tuple.Item2, tuple.Item3);
+                }, Tuple.Create(this, awaiter, index));
+            }
+        }
+    }
+
+    static void TryInvokeContinuation(WhenAllPromise<T> self, in LuminTaskAwaiter<T> awaiter, int index)
+    {
+        try
+        {
+            self._results[index] = awaiter.GetResult();
+        }
+        catch (Exception ex)
+        {
+            LuminTaskSourceCore<T[]>.TrySetException(self._core, ex);
+            LuminTaskSourceCore<T[]>.Dispose(self._core);
+            return;
+        }
+                
+        if (Interlocked.Increment(ref self._completedCount) == self._totalCount)
+        {
+            LuminTaskSourceCore<T[]>.TrySetResult(self._core, self._results);
+            LuminTaskSourceCore<T[]>.Dispose(self._core);
+        }
+    }
+}
+
+public sealed unsafe class WhenAllPromise
+{
+    private int _completedCount;
+    private int _totalCount;
+    internal LuminTaskSourceCore<bool>* _core;
+
+    public static WhenAllPromise Create(params LuminTask[] tasks)
+    {
+        return new WhenAllPromise(tasks);
+    }
+    
+    public static WhenAllPromise Create(IEnumerable<LuminTask> tasks)
+    {
+        return new WhenAllPromise(tasks.ToArray());
+    }
+    
+    public WhenAllPromise(LuminTask[]? tasks)
+    {
+        if (tasks == null || tasks.Length == 0)
+        {
+            _core = LuminTaskSourceCore<bool>.Create();
+            LuminTaskSourceCore<bool>.TrySetResult(_core, true);
+            return;
+        }
+
+        _totalCount = tasks.Length;
+        _core = LuminTaskSourceCore<bool>.Create();
+        _completedCount = 0;
+
+        for (int i = 0; i < tasks.Length; i++)
+        {
+            var awaiter = tasks[i].GetAwaiter();
+            
+            if (awaiter.IsCompleted)
+            {
+                TryInvokeContinuation(this, awaiter);
+            }
+            else
+            {
+                awaiter.SourceOnCompleted(static state =>
+                {
+                    var tuple = (Tuple<WhenAllPromise, LuminTaskAwaiter>)state;
+                    TryInvokeContinuation(tuple.Item1, tuple.Item2);
+                }, Tuple.Create(this, awaiter));
+            }
+        }
+    }
+
+    static void TryInvokeContinuation(WhenAllPromise self, in LuminTaskAwaiter awaiter)
+    {
+        try
+        {
+            awaiter.GetResult();
+        }
+        catch (Exception ex)
+        {
+            LuminTaskSourceCore<bool>.TrySetException(self._core, ex);
+            LuminTaskSourceCore<bool>.Dispose(self._core);
+            return;
+        }
+                
+        if (Interlocked.Increment(ref self._completedCount) == self._totalCount)
+        {
+            LuminTaskSourceCore<bool>.TrySetResult(self._core, true);
+            LuminTaskSourceCore<bool>.Dispose(self._core);
+        }
+    }
+}

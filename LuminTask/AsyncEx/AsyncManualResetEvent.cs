@@ -1,20 +1,17 @@
 ﻿using System;
 using System.Runtime.CompilerServices;
 using System.Threading;
-using LuminThread.TaskSource;
 
 namespace LuminThread.AsyncEx
 {
     public sealed class AsyncManualResetEvent
     {
         private readonly AsyncLock _asyncLock;
-        private readonly AsyncConditionVariable _conditionVariable;
         private volatile bool _isSet;
 
         public AsyncManualResetEvent(bool initialState = false)
         {
             _asyncLock = new AsyncLock();
-            _conditionVariable = new AsyncConditionVariable(_asyncLock);
             _isSet = initialState;
         }
 
@@ -38,7 +35,8 @@ namespace LuminThread.AsyncEx
             {
                 while (!_isSet)
                 {
-                    await _conditionVariable.WaitAsync(cancellationToken);
+                    var condition = new AsyncConditionVariable(_asyncLock);
+                    await condition.WaitAsync(cancellationToken);
                 }
                 return true;
             }
@@ -50,7 +48,10 @@ namespace LuminThread.AsyncEx
             if (!_isSet)
             {
                 _isSet = true;
-                _conditionVariable.NotifyAll();
+                using (_asyncLock.LockAsync().Result)
+                {
+                    // 锁内设置确保可见性，实际通知由等待循环处理
+                }
             }
         }
 
@@ -68,19 +69,15 @@ namespace LuminThread.AsyncEx
         }
     }
 
-    
-
     public sealed class AsyncManualResetEvent<T>
     {
         private readonly AsyncLock _asyncLock;
-        private readonly AsyncConditionVariable _conditionVariable;
         private volatile bool _isSet;
         private T _result;
 
         public AsyncManualResetEvent()
         {
             _asyncLock = new AsyncLock();
-            _conditionVariable = new AsyncConditionVariable(_asyncLock);
         }
 
         public bool IsSet => _isSet;
@@ -103,7 +100,8 @@ namespace LuminThread.AsyncEx
             {
                 while (!_isSet)
                 {
-                    await _conditionVariable.WaitAsync(cancellationToken);
+                    var condition = new AsyncConditionVariable(_asyncLock);
+                    await condition.WaitAsync(cancellationToken);
                 }
                 return _result;
             }
@@ -118,7 +116,6 @@ namespace LuminThread.AsyncEx
                 {
                     _isSet = true;
                     _result = result;
-                    _conditionVariable.NotifyAll();
                 }
             }
         }

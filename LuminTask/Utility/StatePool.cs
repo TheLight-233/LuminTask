@@ -6,19 +6,19 @@ namespace LuminThread.Utility;
 internal static class StateTuple
 {
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static StateTuple<T1> Create<T1>(T1 item1)
+    public static StateTuple<T1> Create<T1>(in T1 item1)
     {
         return StatePool<T1>.Create(item1);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static StateTuple<T1, T2> Create<T1, T2>(T1 item1, T2 item2)
+    public static StateTuple<T1, T2> Create<T1, T2>(in T1 item1, in T2 item2)
     {
         return StatePool<T1, T2>.Create(item1, item2);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static StateTuple<T1, T2, T3> Create<T1, T2, T3>(T1 item1, T2 item2, T3 item3)
+    public static StateTuple<T1, T2, T3> Create<T1, T2, T3>(in T1 item1, in T2 item2, in T3 item3)
     {
         return StatePool<T1, T2, T3>.Create(item1, item2, item3);
     }
@@ -29,7 +29,6 @@ internal class StateTuple<T1> : IDisposable
     , IPooledObjectPolicy<StateTuple<T1>>
 #endif
 {
-    
     public T1 Item1;
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -62,7 +61,7 @@ internal static class StatePool<T1>
 #endif
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static StateTuple<T1> Create(T1 item1)
+    public static StateTuple<T1> Create(in T1 item1)
     {
         var obj = _pool.Rent();
         obj.Item1 = item1;
@@ -127,7 +126,7 @@ internal static class StatePool<T1, T2>
 #endif
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static StateTuple<T1, T2> Create(T1 item1, T2 item2)
+    public static StateTuple<T1, T2> Create(in T1 item1, in T2 item2)
     {
         var obj = _pool.Rent();
         obj.Item1 = item1;
@@ -197,7 +196,7 @@ internal static class StatePool<T1, T2, T3>
 #endif
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static StateTuple<T1, T2, T3> Create(T1 item1, T2 item2, T3 item3)
+    public static StateTuple<T1, T2, T3> Create(in T1 item1, in T2 item2, in T3 item3)
     {
         var obj = _pool.Rent();
         obj.Item1 = item1;

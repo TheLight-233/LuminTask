@@ -1,4 +1,6 @@
-﻿using System.Runtime.CompilerServices;
+﻿using System.Collections.Generic;
+using System.Linq;
+using System.Runtime.CompilerServices;
 using LuminThread.Interface;
 using LuminThread.TaskSource;
 using LuminThread.TaskSource.Promise;
@@ -7,6 +9,61 @@ namespace LuminThread;
 
 public readonly partial struct LuminTask
 {
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static unsafe LuminTask WhenAll(LuminTask[]? tasks)
+    {
+        if (tasks == null || tasks.Length == 0)
+        {
+            return FromResult();
+        }
+        
+        var promise = new WhenAllPromise(tasks);
+        return new LuminTask(LuminTaskSourceCore<bool>.MethodTable, promise._core, promise._core->Id);
+    }
+    
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static unsafe LuminTask WhenAll(IEnumerable<LuminTask>? tasks)
+    {
+        if (tasks == null)
+            return FromResult();
+        
+        var array = tasks.ToArray();
+        
+        if (array.Length == 0)
+            return FromResult();
+        
+        var promise = new WhenAllPromise(array);
+        return new LuminTask(LuminTaskSourceCore<bool>.MethodTable, promise._core, promise._core->Id);
+    }
+    
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static unsafe LuminTask<T[]> WhenAll<T>(LuminTask<T>[]? tasks)
+    {
+        if (tasks == null || tasks.Length == 0)
+        {
+            return LuminTask<T[]>.FromResult([]);
+        }
+        
+        var promise = new WhenAllPromise<T>(tasks);
+        return new LuminTask<T[]>(LuminTaskSourceCore<T[]>.MethodTable, promise._core, promise._core->Id);
+    }
+    
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static unsafe LuminTask<T[]> WhenAll<T>(IEnumerable<LuminTask<T>>? tasks)
+    {
+        if (tasks == null)
+            return LuminTask<T[]>.FromResult([]);
+        
+        var array = tasks.ToArray();
+        
+        if (array.Length == 0)
+            return LuminTask<T[]>.FromResult([]);
+        
+        var promise = new WhenAllPromise<T>(array);
+        return new LuminTask<T[]>(LuminTaskSourceCore<T[]>.MethodTable, promise._core, promise._core->Id);
+    }
+    
+    
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static unsafe LuminTask<(T1, T2)> WhenAll<T1, T2>(in LuminTask<T1> task1, in LuminTask<T2> task2)
     {

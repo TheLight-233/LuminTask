@@ -15,4 +15,14 @@ public static class LuminTaskMarshal
         return ref Unsafe.Add(ref LuminTaskBag.TaskBag.AsSpan().GetPinnableReference(), (nint)(uint)index);
 #endif
     }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static ref T GetArrayDataReference<T>(T[] array)
+    {
+#if NET5_0_OR_GREATER
+        return ref MemoryMarshal.GetArrayDataReference(array);
+#else
+        return ref MemoryMarshal.GetReference(array.AsSpan());
+#endif
+    }
 }

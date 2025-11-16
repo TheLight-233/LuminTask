@@ -1,6 +1,8 @@
 ﻿
 using System;
 using System.Threading;
+using System.Collections.Generic;
+using System.Linq;
 
 namespace LuminThread.TaskSource.Promise;
 
@@ -62,12 +64,14 @@ public sealed unsafe class WhenAllPromise<T1, T2>
         catch (Exception ex)
         {
             LuminTaskSourceCore<(T1, T2)>.TrySetException(self.core, ex);
+            LuminTaskSourceCore<(T1, T2)>.Dispose(self.core);
             return;
         }
                 
         if (Interlocked.Increment(ref self.completedCount) == 2)
         {
             LuminTaskSourceCore<(T1, T2)>.TrySetResult(self.core, (self.t1, self.t2));
+            LuminTaskSourceCore<(T1, T2)>.Dispose(self.core);
         }
     }
 
@@ -80,12 +84,14 @@ public sealed unsafe class WhenAllPromise<T1, T2>
         catch (Exception ex)
         {
             LuminTaskSourceCore<(T1, T2)>.TrySetException(self.core, ex);
+            LuminTaskSourceCore<(T1, T2)>.Dispose(self.core);
             return;
         }
                 
         if (Interlocked.Increment(ref self.completedCount) == 2)
         {
             LuminTaskSourceCore<(T1, T2)>.TrySetResult(self.core, (self.t1, self.t2));
+            LuminTaskSourceCore<(T1, T2)>.Dispose(self.core);
         }
     }
 
@@ -165,12 +171,14 @@ public sealed unsafe class WhenAllPromise<T1, T2, T3>
         catch (Exception ex)
         {
             LuminTaskSourceCore<(T1, T2, T3)>.TrySetException(self.core, ex);
+            LuminTaskSourceCore<(T1, T2, T3)>.Dispose(self.core);
             return;
         }
                 
         if (Interlocked.Increment(ref self.completedCount) == 3)
         {
             LuminTaskSourceCore<(T1, T2, T3)>.TrySetResult(self.core, (self.t1, self.t2, self.t3));
+            LuminTaskSourceCore<(T1, T2, T3)>.Dispose(self.core);
         }
     }
 
@@ -183,12 +191,14 @@ public sealed unsafe class WhenAllPromise<T1, T2, T3>
         catch (Exception ex)
         {
             LuminTaskSourceCore<(T1, T2, T3)>.TrySetException(self.core, ex);
+            LuminTaskSourceCore<(T1, T2, T3)>.Dispose(self.core);
             return;
         }
                 
         if (Interlocked.Increment(ref self.completedCount) == 3)
         {
             LuminTaskSourceCore<(T1, T2, T3)>.TrySetResult(self.core, (self.t1, self.t2, self.t3));
+            LuminTaskSourceCore<(T1, T2, T3)>.Dispose(self.core);
         }
     }
 
@@ -201,12 +211,14 @@ public sealed unsafe class WhenAllPromise<T1, T2, T3>
         catch (Exception ex)
         {
             LuminTaskSourceCore<(T1, T2, T3)>.TrySetException(self.core, ex);
+            LuminTaskSourceCore<(T1, T2, T3)>.Dispose(self.core);
             return;
         }
                 
         if (Interlocked.Increment(ref self.completedCount) == 3)
         {
             LuminTaskSourceCore<(T1, T2, T3)>.TrySetResult(self.core, (self.t1, self.t2, self.t3));
+            LuminTaskSourceCore<(T1, T2, T3)>.Dispose(self.core);
         }
     }
 
@@ -302,12 +314,14 @@ public sealed unsafe class WhenAllPromise<T1, T2, T3, T4>
         catch (Exception ex)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4)>.TrySetException(self.core, ex);
+            LuminTaskSourceCore<(T1, T2, T3, T4)>.Dispose(self.core);
             return;
         }
                 
         if (Interlocked.Increment(ref self.completedCount) == 4)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4)>.TrySetResult(self.core, (self.t1, self.t2, self.t3, self.t4));
+            LuminTaskSourceCore<(T1, T2, T3, T4)>.Dispose(self.core);
         }
     }
 
@@ -320,12 +334,14 @@ public sealed unsafe class WhenAllPromise<T1, T2, T3, T4>
         catch (Exception ex)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4)>.TrySetException(self.core, ex);
+            LuminTaskSourceCore<(T1, T2, T3, T4)>.Dispose(self.core);
             return;
         }
                 
         if (Interlocked.Increment(ref self.completedCount) == 4)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4)>.TrySetResult(self.core, (self.t1, self.t2, self.t3, self.t4));
+            LuminTaskSourceCore<(T1, T2, T3, T4)>.Dispose(self.core);
         }
     }
 
@@ -338,12 +354,14 @@ public sealed unsafe class WhenAllPromise<T1, T2, T3, T4>
         catch (Exception ex)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4)>.TrySetException(self.core, ex);
+            LuminTaskSourceCore<(T1, T2, T3, T4)>.Dispose(self.core);
             return;
         }
                 
         if (Interlocked.Increment(ref self.completedCount) == 4)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4)>.TrySetResult(self.core, (self.t1, self.t2, self.t3, self.t4));
+            LuminTaskSourceCore<(T1, T2, T3, T4)>.Dispose(self.core);
         }
     }
 
@@ -356,12 +374,14 @@ public sealed unsafe class WhenAllPromise<T1, T2, T3, T4>
         catch (Exception ex)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4)>.TrySetException(self.core, ex);
+            LuminTaskSourceCore<(T1, T2, T3, T4)>.Dispose(self.core);
             return;
         }
                 
         if (Interlocked.Increment(ref self.completedCount) == 4)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4)>.TrySetResult(self.core, (self.t1, self.t2, self.t3, self.t4));
+            LuminTaskSourceCore<(T1, T2, T3, T4)>.Dispose(self.core);
         }
     }
 
@@ -473,12 +493,14 @@ public sealed unsafe class WhenAllPromise<T1, T2, T3, T4, T5>
         catch (Exception ex)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5)>.TrySetException(self.core, ex);
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5)>.Dispose(self.core);
             return;
         }
                 
         if (Interlocked.Increment(ref self.completedCount) == 5)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5)>.TrySetResult(self.core, (self.t1, self.t2, self.t3, self.t4, self.t5));
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5)>.Dispose(self.core);
         }
     }
 
@@ -491,12 +513,14 @@ public sealed unsafe class WhenAllPromise<T1, T2, T3, T4, T5>
         catch (Exception ex)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5)>.TrySetException(self.core, ex);
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5)>.Dispose(self.core);
             return;
         }
                 
         if (Interlocked.Increment(ref self.completedCount) == 5)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5)>.TrySetResult(self.core, (self.t1, self.t2, self.t3, self.t4, self.t5));
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5)>.Dispose(self.core);
         }
     }
 
@@ -509,12 +533,14 @@ public sealed unsafe class WhenAllPromise<T1, T2, T3, T4, T5>
         catch (Exception ex)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5)>.TrySetException(self.core, ex);
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5)>.Dispose(self.core);
             return;
         }
                 
         if (Interlocked.Increment(ref self.completedCount) == 5)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5)>.TrySetResult(self.core, (self.t1, self.t2, self.t3, self.t4, self.t5));
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5)>.Dispose(self.core);
         }
     }
 
@@ -527,12 +553,14 @@ public sealed unsafe class WhenAllPromise<T1, T2, T3, T4, T5>
         catch (Exception ex)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5)>.TrySetException(self.core, ex);
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5)>.Dispose(self.core);
             return;
         }
                 
         if (Interlocked.Increment(ref self.completedCount) == 5)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5)>.TrySetResult(self.core, (self.t1, self.t2, self.t3, self.t4, self.t5));
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5)>.Dispose(self.core);
         }
     }
 
@@ -545,12 +573,14 @@ public sealed unsafe class WhenAllPromise<T1, T2, T3, T4, T5>
         catch (Exception ex)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5)>.TrySetException(self.core, ex);
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5)>.Dispose(self.core);
             return;
         }
                 
         if (Interlocked.Increment(ref self.completedCount) == 5)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5)>.TrySetResult(self.core, (self.t1, self.t2, self.t3, self.t4, self.t5));
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5)>.Dispose(self.core);
         }
     }
 
@@ -678,12 +708,14 @@ public sealed unsafe class WhenAllPromise<T1, T2, T3, T4, T5, T6>
         catch (Exception ex)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6)>.TrySetException(self.core, ex);
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6)>.Dispose(self.core);
             return;
         }
                 
         if (Interlocked.Increment(ref self.completedCount) == 6)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6)>.TrySetResult(self.core, (self.t1, self.t2, self.t3, self.t4, self.t5, self.t6));
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6)>.Dispose(self.core);
         }
     }
 
@@ -696,12 +728,14 @@ public sealed unsafe class WhenAllPromise<T1, T2, T3, T4, T5, T6>
         catch (Exception ex)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6)>.TrySetException(self.core, ex);
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6)>.Dispose(self.core);
             return;
         }
                 
         if (Interlocked.Increment(ref self.completedCount) == 6)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6)>.TrySetResult(self.core, (self.t1, self.t2, self.t3, self.t4, self.t5, self.t6));
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6)>.Dispose(self.core);
         }
     }
 
@@ -714,12 +748,14 @@ public sealed unsafe class WhenAllPromise<T1, T2, T3, T4, T5, T6>
         catch (Exception ex)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6)>.TrySetException(self.core, ex);
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6)>.Dispose(self.core);
             return;
         }
                 
         if (Interlocked.Increment(ref self.completedCount) == 6)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6)>.TrySetResult(self.core, (self.t1, self.t2, self.t3, self.t4, self.t5, self.t6));
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6)>.Dispose(self.core);
         }
     }
 
@@ -732,12 +768,14 @@ public sealed unsafe class WhenAllPromise<T1, T2, T3, T4, T5, T6>
         catch (Exception ex)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6)>.TrySetException(self.core, ex);
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6)>.Dispose(self.core);
             return;
         }
                 
         if (Interlocked.Increment(ref self.completedCount) == 6)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6)>.TrySetResult(self.core, (self.t1, self.t2, self.t3, self.t4, self.t5, self.t6));
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6)>.Dispose(self.core);
         }
     }
 
@@ -750,12 +788,14 @@ public sealed unsafe class WhenAllPromise<T1, T2, T3, T4, T5, T6>
         catch (Exception ex)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6)>.TrySetException(self.core, ex);
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6)>.Dispose(self.core);
             return;
         }
                 
         if (Interlocked.Increment(ref self.completedCount) == 6)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6)>.TrySetResult(self.core, (self.t1, self.t2, self.t3, self.t4, self.t5, self.t6));
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6)>.Dispose(self.core);
         }
     }
 
@@ -768,12 +808,14 @@ public sealed unsafe class WhenAllPromise<T1, T2, T3, T4, T5, T6>
         catch (Exception ex)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6)>.TrySetException(self.core, ex);
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6)>.Dispose(self.core);
             return;
         }
                 
         if (Interlocked.Increment(ref self.completedCount) == 6)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6)>.TrySetResult(self.core, (self.t1, self.t2, self.t3, self.t4, self.t5, self.t6));
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6)>.Dispose(self.core);
         }
     }
 
@@ -917,12 +959,14 @@ public sealed unsafe class WhenAllPromise<T1, T2, T3, T4, T5, T6, T7>
         catch (Exception ex)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7)>.TrySetException(self.core, ex);
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7)>.Dispose(self.core);
             return;
         }
                 
         if (Interlocked.Increment(ref self.completedCount) == 7)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7)>.TrySetResult(self.core, (self.t1, self.t2, self.t3, self.t4, self.t5, self.t6, self.t7));
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7)>.Dispose(self.core);
         }
     }
 
@@ -935,12 +979,14 @@ public sealed unsafe class WhenAllPromise<T1, T2, T3, T4, T5, T6, T7>
         catch (Exception ex)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7)>.TrySetException(self.core, ex);
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7)>.Dispose(self.core);
             return;
         }
                 
         if (Interlocked.Increment(ref self.completedCount) == 7)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7)>.TrySetResult(self.core, (self.t1, self.t2, self.t3, self.t4, self.t5, self.t6, self.t7));
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7)>.Dispose(self.core);
         }
     }
 
@@ -953,12 +999,14 @@ public sealed unsafe class WhenAllPromise<T1, T2, T3, T4, T5, T6, T7>
         catch (Exception ex)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7)>.TrySetException(self.core, ex);
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7)>.Dispose(self.core);
             return;
         }
                 
         if (Interlocked.Increment(ref self.completedCount) == 7)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7)>.TrySetResult(self.core, (self.t1, self.t2, self.t3, self.t4, self.t5, self.t6, self.t7));
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7)>.Dispose(self.core);
         }
     }
 
@@ -971,12 +1019,14 @@ public sealed unsafe class WhenAllPromise<T1, T2, T3, T4, T5, T6, T7>
         catch (Exception ex)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7)>.TrySetException(self.core, ex);
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7)>.Dispose(self.core);
             return;
         }
                 
         if (Interlocked.Increment(ref self.completedCount) == 7)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7)>.TrySetResult(self.core, (self.t1, self.t2, self.t3, self.t4, self.t5, self.t6, self.t7));
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7)>.Dispose(self.core);
         }
     }
 
@@ -989,12 +1039,14 @@ public sealed unsafe class WhenAllPromise<T1, T2, T3, T4, T5, T6, T7>
         catch (Exception ex)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7)>.TrySetException(self.core, ex);
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7)>.Dispose(self.core);
             return;
         }
                 
         if (Interlocked.Increment(ref self.completedCount) == 7)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7)>.TrySetResult(self.core, (self.t1, self.t2, self.t3, self.t4, self.t5, self.t6, self.t7));
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7)>.Dispose(self.core);
         }
     }
 
@@ -1007,12 +1059,14 @@ public sealed unsafe class WhenAllPromise<T1, T2, T3, T4, T5, T6, T7>
         catch (Exception ex)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7)>.TrySetException(self.core, ex);
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7)>.Dispose(self.core);
             return;
         }
                 
         if (Interlocked.Increment(ref self.completedCount) == 7)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7)>.TrySetResult(self.core, (self.t1, self.t2, self.t3, self.t4, self.t5, self.t6, self.t7));
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7)>.Dispose(self.core);
         }
     }
 
@@ -1025,12 +1079,14 @@ public sealed unsafe class WhenAllPromise<T1, T2, T3, T4, T5, T6, T7>
         catch (Exception ex)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7)>.TrySetException(self.core, ex);
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7)>.Dispose(self.core);
             return;
         }
                 
         if (Interlocked.Increment(ref self.completedCount) == 7)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7)>.TrySetResult(self.core, (self.t1, self.t2, self.t3, self.t4, self.t5, self.t6, self.t7));
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7)>.Dispose(self.core);
         }
     }
 
@@ -1190,12 +1246,14 @@ public sealed unsafe class WhenAllPromise<T1, T2, T3, T4, T5, T6, T7, T8>
         catch (Exception ex)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8)>.TrySetException(self.core, ex);
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8)>.Dispose(self.core);
             return;
         }
                 
         if (Interlocked.Increment(ref self.completedCount) == 8)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8)>.TrySetResult(self.core, (self.t1, self.t2, self.t3, self.t4, self.t5, self.t6, self.t7, self.t8));
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8)>.Dispose(self.core);
         }
     }
 
@@ -1208,12 +1266,14 @@ public sealed unsafe class WhenAllPromise<T1, T2, T3, T4, T5, T6, T7, T8>
         catch (Exception ex)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8)>.TrySetException(self.core, ex);
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8)>.Dispose(self.core);
             return;
         }
                 
         if (Interlocked.Increment(ref self.completedCount) == 8)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8)>.TrySetResult(self.core, (self.t1, self.t2, self.t3, self.t4, self.t5, self.t6, self.t7, self.t8));
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8)>.Dispose(self.core);
         }
     }
 
@@ -1226,12 +1286,14 @@ public sealed unsafe class WhenAllPromise<T1, T2, T3, T4, T5, T6, T7, T8>
         catch (Exception ex)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8)>.TrySetException(self.core, ex);
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8)>.Dispose(self.core);
             return;
         }
                 
         if (Interlocked.Increment(ref self.completedCount) == 8)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8)>.TrySetResult(self.core, (self.t1, self.t2, self.t3, self.t4, self.t5, self.t6, self.t7, self.t8));
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8)>.Dispose(self.core);
         }
     }
 
@@ -1244,12 +1306,14 @@ public sealed unsafe class WhenAllPromise<T1, T2, T3, T4, T5, T6, T7, T8>
         catch (Exception ex)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8)>.TrySetException(self.core, ex);
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8)>.Dispose(self.core);
             return;
         }
                 
         if (Interlocked.Increment(ref self.completedCount) == 8)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8)>.TrySetResult(self.core, (self.t1, self.t2, self.t3, self.t4, self.t5, self.t6, self.t7, self.t8));
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8)>.Dispose(self.core);
         }
     }
 
@@ -1262,12 +1326,14 @@ public sealed unsafe class WhenAllPromise<T1, T2, T3, T4, T5, T6, T7, T8>
         catch (Exception ex)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8)>.TrySetException(self.core, ex);
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8)>.Dispose(self.core);
             return;
         }
                 
         if (Interlocked.Increment(ref self.completedCount) == 8)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8)>.TrySetResult(self.core, (self.t1, self.t2, self.t3, self.t4, self.t5, self.t6, self.t7, self.t8));
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8)>.Dispose(self.core);
         }
     }
 
@@ -1280,12 +1346,14 @@ public sealed unsafe class WhenAllPromise<T1, T2, T3, T4, T5, T6, T7, T8>
         catch (Exception ex)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8)>.TrySetException(self.core, ex);
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8)>.Dispose(self.core);
             return;
         }
                 
         if (Interlocked.Increment(ref self.completedCount) == 8)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8)>.TrySetResult(self.core, (self.t1, self.t2, self.t3, self.t4, self.t5, self.t6, self.t7, self.t8));
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8)>.Dispose(self.core);
         }
     }
 
@@ -1298,12 +1366,14 @@ public sealed unsafe class WhenAllPromise<T1, T2, T3, T4, T5, T6, T7, T8>
         catch (Exception ex)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8)>.TrySetException(self.core, ex);
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8)>.Dispose(self.core);
             return;
         }
                 
         if (Interlocked.Increment(ref self.completedCount) == 8)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8)>.TrySetResult(self.core, (self.t1, self.t2, self.t3, self.t4, self.t5, self.t6, self.t7, self.t8));
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8)>.Dispose(self.core);
         }
     }
 
@@ -1316,12 +1386,14 @@ public sealed unsafe class WhenAllPromise<T1, T2, T3, T4, T5, T6, T7, T8>
         catch (Exception ex)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8)>.TrySetException(self.core, ex);
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8)>.Dispose(self.core);
             return;
         }
                 
         if (Interlocked.Increment(ref self.completedCount) == 8)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8)>.TrySetResult(self.core, (self.t1, self.t2, self.t3, self.t4, self.t5, self.t6, self.t7, self.t8));
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8)>.Dispose(self.core);
         }
     }
 
@@ -1497,12 +1569,14 @@ public sealed unsafe class WhenAllPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9>
         catch (Exception ex)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9)>.TrySetException(self.core, ex);
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9)>.Dispose(self.core);
             return;
         }
                 
         if (Interlocked.Increment(ref self.completedCount) == 9)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9)>.TrySetResult(self.core, (self.t1, self.t2, self.t3, self.t4, self.t5, self.t6, self.t7, self.t8, self.t9));
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9)>.Dispose(self.core);
         }
     }
 
@@ -1515,12 +1589,14 @@ public sealed unsafe class WhenAllPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9>
         catch (Exception ex)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9)>.TrySetException(self.core, ex);
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9)>.Dispose(self.core);
             return;
         }
                 
         if (Interlocked.Increment(ref self.completedCount) == 9)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9)>.TrySetResult(self.core, (self.t1, self.t2, self.t3, self.t4, self.t5, self.t6, self.t7, self.t8, self.t9));
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9)>.Dispose(self.core);
         }
     }
 
@@ -1533,12 +1609,14 @@ public sealed unsafe class WhenAllPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9>
         catch (Exception ex)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9)>.TrySetException(self.core, ex);
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9)>.Dispose(self.core);
             return;
         }
                 
         if (Interlocked.Increment(ref self.completedCount) == 9)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9)>.TrySetResult(self.core, (self.t1, self.t2, self.t3, self.t4, self.t5, self.t6, self.t7, self.t8, self.t9));
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9)>.Dispose(self.core);
         }
     }
 
@@ -1551,12 +1629,14 @@ public sealed unsafe class WhenAllPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9>
         catch (Exception ex)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9)>.TrySetException(self.core, ex);
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9)>.Dispose(self.core);
             return;
         }
                 
         if (Interlocked.Increment(ref self.completedCount) == 9)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9)>.TrySetResult(self.core, (self.t1, self.t2, self.t3, self.t4, self.t5, self.t6, self.t7, self.t8, self.t9));
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9)>.Dispose(self.core);
         }
     }
 
@@ -1569,12 +1649,14 @@ public sealed unsafe class WhenAllPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9>
         catch (Exception ex)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9)>.TrySetException(self.core, ex);
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9)>.Dispose(self.core);
             return;
         }
                 
         if (Interlocked.Increment(ref self.completedCount) == 9)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9)>.TrySetResult(self.core, (self.t1, self.t2, self.t3, self.t4, self.t5, self.t6, self.t7, self.t8, self.t9));
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9)>.Dispose(self.core);
         }
     }
 
@@ -1587,12 +1669,14 @@ public sealed unsafe class WhenAllPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9>
         catch (Exception ex)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9)>.TrySetException(self.core, ex);
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9)>.Dispose(self.core);
             return;
         }
                 
         if (Interlocked.Increment(ref self.completedCount) == 9)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9)>.TrySetResult(self.core, (self.t1, self.t2, self.t3, self.t4, self.t5, self.t6, self.t7, self.t8, self.t9));
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9)>.Dispose(self.core);
         }
     }
 
@@ -1605,12 +1689,14 @@ public sealed unsafe class WhenAllPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9>
         catch (Exception ex)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9)>.TrySetException(self.core, ex);
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9)>.Dispose(self.core);
             return;
         }
                 
         if (Interlocked.Increment(ref self.completedCount) == 9)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9)>.TrySetResult(self.core, (self.t1, self.t2, self.t3, self.t4, self.t5, self.t6, self.t7, self.t8, self.t9));
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9)>.Dispose(self.core);
         }
     }
 
@@ -1623,12 +1709,14 @@ public sealed unsafe class WhenAllPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9>
         catch (Exception ex)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9)>.TrySetException(self.core, ex);
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9)>.Dispose(self.core);
             return;
         }
                 
         if (Interlocked.Increment(ref self.completedCount) == 9)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9)>.TrySetResult(self.core, (self.t1, self.t2, self.t3, self.t4, self.t5, self.t6, self.t7, self.t8, self.t9));
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9)>.Dispose(self.core);
         }
     }
 
@@ -1641,12 +1729,14 @@ public sealed unsafe class WhenAllPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9>
         catch (Exception ex)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9)>.TrySetException(self.core, ex);
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9)>.Dispose(self.core);
             return;
         }
                 
         if (Interlocked.Increment(ref self.completedCount) == 9)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9)>.TrySetResult(self.core, (self.t1, self.t2, self.t3, self.t4, self.t5, self.t6, self.t7, self.t8, self.t9));
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9)>.Dispose(self.core);
         }
     }
 
@@ -1838,12 +1928,14 @@ public sealed unsafe class WhenAllPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         catch (Exception ex)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10)>.TrySetException(self.core, ex);
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10)>.Dispose(self.core);
             return;
         }
                 
         if (Interlocked.Increment(ref self.completedCount) == 10)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10)>.TrySetResult(self.core, (self.t1, self.t2, self.t3, self.t4, self.t5, self.t6, self.t7, self.t8, self.t9, self.t10));
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10)>.Dispose(self.core);
         }
     }
 
@@ -1856,12 +1948,14 @@ public sealed unsafe class WhenAllPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         catch (Exception ex)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10)>.TrySetException(self.core, ex);
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10)>.Dispose(self.core);
             return;
         }
                 
         if (Interlocked.Increment(ref self.completedCount) == 10)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10)>.TrySetResult(self.core, (self.t1, self.t2, self.t3, self.t4, self.t5, self.t6, self.t7, self.t8, self.t9, self.t10));
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10)>.Dispose(self.core);
         }
     }
 
@@ -1874,12 +1968,14 @@ public sealed unsafe class WhenAllPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         catch (Exception ex)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10)>.TrySetException(self.core, ex);
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10)>.Dispose(self.core);
             return;
         }
                 
         if (Interlocked.Increment(ref self.completedCount) == 10)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10)>.TrySetResult(self.core, (self.t1, self.t2, self.t3, self.t4, self.t5, self.t6, self.t7, self.t8, self.t9, self.t10));
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10)>.Dispose(self.core);
         }
     }
 
@@ -1892,12 +1988,14 @@ public sealed unsafe class WhenAllPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         catch (Exception ex)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10)>.TrySetException(self.core, ex);
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10)>.Dispose(self.core);
             return;
         }
                 
         if (Interlocked.Increment(ref self.completedCount) == 10)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10)>.TrySetResult(self.core, (self.t1, self.t2, self.t3, self.t4, self.t5, self.t6, self.t7, self.t8, self.t9, self.t10));
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10)>.Dispose(self.core);
         }
     }
 
@@ -1910,12 +2008,14 @@ public sealed unsafe class WhenAllPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         catch (Exception ex)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10)>.TrySetException(self.core, ex);
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10)>.Dispose(self.core);
             return;
         }
                 
         if (Interlocked.Increment(ref self.completedCount) == 10)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10)>.TrySetResult(self.core, (self.t1, self.t2, self.t3, self.t4, self.t5, self.t6, self.t7, self.t8, self.t9, self.t10));
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10)>.Dispose(self.core);
         }
     }
 
@@ -1928,12 +2028,14 @@ public sealed unsafe class WhenAllPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         catch (Exception ex)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10)>.TrySetException(self.core, ex);
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10)>.Dispose(self.core);
             return;
         }
                 
         if (Interlocked.Increment(ref self.completedCount) == 10)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10)>.TrySetResult(self.core, (self.t1, self.t2, self.t3, self.t4, self.t5, self.t6, self.t7, self.t8, self.t9, self.t10));
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10)>.Dispose(self.core);
         }
     }
 
@@ -1946,12 +2048,14 @@ public sealed unsafe class WhenAllPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         catch (Exception ex)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10)>.TrySetException(self.core, ex);
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10)>.Dispose(self.core);
             return;
         }
                 
         if (Interlocked.Increment(ref self.completedCount) == 10)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10)>.TrySetResult(self.core, (self.t1, self.t2, self.t3, self.t4, self.t5, self.t6, self.t7, self.t8, self.t9, self.t10));
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10)>.Dispose(self.core);
         }
     }
 
@@ -1964,12 +2068,14 @@ public sealed unsafe class WhenAllPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         catch (Exception ex)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10)>.TrySetException(self.core, ex);
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10)>.Dispose(self.core);
             return;
         }
                 
         if (Interlocked.Increment(ref self.completedCount) == 10)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10)>.TrySetResult(self.core, (self.t1, self.t2, self.t3, self.t4, self.t5, self.t6, self.t7, self.t8, self.t9, self.t10));
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10)>.Dispose(self.core);
         }
     }
 
@@ -1982,12 +2088,14 @@ public sealed unsafe class WhenAllPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         catch (Exception ex)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10)>.TrySetException(self.core, ex);
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10)>.Dispose(self.core);
             return;
         }
                 
         if (Interlocked.Increment(ref self.completedCount) == 10)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10)>.TrySetResult(self.core, (self.t1, self.t2, self.t3, self.t4, self.t5, self.t6, self.t7, self.t8, self.t9, self.t10));
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10)>.Dispose(self.core);
         }
     }
 
@@ -2000,12 +2108,14 @@ public sealed unsafe class WhenAllPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         catch (Exception ex)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10)>.TrySetException(self.core, ex);
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10)>.Dispose(self.core);
             return;
         }
                 
         if (Interlocked.Increment(ref self.completedCount) == 10)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10)>.TrySetResult(self.core, (self.t1, self.t2, self.t3, self.t4, self.t5, self.t6, self.t7, self.t8, self.t9, self.t10));
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10)>.Dispose(self.core);
         }
     }
 
@@ -2213,12 +2323,14 @@ public sealed unsafe class WhenAllPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         catch (Exception ex)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11)>.TrySetException(self.core, ex);
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11)>.Dispose(self.core);
             return;
         }
                 
         if (Interlocked.Increment(ref self.completedCount) == 11)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11)>.TrySetResult(self.core, (self.t1, self.t2, self.t3, self.t4, self.t5, self.t6, self.t7, self.t8, self.t9, self.t10, self.t11));
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11)>.Dispose(self.core);
         }
     }
 
@@ -2231,12 +2343,14 @@ public sealed unsafe class WhenAllPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         catch (Exception ex)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11)>.TrySetException(self.core, ex);
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11)>.Dispose(self.core);
             return;
         }
                 
         if (Interlocked.Increment(ref self.completedCount) == 11)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11)>.TrySetResult(self.core, (self.t1, self.t2, self.t3, self.t4, self.t5, self.t6, self.t7, self.t8, self.t9, self.t10, self.t11));
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11)>.Dispose(self.core);
         }
     }
 
@@ -2249,12 +2363,14 @@ public sealed unsafe class WhenAllPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         catch (Exception ex)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11)>.TrySetException(self.core, ex);
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11)>.Dispose(self.core);
             return;
         }
                 
         if (Interlocked.Increment(ref self.completedCount) == 11)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11)>.TrySetResult(self.core, (self.t1, self.t2, self.t3, self.t4, self.t5, self.t6, self.t7, self.t8, self.t9, self.t10, self.t11));
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11)>.Dispose(self.core);
         }
     }
 
@@ -2267,12 +2383,14 @@ public sealed unsafe class WhenAllPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         catch (Exception ex)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11)>.TrySetException(self.core, ex);
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11)>.Dispose(self.core);
             return;
         }
                 
         if (Interlocked.Increment(ref self.completedCount) == 11)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11)>.TrySetResult(self.core, (self.t1, self.t2, self.t3, self.t4, self.t5, self.t6, self.t7, self.t8, self.t9, self.t10, self.t11));
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11)>.Dispose(self.core);
         }
     }
 
@@ -2285,12 +2403,14 @@ public sealed unsafe class WhenAllPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         catch (Exception ex)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11)>.TrySetException(self.core, ex);
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11)>.Dispose(self.core);
             return;
         }
                 
         if (Interlocked.Increment(ref self.completedCount) == 11)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11)>.TrySetResult(self.core, (self.t1, self.t2, self.t3, self.t4, self.t5, self.t6, self.t7, self.t8, self.t9, self.t10, self.t11));
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11)>.Dispose(self.core);
         }
     }
 
@@ -2303,12 +2423,14 @@ public sealed unsafe class WhenAllPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         catch (Exception ex)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11)>.TrySetException(self.core, ex);
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11)>.Dispose(self.core);
             return;
         }
                 
         if (Interlocked.Increment(ref self.completedCount) == 11)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11)>.TrySetResult(self.core, (self.t1, self.t2, self.t3, self.t4, self.t5, self.t6, self.t7, self.t8, self.t9, self.t10, self.t11));
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11)>.Dispose(self.core);
         }
     }
 
@@ -2321,12 +2443,14 @@ public sealed unsafe class WhenAllPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         catch (Exception ex)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11)>.TrySetException(self.core, ex);
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11)>.Dispose(self.core);
             return;
         }
                 
         if (Interlocked.Increment(ref self.completedCount) == 11)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11)>.TrySetResult(self.core, (self.t1, self.t2, self.t3, self.t4, self.t5, self.t6, self.t7, self.t8, self.t9, self.t10, self.t11));
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11)>.Dispose(self.core);
         }
     }
 
@@ -2339,12 +2463,14 @@ public sealed unsafe class WhenAllPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         catch (Exception ex)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11)>.TrySetException(self.core, ex);
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11)>.Dispose(self.core);
             return;
         }
                 
         if (Interlocked.Increment(ref self.completedCount) == 11)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11)>.TrySetResult(self.core, (self.t1, self.t2, self.t3, self.t4, self.t5, self.t6, self.t7, self.t8, self.t9, self.t10, self.t11));
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11)>.Dispose(self.core);
         }
     }
 
@@ -2357,12 +2483,14 @@ public sealed unsafe class WhenAllPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         catch (Exception ex)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11)>.TrySetException(self.core, ex);
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11)>.Dispose(self.core);
             return;
         }
                 
         if (Interlocked.Increment(ref self.completedCount) == 11)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11)>.TrySetResult(self.core, (self.t1, self.t2, self.t3, self.t4, self.t5, self.t6, self.t7, self.t8, self.t9, self.t10, self.t11));
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11)>.Dispose(self.core);
         }
     }
 
@@ -2375,12 +2503,14 @@ public sealed unsafe class WhenAllPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         catch (Exception ex)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11)>.TrySetException(self.core, ex);
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11)>.Dispose(self.core);
             return;
         }
                 
         if (Interlocked.Increment(ref self.completedCount) == 11)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11)>.TrySetResult(self.core, (self.t1, self.t2, self.t3, self.t4, self.t5, self.t6, self.t7, self.t8, self.t9, self.t10, self.t11));
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11)>.Dispose(self.core);
         }
     }
 
@@ -2393,12 +2523,14 @@ public sealed unsafe class WhenAllPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         catch (Exception ex)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11)>.TrySetException(self.core, ex);
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11)>.Dispose(self.core);
             return;
         }
                 
         if (Interlocked.Increment(ref self.completedCount) == 11)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11)>.TrySetResult(self.core, (self.t1, self.t2, self.t3, self.t4, self.t5, self.t6, self.t7, self.t8, self.t9, self.t10, self.t11));
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11)>.Dispose(self.core);
         }
     }
 
@@ -2622,12 +2754,14 @@ public sealed unsafe class WhenAllPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         catch (Exception ex)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12)>.TrySetException(self.core, ex);
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12)>.Dispose(self.core);
             return;
         }
                 
         if (Interlocked.Increment(ref self.completedCount) == 12)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12)>.TrySetResult(self.core, (self.t1, self.t2, self.t3, self.t4, self.t5, self.t6, self.t7, self.t8, self.t9, self.t10, self.t11, self.t12));
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12)>.Dispose(self.core);
         }
     }
 
@@ -2640,12 +2774,14 @@ public sealed unsafe class WhenAllPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         catch (Exception ex)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12)>.TrySetException(self.core, ex);
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12)>.Dispose(self.core);
             return;
         }
                 
         if (Interlocked.Increment(ref self.completedCount) == 12)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12)>.TrySetResult(self.core, (self.t1, self.t2, self.t3, self.t4, self.t5, self.t6, self.t7, self.t8, self.t9, self.t10, self.t11, self.t12));
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12)>.Dispose(self.core);
         }
     }
 
@@ -2658,12 +2794,14 @@ public sealed unsafe class WhenAllPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         catch (Exception ex)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12)>.TrySetException(self.core, ex);
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12)>.Dispose(self.core);
             return;
         }
                 
         if (Interlocked.Increment(ref self.completedCount) == 12)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12)>.TrySetResult(self.core, (self.t1, self.t2, self.t3, self.t4, self.t5, self.t6, self.t7, self.t8, self.t9, self.t10, self.t11, self.t12));
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12)>.Dispose(self.core);
         }
     }
 
@@ -2676,12 +2814,14 @@ public sealed unsafe class WhenAllPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         catch (Exception ex)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12)>.TrySetException(self.core, ex);
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12)>.Dispose(self.core);
             return;
         }
                 
         if (Interlocked.Increment(ref self.completedCount) == 12)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12)>.TrySetResult(self.core, (self.t1, self.t2, self.t3, self.t4, self.t5, self.t6, self.t7, self.t8, self.t9, self.t10, self.t11, self.t12));
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12)>.Dispose(self.core);
         }
     }
 
@@ -2694,12 +2834,14 @@ public sealed unsafe class WhenAllPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         catch (Exception ex)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12)>.TrySetException(self.core, ex);
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12)>.Dispose(self.core);
             return;
         }
                 
         if (Interlocked.Increment(ref self.completedCount) == 12)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12)>.TrySetResult(self.core, (self.t1, self.t2, self.t3, self.t4, self.t5, self.t6, self.t7, self.t8, self.t9, self.t10, self.t11, self.t12));
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12)>.Dispose(self.core);
         }
     }
 
@@ -2712,12 +2854,14 @@ public sealed unsafe class WhenAllPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         catch (Exception ex)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12)>.TrySetException(self.core, ex);
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12)>.Dispose(self.core);
             return;
         }
                 
         if (Interlocked.Increment(ref self.completedCount) == 12)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12)>.TrySetResult(self.core, (self.t1, self.t2, self.t3, self.t4, self.t5, self.t6, self.t7, self.t8, self.t9, self.t10, self.t11, self.t12));
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12)>.Dispose(self.core);
         }
     }
 
@@ -2730,12 +2874,14 @@ public sealed unsafe class WhenAllPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         catch (Exception ex)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12)>.TrySetException(self.core, ex);
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12)>.Dispose(self.core);
             return;
         }
                 
         if (Interlocked.Increment(ref self.completedCount) == 12)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12)>.TrySetResult(self.core, (self.t1, self.t2, self.t3, self.t4, self.t5, self.t6, self.t7, self.t8, self.t9, self.t10, self.t11, self.t12));
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12)>.Dispose(self.core);
         }
     }
 
@@ -2748,12 +2894,14 @@ public sealed unsafe class WhenAllPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         catch (Exception ex)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12)>.TrySetException(self.core, ex);
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12)>.Dispose(self.core);
             return;
         }
                 
         if (Interlocked.Increment(ref self.completedCount) == 12)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12)>.TrySetResult(self.core, (self.t1, self.t2, self.t3, self.t4, self.t5, self.t6, self.t7, self.t8, self.t9, self.t10, self.t11, self.t12));
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12)>.Dispose(self.core);
         }
     }
 
@@ -2766,12 +2914,14 @@ public sealed unsafe class WhenAllPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         catch (Exception ex)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12)>.TrySetException(self.core, ex);
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12)>.Dispose(self.core);
             return;
         }
                 
         if (Interlocked.Increment(ref self.completedCount) == 12)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12)>.TrySetResult(self.core, (self.t1, self.t2, self.t3, self.t4, self.t5, self.t6, self.t7, self.t8, self.t9, self.t10, self.t11, self.t12));
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12)>.Dispose(self.core);
         }
     }
 
@@ -2784,12 +2934,14 @@ public sealed unsafe class WhenAllPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         catch (Exception ex)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12)>.TrySetException(self.core, ex);
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12)>.Dispose(self.core);
             return;
         }
                 
         if (Interlocked.Increment(ref self.completedCount) == 12)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12)>.TrySetResult(self.core, (self.t1, self.t2, self.t3, self.t4, self.t5, self.t6, self.t7, self.t8, self.t9, self.t10, self.t11, self.t12));
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12)>.Dispose(self.core);
         }
     }
 
@@ -2802,12 +2954,14 @@ public sealed unsafe class WhenAllPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         catch (Exception ex)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12)>.TrySetException(self.core, ex);
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12)>.Dispose(self.core);
             return;
         }
                 
         if (Interlocked.Increment(ref self.completedCount) == 12)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12)>.TrySetResult(self.core, (self.t1, self.t2, self.t3, self.t4, self.t5, self.t6, self.t7, self.t8, self.t9, self.t10, self.t11, self.t12));
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12)>.Dispose(self.core);
         }
     }
 
@@ -2820,12 +2974,14 @@ public sealed unsafe class WhenAllPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         catch (Exception ex)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12)>.TrySetException(self.core, ex);
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12)>.Dispose(self.core);
             return;
         }
                 
         if (Interlocked.Increment(ref self.completedCount) == 12)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12)>.TrySetResult(self.core, (self.t1, self.t2, self.t3, self.t4, self.t5, self.t6, self.t7, self.t8, self.t9, self.t10, self.t11, self.t12));
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12)>.Dispose(self.core);
         }
     }
 
@@ -3065,12 +3221,14 @@ public sealed unsafe class WhenAllPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         catch (Exception ex)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13)>.TrySetException(self.core, ex);
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13)>.Dispose(self.core);
             return;
         }
                 
         if (Interlocked.Increment(ref self.completedCount) == 13)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13)>.TrySetResult(self.core, (self.t1, self.t2, self.t3, self.t4, self.t5, self.t6, self.t7, self.t8, self.t9, self.t10, self.t11, self.t12, self.t13));
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13)>.Dispose(self.core);
         }
     }
 
@@ -3083,12 +3241,14 @@ public sealed unsafe class WhenAllPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         catch (Exception ex)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13)>.TrySetException(self.core, ex);
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13)>.Dispose(self.core);
             return;
         }
                 
         if (Interlocked.Increment(ref self.completedCount) == 13)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13)>.TrySetResult(self.core, (self.t1, self.t2, self.t3, self.t4, self.t5, self.t6, self.t7, self.t8, self.t9, self.t10, self.t11, self.t12, self.t13));
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13)>.Dispose(self.core);
         }
     }
 
@@ -3101,12 +3261,14 @@ public sealed unsafe class WhenAllPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         catch (Exception ex)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13)>.TrySetException(self.core, ex);
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13)>.Dispose(self.core);
             return;
         }
                 
         if (Interlocked.Increment(ref self.completedCount) == 13)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13)>.TrySetResult(self.core, (self.t1, self.t2, self.t3, self.t4, self.t5, self.t6, self.t7, self.t8, self.t9, self.t10, self.t11, self.t12, self.t13));
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13)>.Dispose(self.core);
         }
     }
 
@@ -3119,12 +3281,14 @@ public sealed unsafe class WhenAllPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         catch (Exception ex)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13)>.TrySetException(self.core, ex);
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13)>.Dispose(self.core);
             return;
         }
                 
         if (Interlocked.Increment(ref self.completedCount) == 13)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13)>.TrySetResult(self.core, (self.t1, self.t2, self.t3, self.t4, self.t5, self.t6, self.t7, self.t8, self.t9, self.t10, self.t11, self.t12, self.t13));
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13)>.Dispose(self.core);
         }
     }
 
@@ -3137,12 +3301,14 @@ public sealed unsafe class WhenAllPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         catch (Exception ex)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13)>.TrySetException(self.core, ex);
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13)>.Dispose(self.core);
             return;
         }
                 
         if (Interlocked.Increment(ref self.completedCount) == 13)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13)>.TrySetResult(self.core, (self.t1, self.t2, self.t3, self.t4, self.t5, self.t6, self.t7, self.t8, self.t9, self.t10, self.t11, self.t12, self.t13));
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13)>.Dispose(self.core);
         }
     }
 
@@ -3155,12 +3321,14 @@ public sealed unsafe class WhenAllPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         catch (Exception ex)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13)>.TrySetException(self.core, ex);
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13)>.Dispose(self.core);
             return;
         }
                 
         if (Interlocked.Increment(ref self.completedCount) == 13)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13)>.TrySetResult(self.core, (self.t1, self.t2, self.t3, self.t4, self.t5, self.t6, self.t7, self.t8, self.t9, self.t10, self.t11, self.t12, self.t13));
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13)>.Dispose(self.core);
         }
     }
 
@@ -3173,12 +3341,14 @@ public sealed unsafe class WhenAllPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         catch (Exception ex)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13)>.TrySetException(self.core, ex);
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13)>.Dispose(self.core);
             return;
         }
                 
         if (Interlocked.Increment(ref self.completedCount) == 13)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13)>.TrySetResult(self.core, (self.t1, self.t2, self.t3, self.t4, self.t5, self.t6, self.t7, self.t8, self.t9, self.t10, self.t11, self.t12, self.t13));
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13)>.Dispose(self.core);
         }
     }
 
@@ -3191,12 +3361,14 @@ public sealed unsafe class WhenAllPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         catch (Exception ex)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13)>.TrySetException(self.core, ex);
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13)>.Dispose(self.core);
             return;
         }
                 
         if (Interlocked.Increment(ref self.completedCount) == 13)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13)>.TrySetResult(self.core, (self.t1, self.t2, self.t3, self.t4, self.t5, self.t6, self.t7, self.t8, self.t9, self.t10, self.t11, self.t12, self.t13));
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13)>.Dispose(self.core);
         }
     }
 
@@ -3209,12 +3381,14 @@ public sealed unsafe class WhenAllPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         catch (Exception ex)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13)>.TrySetException(self.core, ex);
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13)>.Dispose(self.core);
             return;
         }
                 
         if (Interlocked.Increment(ref self.completedCount) == 13)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13)>.TrySetResult(self.core, (self.t1, self.t2, self.t3, self.t4, self.t5, self.t6, self.t7, self.t8, self.t9, self.t10, self.t11, self.t12, self.t13));
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13)>.Dispose(self.core);
         }
     }
 
@@ -3227,12 +3401,14 @@ public sealed unsafe class WhenAllPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         catch (Exception ex)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13)>.TrySetException(self.core, ex);
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13)>.Dispose(self.core);
             return;
         }
                 
         if (Interlocked.Increment(ref self.completedCount) == 13)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13)>.TrySetResult(self.core, (self.t1, self.t2, self.t3, self.t4, self.t5, self.t6, self.t7, self.t8, self.t9, self.t10, self.t11, self.t12, self.t13));
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13)>.Dispose(self.core);
         }
     }
 
@@ -3245,12 +3421,14 @@ public sealed unsafe class WhenAllPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         catch (Exception ex)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13)>.TrySetException(self.core, ex);
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13)>.Dispose(self.core);
             return;
         }
                 
         if (Interlocked.Increment(ref self.completedCount) == 13)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13)>.TrySetResult(self.core, (self.t1, self.t2, self.t3, self.t4, self.t5, self.t6, self.t7, self.t8, self.t9, self.t10, self.t11, self.t12, self.t13));
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13)>.Dispose(self.core);
         }
     }
 
@@ -3263,12 +3441,14 @@ public sealed unsafe class WhenAllPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         catch (Exception ex)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13)>.TrySetException(self.core, ex);
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13)>.Dispose(self.core);
             return;
         }
                 
         if (Interlocked.Increment(ref self.completedCount) == 13)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13)>.TrySetResult(self.core, (self.t1, self.t2, self.t3, self.t4, self.t5, self.t6, self.t7, self.t8, self.t9, self.t10, self.t11, self.t12, self.t13));
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13)>.Dispose(self.core);
         }
     }
 
@@ -3281,12 +3461,14 @@ public sealed unsafe class WhenAllPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         catch (Exception ex)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13)>.TrySetException(self.core, ex);
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13)>.Dispose(self.core);
             return;
         }
                 
         if (Interlocked.Increment(ref self.completedCount) == 13)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13)>.TrySetResult(self.core, (self.t1, self.t2, self.t3, self.t4, self.t5, self.t6, self.t7, self.t8, self.t9, self.t10, self.t11, self.t12, self.t13));
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13)>.Dispose(self.core);
         }
     }
 
@@ -3542,12 +3724,14 @@ public sealed unsafe class WhenAllPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         catch (Exception ex)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14)>.TrySetException(self.core, ex);
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14)>.Dispose(self.core);
             return;
         }
                 
         if (Interlocked.Increment(ref self.completedCount) == 14)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14)>.TrySetResult(self.core, (self.t1, self.t2, self.t3, self.t4, self.t5, self.t6, self.t7, self.t8, self.t9, self.t10, self.t11, self.t12, self.t13, self.t14));
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14)>.Dispose(self.core);
         }
     }
 
@@ -3560,12 +3744,14 @@ public sealed unsafe class WhenAllPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         catch (Exception ex)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14)>.TrySetException(self.core, ex);
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14)>.Dispose(self.core);
             return;
         }
                 
         if (Interlocked.Increment(ref self.completedCount) == 14)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14)>.TrySetResult(self.core, (self.t1, self.t2, self.t3, self.t4, self.t5, self.t6, self.t7, self.t8, self.t9, self.t10, self.t11, self.t12, self.t13, self.t14));
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14)>.Dispose(self.core);
         }
     }
 
@@ -3578,12 +3764,14 @@ public sealed unsafe class WhenAllPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         catch (Exception ex)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14)>.TrySetException(self.core, ex);
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14)>.Dispose(self.core);
             return;
         }
                 
         if (Interlocked.Increment(ref self.completedCount) == 14)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14)>.TrySetResult(self.core, (self.t1, self.t2, self.t3, self.t4, self.t5, self.t6, self.t7, self.t8, self.t9, self.t10, self.t11, self.t12, self.t13, self.t14));
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14)>.Dispose(self.core);
         }
     }
 
@@ -3596,12 +3784,14 @@ public sealed unsafe class WhenAllPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         catch (Exception ex)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14)>.TrySetException(self.core, ex);
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14)>.Dispose(self.core);
             return;
         }
                 
         if (Interlocked.Increment(ref self.completedCount) == 14)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14)>.TrySetResult(self.core, (self.t1, self.t2, self.t3, self.t4, self.t5, self.t6, self.t7, self.t8, self.t9, self.t10, self.t11, self.t12, self.t13, self.t14));
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14)>.Dispose(self.core);
         }
     }
 
@@ -3614,12 +3804,14 @@ public sealed unsafe class WhenAllPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         catch (Exception ex)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14)>.TrySetException(self.core, ex);
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14)>.Dispose(self.core);
             return;
         }
                 
         if (Interlocked.Increment(ref self.completedCount) == 14)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14)>.TrySetResult(self.core, (self.t1, self.t2, self.t3, self.t4, self.t5, self.t6, self.t7, self.t8, self.t9, self.t10, self.t11, self.t12, self.t13, self.t14));
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14)>.Dispose(self.core);
         }
     }
 
@@ -3632,12 +3824,14 @@ public sealed unsafe class WhenAllPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         catch (Exception ex)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14)>.TrySetException(self.core, ex);
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14)>.Dispose(self.core);
             return;
         }
                 
         if (Interlocked.Increment(ref self.completedCount) == 14)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14)>.TrySetResult(self.core, (self.t1, self.t2, self.t3, self.t4, self.t5, self.t6, self.t7, self.t8, self.t9, self.t10, self.t11, self.t12, self.t13, self.t14));
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14)>.Dispose(self.core);
         }
     }
 
@@ -3650,12 +3844,14 @@ public sealed unsafe class WhenAllPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         catch (Exception ex)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14)>.TrySetException(self.core, ex);
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14)>.Dispose(self.core);
             return;
         }
                 
         if (Interlocked.Increment(ref self.completedCount) == 14)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14)>.TrySetResult(self.core, (self.t1, self.t2, self.t3, self.t4, self.t5, self.t6, self.t7, self.t8, self.t9, self.t10, self.t11, self.t12, self.t13, self.t14));
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14)>.Dispose(self.core);
         }
     }
 
@@ -3668,12 +3864,14 @@ public sealed unsafe class WhenAllPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         catch (Exception ex)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14)>.TrySetException(self.core, ex);
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14)>.Dispose(self.core);
             return;
         }
                 
         if (Interlocked.Increment(ref self.completedCount) == 14)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14)>.TrySetResult(self.core, (self.t1, self.t2, self.t3, self.t4, self.t5, self.t6, self.t7, self.t8, self.t9, self.t10, self.t11, self.t12, self.t13, self.t14));
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14)>.Dispose(self.core);
         }
     }
 
@@ -3686,12 +3884,14 @@ public sealed unsafe class WhenAllPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         catch (Exception ex)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14)>.TrySetException(self.core, ex);
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14)>.Dispose(self.core);
             return;
         }
                 
         if (Interlocked.Increment(ref self.completedCount) == 14)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14)>.TrySetResult(self.core, (self.t1, self.t2, self.t3, self.t4, self.t5, self.t6, self.t7, self.t8, self.t9, self.t10, self.t11, self.t12, self.t13, self.t14));
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14)>.Dispose(self.core);
         }
     }
 
@@ -3704,12 +3904,14 @@ public sealed unsafe class WhenAllPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         catch (Exception ex)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14)>.TrySetException(self.core, ex);
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14)>.Dispose(self.core);
             return;
         }
                 
         if (Interlocked.Increment(ref self.completedCount) == 14)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14)>.TrySetResult(self.core, (self.t1, self.t2, self.t3, self.t4, self.t5, self.t6, self.t7, self.t8, self.t9, self.t10, self.t11, self.t12, self.t13, self.t14));
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14)>.Dispose(self.core);
         }
     }
 
@@ -3722,12 +3924,14 @@ public sealed unsafe class WhenAllPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         catch (Exception ex)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14)>.TrySetException(self.core, ex);
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14)>.Dispose(self.core);
             return;
         }
                 
         if (Interlocked.Increment(ref self.completedCount) == 14)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14)>.TrySetResult(self.core, (self.t1, self.t2, self.t3, self.t4, self.t5, self.t6, self.t7, self.t8, self.t9, self.t10, self.t11, self.t12, self.t13, self.t14));
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14)>.Dispose(self.core);
         }
     }
 
@@ -3740,12 +3944,14 @@ public sealed unsafe class WhenAllPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         catch (Exception ex)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14)>.TrySetException(self.core, ex);
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14)>.Dispose(self.core);
             return;
         }
                 
         if (Interlocked.Increment(ref self.completedCount) == 14)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14)>.TrySetResult(self.core, (self.t1, self.t2, self.t3, self.t4, self.t5, self.t6, self.t7, self.t8, self.t9, self.t10, self.t11, self.t12, self.t13, self.t14));
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14)>.Dispose(self.core);
         }
     }
 
@@ -3758,12 +3964,14 @@ public sealed unsafe class WhenAllPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         catch (Exception ex)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14)>.TrySetException(self.core, ex);
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14)>.Dispose(self.core);
             return;
         }
                 
         if (Interlocked.Increment(ref self.completedCount) == 14)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14)>.TrySetResult(self.core, (self.t1, self.t2, self.t3, self.t4, self.t5, self.t6, self.t7, self.t8, self.t9, self.t10, self.t11, self.t12, self.t13, self.t14));
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14)>.Dispose(self.core);
         }
     }
 
@@ -3776,12 +3984,14 @@ public sealed unsafe class WhenAllPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         catch (Exception ex)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14)>.TrySetException(self.core, ex);
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14)>.Dispose(self.core);
             return;
         }
                 
         if (Interlocked.Increment(ref self.completedCount) == 14)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14)>.TrySetResult(self.core, (self.t1, self.t2, self.t3, self.t4, self.t5, self.t6, self.t7, self.t8, self.t9, self.t10, self.t11, self.t12, self.t13, self.t14));
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14)>.Dispose(self.core);
         }
     }
 
@@ -4053,12 +4263,14 @@ public sealed unsafe class WhenAllPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         catch (Exception ex)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15)>.TrySetException(self.core, ex);
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15)>.Dispose(self.core);
             return;
         }
                 
         if (Interlocked.Increment(ref self.completedCount) == 15)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15)>.TrySetResult(self.core, (self.t1, self.t2, self.t3, self.t4, self.t5, self.t6, self.t7, self.t8, self.t9, self.t10, self.t11, self.t12, self.t13, self.t14, self.t15));
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15)>.Dispose(self.core);
         }
     }
 
@@ -4071,12 +4283,14 @@ public sealed unsafe class WhenAllPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         catch (Exception ex)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15)>.TrySetException(self.core, ex);
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15)>.Dispose(self.core);
             return;
         }
                 
         if (Interlocked.Increment(ref self.completedCount) == 15)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15)>.TrySetResult(self.core, (self.t1, self.t2, self.t3, self.t4, self.t5, self.t6, self.t7, self.t8, self.t9, self.t10, self.t11, self.t12, self.t13, self.t14, self.t15));
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15)>.Dispose(self.core);
         }
     }
 
@@ -4089,12 +4303,14 @@ public sealed unsafe class WhenAllPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         catch (Exception ex)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15)>.TrySetException(self.core, ex);
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15)>.Dispose(self.core);
             return;
         }
                 
         if (Interlocked.Increment(ref self.completedCount) == 15)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15)>.TrySetResult(self.core, (self.t1, self.t2, self.t3, self.t4, self.t5, self.t6, self.t7, self.t8, self.t9, self.t10, self.t11, self.t12, self.t13, self.t14, self.t15));
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15)>.Dispose(self.core);
         }
     }
 
@@ -4107,12 +4323,14 @@ public sealed unsafe class WhenAllPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         catch (Exception ex)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15)>.TrySetException(self.core, ex);
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15)>.Dispose(self.core);
             return;
         }
                 
         if (Interlocked.Increment(ref self.completedCount) == 15)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15)>.TrySetResult(self.core, (self.t1, self.t2, self.t3, self.t4, self.t5, self.t6, self.t7, self.t8, self.t9, self.t10, self.t11, self.t12, self.t13, self.t14, self.t15));
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15)>.Dispose(self.core);
         }
     }
 
@@ -4125,12 +4343,14 @@ public sealed unsafe class WhenAllPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         catch (Exception ex)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15)>.TrySetException(self.core, ex);
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15)>.Dispose(self.core);
             return;
         }
                 
         if (Interlocked.Increment(ref self.completedCount) == 15)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15)>.TrySetResult(self.core, (self.t1, self.t2, self.t3, self.t4, self.t5, self.t6, self.t7, self.t8, self.t9, self.t10, self.t11, self.t12, self.t13, self.t14, self.t15));
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15)>.Dispose(self.core);
         }
     }
 
@@ -4143,12 +4363,14 @@ public sealed unsafe class WhenAllPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         catch (Exception ex)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15)>.TrySetException(self.core, ex);
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15)>.Dispose(self.core);
             return;
         }
                 
         if (Interlocked.Increment(ref self.completedCount) == 15)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15)>.TrySetResult(self.core, (self.t1, self.t2, self.t3, self.t4, self.t5, self.t6, self.t7, self.t8, self.t9, self.t10, self.t11, self.t12, self.t13, self.t14, self.t15));
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15)>.Dispose(self.core);
         }
     }
 
@@ -4161,12 +4383,14 @@ public sealed unsafe class WhenAllPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         catch (Exception ex)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15)>.TrySetException(self.core, ex);
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15)>.Dispose(self.core);
             return;
         }
                 
         if (Interlocked.Increment(ref self.completedCount) == 15)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15)>.TrySetResult(self.core, (self.t1, self.t2, self.t3, self.t4, self.t5, self.t6, self.t7, self.t8, self.t9, self.t10, self.t11, self.t12, self.t13, self.t14, self.t15));
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15)>.Dispose(self.core);
         }
     }
 
@@ -4179,12 +4403,14 @@ public sealed unsafe class WhenAllPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         catch (Exception ex)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15)>.TrySetException(self.core, ex);
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15)>.Dispose(self.core);
             return;
         }
                 
         if (Interlocked.Increment(ref self.completedCount) == 15)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15)>.TrySetResult(self.core, (self.t1, self.t2, self.t3, self.t4, self.t5, self.t6, self.t7, self.t8, self.t9, self.t10, self.t11, self.t12, self.t13, self.t14, self.t15));
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15)>.Dispose(self.core);
         }
     }
 
@@ -4197,12 +4423,14 @@ public sealed unsafe class WhenAllPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         catch (Exception ex)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15)>.TrySetException(self.core, ex);
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15)>.Dispose(self.core);
             return;
         }
                 
         if (Interlocked.Increment(ref self.completedCount) == 15)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15)>.TrySetResult(self.core, (self.t1, self.t2, self.t3, self.t4, self.t5, self.t6, self.t7, self.t8, self.t9, self.t10, self.t11, self.t12, self.t13, self.t14, self.t15));
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15)>.Dispose(self.core);
         }
     }
 
@@ -4215,12 +4443,14 @@ public sealed unsafe class WhenAllPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         catch (Exception ex)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15)>.TrySetException(self.core, ex);
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15)>.Dispose(self.core);
             return;
         }
                 
         if (Interlocked.Increment(ref self.completedCount) == 15)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15)>.TrySetResult(self.core, (self.t1, self.t2, self.t3, self.t4, self.t5, self.t6, self.t7, self.t8, self.t9, self.t10, self.t11, self.t12, self.t13, self.t14, self.t15));
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15)>.Dispose(self.core);
         }
     }
 
@@ -4233,12 +4463,14 @@ public sealed unsafe class WhenAllPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         catch (Exception ex)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15)>.TrySetException(self.core, ex);
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15)>.Dispose(self.core);
             return;
         }
                 
         if (Interlocked.Increment(ref self.completedCount) == 15)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15)>.TrySetResult(self.core, (self.t1, self.t2, self.t3, self.t4, self.t5, self.t6, self.t7, self.t8, self.t9, self.t10, self.t11, self.t12, self.t13, self.t14, self.t15));
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15)>.Dispose(self.core);
         }
     }
 
@@ -4251,12 +4483,14 @@ public sealed unsafe class WhenAllPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         catch (Exception ex)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15)>.TrySetException(self.core, ex);
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15)>.Dispose(self.core);
             return;
         }
                 
         if (Interlocked.Increment(ref self.completedCount) == 15)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15)>.TrySetResult(self.core, (self.t1, self.t2, self.t3, self.t4, self.t5, self.t6, self.t7, self.t8, self.t9, self.t10, self.t11, self.t12, self.t13, self.t14, self.t15));
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15)>.Dispose(self.core);
         }
     }
 
@@ -4269,12 +4503,14 @@ public sealed unsafe class WhenAllPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         catch (Exception ex)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15)>.TrySetException(self.core, ex);
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15)>.Dispose(self.core);
             return;
         }
                 
         if (Interlocked.Increment(ref self.completedCount) == 15)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15)>.TrySetResult(self.core, (self.t1, self.t2, self.t3, self.t4, self.t5, self.t6, self.t7, self.t8, self.t9, self.t10, self.t11, self.t12, self.t13, self.t14, self.t15));
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15)>.Dispose(self.core);
         }
     }
 
@@ -4287,12 +4523,14 @@ public sealed unsafe class WhenAllPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         catch (Exception ex)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15)>.TrySetException(self.core, ex);
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15)>.Dispose(self.core);
             return;
         }
                 
         if (Interlocked.Increment(ref self.completedCount) == 15)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15)>.TrySetResult(self.core, (self.t1, self.t2, self.t3, self.t4, self.t5, self.t6, self.t7, self.t8, self.t9, self.t10, self.t11, self.t12, self.t13, self.t14, self.t15));
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15)>.Dispose(self.core);
         }
     }
 
@@ -4305,14 +4543,158 @@ public sealed unsafe class WhenAllPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         catch (Exception ex)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15)>.TrySetException(self.core, ex);
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15)>.Dispose(self.core);
             return;
         }
                 
         if (Interlocked.Increment(ref self.completedCount) == 15)
         {
             LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15)>.TrySetResult(self.core, (self.t1, self.t2, self.t3, self.t4, self.t5, self.t6, self.t7, self.t8, self.t9, self.t10, self.t11, self.t12, self.t13, self.t14, self.t15));
+            LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15)>.Dispose(self.core);
         }
     }
 
 }
 
+
+public sealed unsafe class WhenAllPromise<T>
+{
+    private T[] _results;
+    private int _completedCount;
+    private int _totalCount;
+    internal LuminTaskSourceCore<T[]>* _core;
+
+    public static WhenAllPromise<T> Create(params LuminTask<T>[] tasks)
+    {
+        return new WhenAllPromise<T>(tasks);
+    }
+    
+    public static WhenAllPromise<T> Create(IEnumerable<LuminTask<T>> tasks)
+    {
+        return new WhenAllPromise<T>(tasks.ToArray());
+    }
+    
+    public WhenAllPromise(LuminTask<T>[]? tasks)
+    {
+        if (tasks == null || tasks.Length == 0)
+        {
+            _results = Array.Empty<T>();
+            _core = LuminTaskSourceCore<T[]>.Create();
+            LuminTaskSourceCore<T[]>.TrySetResult(_core, _results);
+            return;
+        }
+
+        _totalCount = tasks.Length;
+        _results = new T[_totalCount];
+        _core = LuminTaskSourceCore<T[]>.Create();
+        _completedCount = 0;
+
+        for (int i = 0; i < tasks.Length; i++)
+        {
+            var index = i;
+            var awaiter = tasks[i].GetAwaiter();
+            
+            if (awaiter.IsCompleted)
+            {
+                TryInvokeContinuation(this, awaiter, index);
+            }
+            else
+            {
+                awaiter.SourceOnCompleted(static state =>
+                {
+                    var tuple = (Tuple<WhenAllPromise<T>, LuminTaskAwaiter<T>, int>)state;
+                    TryInvokeContinuation(tuple.Item1, tuple.Item2, tuple.Item3);
+                }, Tuple.Create(this, awaiter, index));
+            }
+        }
+    }
+
+    static void TryInvokeContinuation(WhenAllPromise<T> self, in LuminTaskAwaiter<T> awaiter, int index)
+    {
+        try
+        {
+            self._results[index] = awaiter.GetResult();
+        }
+        catch (Exception ex)
+        {
+            LuminTaskSourceCore<T[]>.TrySetException(self._core, ex);
+            LuminTaskSourceCore<T[]>.Dispose(self._core);
+            return;
+        }
+                
+        if (Interlocked.Increment(ref self._completedCount) == self._totalCount)
+        {
+            LuminTaskSourceCore<T[]>.TrySetResult(self._core, self._results);
+            LuminTaskSourceCore<T[]>.Dispose(self._core);
+        }
+    }
+}
+
+public sealed unsafe class WhenAllPromise
+{
+    private int _completedCount;
+    private int _totalCount;
+    internal LuminTaskSourceCore<bool>* _core;
+
+    public static WhenAllPromise Create(params LuminTask[] tasks)
+    {
+        return new WhenAllPromise(tasks);
+    }
+    
+    public static WhenAllPromise Create(IEnumerable<LuminTask> tasks)
+    {
+        return new WhenAllPromise(tasks.ToArray());
+    }
+    
+    public WhenAllPromise(LuminTask[]? tasks)
+    {
+        if (tasks == null || tasks.Length == 0)
+        {
+            _core = LuminTaskSourceCore<bool>.Create();
+            LuminTaskSourceCore<bool>.TrySetResult(_core, true);
+            return;
+        }
+
+        _totalCount = tasks.Length;
+        _core = LuminTaskSourceCore<bool>.Create();
+        _completedCount = 0;
+
+        for (int i = 0; i < tasks.Length; i++)
+        {
+            var awaiter = tasks[i].GetAwaiter();
+            
+            if (awaiter.IsCompleted)
+            {
+                TryInvokeContinuation(this, awaiter);
+            }
+            else
+            {
+                awaiter.SourceOnCompleted(static state =>
+                {
+                    var tuple = (Tuple<WhenAllPromise, LuminTaskAwaiter>)state;
+                    TryInvokeContinuation(tuple.Item1, tuple.Item2);
+                }, Tuple.Create(this, awaiter));
+            }
+        }
+    }
+
+    static void TryInvokeContinuation(WhenAllPromise self, in LuminTaskAwaiter awaiter)
+    {
+        try
+        {
+            awaiter.GetResult();
+        }
+        catch (Exception ex)
+        {
+            LuminTaskSourceCore<bool>.TrySetException(self._core, ex);
+            LuminTaskSourceCore<bool>.Dispose(self._core);
+            return;
+        }
+                
+        if (Interlocked.Increment(ref self._completedCount) == self._totalCount)
+        {
+            LuminTaskSourceCore<bool>.TrySetResult(self._core, true);
+            LuminTaskSourceCore<bool>.Dispose(self._core);
+        }
+    }
+}

@@ -7,27 +7,24 @@ namespace LuminThread.AsyncEx;
 public sealed class AsyncAutoResetEvent
 {
     private readonly AsyncLock _asyncLock;
-    private readonly AsyncConditionVariable _conditionVariable;
-    private volatile int _isSet; // 0 = false, 1 = true
-    private volatile int _hasWaitingTask; // 0 = false, 1 = true
+    private volatile bool _isSet;
+    private volatile bool _hasWaitingTask;
 
     public AsyncAutoResetEvent(bool initialState = false)
     {
         _asyncLock = new AsyncLock();
-        _conditionVariable = new AsyncConditionVariable(_asyncLock);
-        _isSet = initialState ? 1 : 0;
-        _hasWaitingTask = 0;
+        _isSet = initialState;
+        _hasWaitingTask = false;
     }
 
-    public bool IsSet => _isSet == 1;
+    public bool IsSet => _isSet;
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public LuminTask<bool> WaitAsync(CancellationToken cancellationToken = default)
     {
-        // 快速路径：如果已设置且没有等待任务，则直接返回
-        if (_isSet == 1 && Interlocked.CompareExchange(ref _hasWaitingTask, 1, 0) == 0)
+        if (_isSet && !_hasWaitingTask)
         {
-            Interlocked.Exchange(ref _isSet, 0);
+            _isSet = false;
             return new LuminTask<bool>(true);
         }
 
@@ -39,15 +36,16 @@ public sealed class AsyncAutoResetEvent
     {
         using (await _asyncLock.LockAsync(cancellationToken))
         {
-            Interlocked.Exchange(ref _hasWaitingTask, 1);
+            _hasWaitingTask = true;
                 
-            while (_isSet == 0)
+            while (!_isSet)
             {
-                await _conditionVariable.WaitAsync(cancellationToken);
+                var condition = new AsyncConditionVariable(_asyncLock);
+                await condition.WaitAsync(cancellationToken);
             }
 
-            Interlocked.Exchange(ref _isSet, 0);
-            Interlocked.Exchange(ref _hasWaitingTask, 0);
+            _isSet = false;
+            _hasWaitingTask = false;
             return true;
         }
     }
@@ -55,9 +53,12 @@ public sealed class AsyncAutoResetEvent
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void Set()
     {
-        if (Interlocked.CompareExchange(ref _isSet, 1, 0) == 0)
+        using (_asyncLock.LockAsync().Result)
         {
-            _conditionVariable.Notify();
+            if (!_isSet)
+            {
+                _isSet = true;
+            }
         }
     }
 
@@ -72,29 +73,26 @@ public sealed class AsyncAutoResetEvent
 public sealed class AsyncAutoResetEvent<T>
 {
     private readonly AsyncLock _asyncLock;
-    private readonly AsyncConditionVariable _conditionVariable;
-    private volatile int _isSet; // 0 = false, 1 = true
-    private volatile int _hasWaitingTask; // 0 = false, 1 = true
+    private volatile bool _isSet;
+    private volatile bool _hasWaitingTask;
     private T _result;
 
     public AsyncAutoResetEvent()
     {
         _asyncLock = new AsyncLock();
-        _conditionVariable = new AsyncConditionVariable(_asyncLock);
-        _isSet = 0;
-        _hasWaitingTask = 0;
+        _isSet = false;
+        _hasWaitingTask = false;
     }
 
-    public bool IsSet => _isSet == 1;
+    public bool IsSet => _isSet;
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public LuminTask<T> WaitAsync(CancellationToken cancellationToken = default)
     {
-        // 快速路径：如果已设置且没有等待任务，则直接返回
-        if (_isSet == 1 && Interlocked.CompareExchange(ref _hasWaitingTask, 1, 0) == 0)
+        if (_isSet && !_hasWaitingTask)
         {
             var result = _result;
-            Interlocked.Exchange(ref _isSet, 0);
+            _isSet = false;
             _result = default!;
             return new LuminTask<T>(result);
         }
@@ -107,17 +105,18 @@ public sealed class AsyncAutoResetEvent<T>
     {
         using (await _asyncLock.LockAsync(cancellationToken))
         {
-            Interlocked.Exchange(ref _hasWaitingTask, 1);
+            _hasWaitingTask = true;
                 
-            while (_isSet == 0)
+            while (!_isSet)
             {
-                await _conditionVariable.WaitAsync(cancellationToken);
+                var condition = new AsyncConditionVariable(_asyncLock);
+                await condition.WaitAsync(cancellationToken);
             }
 
             var result = _result;
-            Interlocked.Exchange(ref _isSet, 0);
+            _isSet = false;
             _result = default!;
-            Interlocked.Exchange(ref _hasWaitingTask, 0);
+            _hasWaitingTask = false;
             return result;
         }
     }
@@ -127,11 +126,10 @@ public sealed class AsyncAutoResetEvent<T>
     {
         using (_asyncLock.LockAsync().Result)
         {
-            if (_isSet == 0)
+            if (!_isSet)
             {
-                Interlocked.Exchange(ref _isSet, 1);
+                _isSet = true;
                 _result = result;
-                _conditionVariable.Notify();
             }
         }
     }

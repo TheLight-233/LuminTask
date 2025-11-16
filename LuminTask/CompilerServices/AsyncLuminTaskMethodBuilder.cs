@@ -9,7 +9,7 @@ using LuminThread.Utility;
 
 namespace LuminThread.CompilerServices
 {
-    [StructLayout(LayoutKind.Sequential)]
+    [StructLayout(LayoutKind.Auto)]
     public unsafe struct AsyncLuminTaskMethodBuilder
     {
         private LuminTaskSourceCore<AsyncUnit>* _source;
@@ -37,7 +37,6 @@ namespace LuminThread.CompilerServices
             {
                 LuminTaskSourceCore<AsyncUnit>.TrySetResult(_source);
                 LuminTaskSourceCore<AsyncUnit>.Dispose(_source);
-                _source = null;
             }
             else
             {
@@ -114,7 +113,7 @@ namespace LuminThread.CompilerServices
         }
     }
 
-    [StructLayout(LayoutKind.Sequential)]
+    [StructLayout(LayoutKind.Auto)]
     public unsafe struct AsyncLuminTaskMethodBuilder<T>
     {
         private LuminTaskSourceCore<T>* _source;
@@ -122,7 +121,7 @@ namespace LuminThread.CompilerServices
         private Exception? _exception;
         private T _result;
         private bool _haveResult;
-
+        
         [DebuggerHidden]
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static AsyncLuminTaskMethodBuilder<T> Create()
@@ -143,7 +142,6 @@ namespace LuminThread.CompilerServices
             {
                 LuminTaskSourceCore<T>.TrySetResult(_source, result);
                 LuminTaskSourceCore<T>.Dispose(_source);
-                _source = null;
             }
             else
             {
@@ -197,6 +195,7 @@ namespace LuminThread.CompilerServices
         {
             if (_source is null)
                 _source = LuminTaskSourceCore<T>.Create(_continueOnCapturedContext);
+            
             stateMachine.MoveNext();
         }
 

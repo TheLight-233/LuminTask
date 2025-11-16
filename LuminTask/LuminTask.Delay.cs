@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using LuminThread.TaskSource;
+using LuminThread.TaskSource.Promise;
 using LuminThread.Utility;
 
 namespace LuminThread;
@@ -11,42 +12,18 @@ public readonly unsafe partial struct LuminTask
 {
     [DebuggerHidden]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static LuminTask Delay(int millisecondsDelay, CancellationToken cancellationToken = default)
+    public static LuminTask Delay(int millisecondsDelay, PlayerLoopTiming loopTiming = PlayerLoopTiming.DotNet, CancellationToken cancellationToken = default, bool cancelImmediately = false)
     {
-        var source = LuminTaskSourceCore<AsyncUnit>.Create();
-        Timer? timer = null;
-        timer = new Timer(static s =>
-        {
-            var source = ((IntPtr, Timer?))s!;
-            try
-            {
-                LuminTaskSourceCore<AsyncUnit>.TrySetResult(source.Item1.ToPointer());
-            }
-            finally
-            {
-                LuminTaskSourceCore<AsyncUnit>.Dispose(source.Item1.ToPointer());
-                source.Item2?.Dispose();
-            }
-        }, (new IntPtr(source), timer), millisecondsDelay, Timeout.Infinite);
+        var source = DelayPromise<AsyncUnit>.Create(millisecondsDelay, loopTiming, cancellationToken, cancelImmediately);
 
-        if (cancellationToken.CanBeCanceled)
-        {
-            cancellationToken.Register(() =>
-            {
-                timer.Dispose();
-                LuminTaskSourceCore<AsyncUnit>.TrySetCanceled(source);
-                LuminTaskSourceCore<AsyncUnit>.Dispose(source);
-            });
-        }
-
-        return new LuminTask(LuminTaskSourceCore<AsyncUnit>.MethodTable, source, source->Id);
+        return new LuminTask(LuminTaskSourceCore<AsyncUnit>.MethodTable, source.Source, source.Source->Id);
     }
 
     [DebuggerHidden]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static LuminTask Delay(TimeSpan delay, CancellationToken cancellationToken = default)
+    public static LuminTask Delay(TimeSpan delay, PlayerLoopTiming loopTiming = PlayerLoopTiming.DotNet, CancellationToken cancellationToken = default, bool cancelImmediately = false)
     {
-        return Delay((int)delay.TotalMilliseconds, cancellationToken);
+        return Delay((int)delay.TotalMilliseconds, loopTiming, cancellationToken, cancelImmediately);
     }
 
         

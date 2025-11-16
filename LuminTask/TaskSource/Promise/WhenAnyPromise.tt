@@ -6,6 +6,8 @@
 
 using System;
 using System.Threading;
+using System.Collections.Generic;
+using System.Linq;
 
 namespace LuminThread.TaskSource.Promise;
 
@@ -13,7 +15,7 @@ namespace LuminThread.TaskSource.Promise;
 for (int i = 2; i <= 15; i++)
 {
     var typeParams = string.Join(", ", Enumerable.Range(1, i).Select(n => $"T{n}"));
-    var tupleType = $"({typeParams})";
+    var tupleType = $"(int, {typeParams})";
     var taskParams = string.Join(", ", Enumerable.Range(1, i).Select(n => $"LuminTask<T{n}> task{n}"));
     var createParams = string.Join(", ", Enumerable.Range(1, i).Select(n => $"task{n}"));
 #>
@@ -40,22 +42,22 @@ public sealed unsafe class WhenAnyPromise<<#= typeParams #>>
             var awaiter = task<#= j #>.GetAwaiter();
             if (awaiter.IsCompleted)
             {
-                TryInvokeContinuationT<#= j #>(this, awaiter);
+                TryInvokeContinuationT<#= j #>(this, awaiter, <#= j-1 #>);
             }
             else
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (Tuple<WhenAnyPromise<<#= typeParams #>>, LuminTaskAwaiter<T<#= j #>>>)state;
-                    TryInvokeContinuationT<#= j #>(t.Item1, t.Item2);
-                }, Tuple.Create(this, awaiter));
+                    var t = (Tuple<WhenAnyPromise<<#= typeParams #>>, LuminTaskAwaiter<T<#= j #>>, int>)state;
+                    TryInvokeContinuationT<#= j #>(t.Item1, t.Item2, t.Item3);
+                }, Tuple.Create(this, awaiter, <#= j-1 #>));
             }
         }
 <# } #>
     }
 
 <# for (int j = 1; j <= i; j++) { #>
-    static void TryInvokeContinuationT<#= j #>(WhenAnyPromise<<#= typeParams #>> self, in LuminTaskAwaiter<T<#= j #>> awaiter)
+    static void TryInvokeContinuationT<#= j #>(WhenAnyPromise<<#= typeParams #>> self, in LuminTaskAwaiter<T<#= j #>> awaiter, int index)
     {
         try
         {
@@ -63,13 +65,18 @@ public sealed unsafe class WhenAnyPromise<<#= typeParams #>>
         }
         catch (Exception ex)
         {
-            LuminTaskSourceCore<<#= tupleType #>>.TrySetException(self.core, ex);
+            if (Interlocked.Increment(ref self.completedCount) == 1)
+            {
+                LuminTaskSourceCore<<#= tupleType #>>.TrySetException(self.core, ex);
+                LuminTaskSourceCore<<#= tupleType #>>.Dispose(self.core);
+            }
             return;
         }
                 
         if (Interlocked.Increment(ref self.completedCount) == 1)
         {
-            LuminTaskSourceCore<<#= tupleType #>>.TrySetResult(self.core, (self.t1<# for (int k = 2; k <= i; k++) { #>, self.t<#= k #><# } #>));
+            LuminTaskSourceCore<<#= tupleType #>>.TrySetResult(self.core, (index, self.t1<# for (int k = 2; k <= i; k++) { #>, self.t<#= k #><# } #>));
+            LuminTaskSourceCore<<#= tupleType #>>.Dispose(self.core);
         }
     }
 
@@ -77,3 +84,152 @@ public sealed unsafe class WhenAnyPromise<<#= typeParams #>>
 }
 
 <# } #>
+
+public sealed unsafe class WhenAnyPromise<T>
+{
+    private T[] _results;
+    private int _completedCount;
+    private int _totalCount;
+    internal LuminTaskSourceCore<(int Index, T Result)>* _core;
+
+    public static WhenAnyPromise<T> Create(params LuminTask<T>[] tasks)
+    {
+        return new WhenAnyPromise<T>(tasks);
+    }
+    
+    public static WhenAnyPromise<T> Create(IEnumerable<LuminTask<T>> tasks)
+    {
+        return new WhenAnyPromise<T>(tasks.ToArray());
+    }
+    
+    public WhenAnyPromise(LuminTask<T>[]? tasks)
+    {
+        if (tasks == null || tasks.Length == 0)
+        {
+            _results = Array.Empty<T>();
+            _core = LuminTaskSourceCore<(int Index, T Result)>.Create();
+            LuminTaskSourceCore<(int Index, T Result)>.TrySetException(_core, new InvalidOperationException("No tasks provided"));
+            return;
+        }
+
+        _totalCount = tasks.Length;
+        _results = new T[_totalCount];
+        _core = LuminTaskSourceCore<(int Index, T Result)>.Create();
+        _completedCount = 0;
+
+        for (int i = 0; i < tasks.Length; i++)
+        {
+            var index = i;
+            var awaiter = tasks[i].GetAwaiter();
+            
+            if (awaiter.IsCompleted)
+            {
+                TryInvokeContinuation(this, awaiter, index);
+            }
+            else
+            {
+                awaiter.SourceOnCompleted(static state =>
+                {
+                    var tuple = (Tuple<WhenAnyPromise<T>, LuminTaskAwaiter<T>, int>)state;
+                    TryInvokeContinuation(tuple.Item1, tuple.Item2, tuple.Item3);
+                }, Tuple.Create(this, awaiter, index));
+            }
+        }
+    }
+
+    static void TryInvokeContinuation(WhenAnyPromise<T> self, in LuminTaskAwaiter<T> awaiter, int index)
+    {
+        try
+        {
+            self._results[index] = awaiter.GetResult();
+        }
+        catch (Exception ex)
+        {  
+            if (Interlocked.Increment(ref self._completedCount) == 1)
+            {
+                LuminTaskSourceCore<(int Index, T Result)>.TrySetException(self._core, ex);
+                LuminTaskSourceCore<(int Index, T Result)>.Dispose(self._core);
+            }
+            return;
+        }
+                
+        if (Interlocked.Increment(ref self._completedCount) == 1)
+        {
+            LuminTaskSourceCore<(int Index, T Result)>.TrySetResult(self._core, (index, self._results[index]));
+            LuminTaskSourceCore<(int Index, T Result)>.Dispose(self._core);
+        }
+    }
+}
+
+public sealed unsafe class WhenAnyPromise
+{
+    private int _completedCount;
+    private int _totalCount;
+    internal LuminTaskSourceCore<int>* _core;
+
+    public static WhenAnyPromise Create(params LuminTask[] tasks)
+    {
+        return new WhenAnyPromise(tasks);
+    }
+    
+    public static WhenAnyPromise Create(IEnumerable<LuminTask> tasks)
+    {
+        return new WhenAnyPromise(tasks.ToArray());
+    }
+    
+    public WhenAnyPromise(LuminTask[]? tasks)
+    {
+        if (tasks == null || tasks.Length == 0)
+        {
+            _core = LuminTaskSourceCore<int>.Create();
+            LuminTaskSourceCore<int>.TrySetException(_core, new InvalidOperationException("No tasks provided"));
+            return;
+        }
+
+        _totalCount = tasks.Length;
+        _core = LuminTaskSourceCore<int>.Create();
+        _completedCount = 0;
+
+        for (int i = 0; i < tasks.Length; i++)
+        {
+            var index = i;
+            var awaiter = tasks[i].GetAwaiter();
+            
+            if (awaiter.IsCompleted)
+            {
+                TryInvokeContinuation(this, awaiter, index);
+            }
+            else
+            {
+                awaiter.SourceOnCompleted(static state =>
+                {
+                    var tuple = (Tuple<WhenAnyPromise, LuminTaskAwaiter, int>)state;
+                    TryInvokeContinuation(tuple.Item1, tuple.Item2, tuple.Item3);
+                }, Tuple.Create(this, awaiter, index));
+            }
+        }
+    }
+
+    static void TryInvokeContinuation(WhenAnyPromise self, in LuminTaskAwaiter awaiter, int index)
+    {
+        try
+        {
+            awaiter.GetResult();
+        }
+        catch (Exception ex)
+        {
+            if (Interlocked.Increment(ref self._completedCount) == 1)
+            {
+                LuminTaskSourceCore<int>.TrySetException(self._core, ex);
+                LuminTaskSourceCore<int>.Dispose(self._core);
+            }
+            return;
+        }
+                
+        if (Interlocked.Increment(ref self._completedCount) == 1)
+        {
+            LuminTaskSourceCore<int>.TrySetResult(self._core, index);
+            LuminTaskSourceCore<int>.Dispose(self._core);
+        }
+    }
+}

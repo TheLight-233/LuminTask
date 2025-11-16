@@ -1,6 +1,5 @@
 ﻿using System;
 using System.Diagnostics;
-using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading.Tasks;
@@ -47,7 +46,7 @@ public unsafe struct VTable
 [StructLayout(LayoutKind.Sequential)]
 public readonly unsafe partial struct LuminTask
 {
-    private readonly VTable _vTable;
+    internal readonly VTable _vTable;
     internal readonly void* _taskSource;
     internal readonly short _id;
     
@@ -66,7 +65,7 @@ public readonly unsafe partial struct LuminTask
     
     [DebuggerHidden]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public LuminTaskAwaiter GetAwaiter() => new(_vTable, _taskSource, _id);
+    public LuminTaskAwaiter GetAwaiter() => new(in this);
     
     public LuminTaskStatus Status
     {
@@ -105,8 +104,8 @@ public readonly unsafe partial struct LuminTask
 [StructLayout(LayoutKind.Sequential)]
 public readonly unsafe partial struct LuminTask<T>
 {
-    private readonly VTable _vTable;
-    private readonly void* _taskSource;
+    internal readonly VTable _vTable;
+    internal readonly void* _taskSource;
     internal readonly short _id;
     internal readonly T? _result;
 
@@ -135,7 +134,7 @@ public readonly unsafe partial struct LuminTask<T>
     
     [DebuggerHidden]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public LuminTaskAwaiter<T> GetAwaiter() => new(_vTable, _taskSource, _id, _result);
+    public LuminTaskAwaiter<T> GetAwaiter() => new(in this);
     
     public LuminTaskStatus Status
     {

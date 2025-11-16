@@ -13,7 +13,7 @@ public static class LuminTaskBag
 {
     public static readonly LuminTaskItem[] TaskBag = new LuminTaskItem[MaxBagCount];
     public static readonly int[] IndexList = new int[MaxBagCount];
-    private static volatile int _head;
+    private static volatile int _headWithTag;
     public const int MaxBagCount = 255;
     public const short End = 0;
     
@@ -26,36 +26,57 @@ public static class LuminTaskBag
 
         for (short i = 1; i < MaxBagCount; i++)
         {
-            IndexList[i] = (short)(i + 1);
+            IndexList[i] = i + 1;
         }
         IndexList[0] = End;
-        _head = 1; //第一个索引
+        IndexList[MaxBagCount - 1] = End;
+
+        // 初始 head：索引 1，tag = 1
+        _headWithTag = (1 & 0xFF) | (1 << 8);
     }
     
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static short GetId()
     {
-        int current, idx;
-        do
+        while (true)
         {
-            current = _head;          // 低 8 位 = 索引
-            idx = current & 0xFF;
-            if (idx == End) LuminTaskExceptionHelper.ThrowTaskItemExhausted();
-        } while (Interlocked.CompareExchange(ref _head,
-                     IndexList[idx],  
-                     current) != current);
-        return (short)idx;
-    }
+            int head = _headWithTag;
+            int idx = head & 0xFF;
 
+            if (idx == End) 
+                LuminTaskExceptionHelper.ThrowTaskItemExhausted();
+            
+            ref int next = ref Unsafe.Add(ref LuminTaskMarshal.GetArrayDataReference(IndexList), (nint)(uint)idx);
+
+            int tag = head >> 8;
+            int newTag = unchecked(tag + 1);
+
+            int newHead = (next & 0xFF) | (newTag << 8);
+            
+            if (Interlocked.CompareExchange(ref _headWithTag, newHead, head) == head)
+                return (short)idx;
+        }
+    }
+    
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static void ResetId(short idx)
     {
-        int current;
-        do
+        int i = idx;
+
+        while (true)
         {
-            current = _head;
-            IndexList[idx] = current;
-        } while (Interlocked.CompareExchange(ref _head, idx, current) != current);
+            int head = _headWithTag;
+            int headIndex = head & 0xFF;
+            int tag = head >> 8;
+            
+            Unsafe.Add(ref LuminTaskMarshal.GetArrayDataReference(IndexList), i) = headIndex;
+
+            int newTag = unchecked(tag + 1);
+            int newHead = (i & 0xFF) | (newTag << 8);
+            
+            if (Interlocked.CompareExchange(ref _headWithTag, newHead, head) == head)
+                return;
+        }
     }
 }
 

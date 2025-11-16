@@ -1,47 +1,42 @@
-﻿// See https://aka.ms/new-console-template for more information
-
-using LuminTaskUniTest;
+﻿using LuminTaskUniTest;
 using LuminThread;
 using LuminThread.AsyncEx;
+using LuminThread.Utility;
 
+var watch = new LuminStopWatch();
+watch.Start();
 
 await LuminTask.Delay(1000);
-Console.WriteLine("Hello, World!");
 
-await LuminTask.Yield();
-Console.WriteLine("Hello World!");
+Console.WriteLine(1111);
 
+var count = new AsyncCountDownEvent(3);
 
-var test = new Test();
+var task1 = LuminTask.Run(async () =>
+{
+    await LuminTask.Delay(1000);
+    count.Signal();
+});
 
-LuminTask.Run(async () =>
+var task2 = LuminTask.Run(async () =>
 {
     await LuminTask.Delay(2000);
-    test.Value = 200;
+    count.Signal();
 });
 
-await LuminTask.WaitWhile(test, t =>
+var task3 = LuminTask.Run(async () =>
 {
-    return t.Value == 200;
+    await LuminTask.Delay(3000);
+    count.Signal();
 });
 
-Console.WriteLine("执行完了");
+await count.WaitAsync();
 
-Console.WriteLine(await FooAsync());
+watch.Stop();
 
+Console.WriteLine(watch.ElapsedMilliseconds);
 
-
-static async LuminTask<int> FooAsync()
-{
-    await LuminTask.Yield();
-    var sum = 0;
-    for (int i = 0; i < 100; i++)
-    {
-        sum += i;
-        
-    }
-    return sum;
-}
+await TestAsyncLock();
 
 static async Task TestAsyncLock()
 {
@@ -62,7 +57,6 @@ static async Task TestAsyncLock()
                     counter++; // 临界区操作
                 }
             }
-            Console.WriteLine("1");
         });
     }
 
@@ -74,5 +68,3 @@ static async Task TestAsyncLock()
             
     Console.WriteLine("  ✅ AsyncLock 测试通过");
 }
-
-

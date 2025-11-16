@@ -9,3 +9,14 @@ C:\Users\xiaoxi\RiderProjects\LuminTask\LuminTask\obj\Debug\net8.0\LuminTask.dll
 C:\Users\xiaoxi\RiderProjects\LuminTask\LuminTask\obj\Debug\net8.0\refint\LuminTask.dll
 C:\Users\xiaoxi\RiderProjects\LuminTask\LuminTask\obj\Debug\net8.0\LuminTask.pdb
 C:\Users\xiaoxi\RiderProjects\LuminTask\LuminTask\obj\Debug\net8.0\ref\LuminTask.dll
+C:\Users\28027\Desktop\C#\LuminTask-main\LuminTask-main\LuminTask\obj\Debug\net8.0\LuminTask.GeneratedMSBuildEditorConfig.editorconfig
+C:\Users\28027\Desktop\C#\LuminTask-main\LuminTask-main\LuminTask\obj\Debug\net8.0\LuminTask.AssemblyInfoInputs.cache
+C:\Users\28027\Desktop\C#\LuminTask-main\LuminTask-main\LuminTask\obj\Debug\net8.0\LuminTask.AssemblyInfo.cs
+C:\Users\28027\Desktop\C#\LuminTask-main\LuminTask-main\LuminTask\obj\Debug\net8.0\LuminTask.csproj.CoreCompileInputs.cache
+C:\Users\28027\Desktop\C#\LuminTask-main\LuminTask-main\LuminTask\obj\Debug\net8.0\LuminTask.dll
+C:\Users\28027\Desktop\C#\LuminTask-main\LuminTask-main\LuminTask\obj\Debug\net8.0\refint\LuminTask.dll
+C:\Users\28027\Desktop\C#\LuminTask-main\LuminTask-main\LuminTask\obj\Debug\net8.0\LuminTask.pdb
+C:\Users\28027\Desktop\C#\LuminTask-main\LuminTask-main\LuminTask\bin\Debug\net8.0\LuminTask.deps.json
+C:\Users\28027\Desktop\C#\LuminTask-main\LuminTask-main\LuminTask\bin\Debug\net8.0\LuminTask.dll
+C:\Users\28027\Desktop\C#\LuminTask-main\LuminTask-main\LuminTask\bin\Debug\net8.0\LuminTask.pdb
+C:\Users\28027\Desktop\C#\LuminTask-main\LuminTask-main\LuminTask\obj\Debug\net8.0\ref\LuminTask.dll

@@ -1,33 +1,35 @@
 {
   "format": 1,
   "restore": {
-    "C:\\Users\\xiaoxi\\RiderProjects\\LuminTask\\LuminTaskUniTest\\LuminTaskUniTest.csproj": {}
+    "C:\\Users\\28027\\Desktop\\C#\\LuminTask-main\\LuminTask-main\\LuminTaskUniTest\\LuminTaskUniTest.csproj": {}
   },
   "projects": {
-    "C:\\Users\\xiaoxi\\RiderProjects\\LuminTask\\LuminTaskUniTest\\LuminTaskUniTest.csproj": {
+    "C:\\Users\\28027\\Desktop\\C#\\LuminTask-main\\LuminTask-main\\LuminTaskUniTest\\LuminTaskUniTest.csproj": {
       "version": "1.0.0",
       "restore": {
-        "projectUniqueName": "C:\\Users\\xiaoxi\\RiderProjects\\LuminTask\\LuminTaskUniTest\\LuminTaskUniTest.csproj",
+        "projectUniqueName": "C:\\Users\\28027\\Desktop\\C#\\LuminTask-main\\LuminTask-main\\LuminTaskUniTest\\LuminTaskUniTest.csproj",
         "projectName": "LuminTaskUniTest",
-        "projectPath": "C:\\Users\\xiaoxi\\RiderProjects\\LuminTask\\LuminTaskUniTest\\LuminTaskUniTest.csproj",
-        "packagesPath": "C:\\Users\\xiaoxi\\.nuget\\packages\\",
-        "outputPath": "C:\\Users\\xiaoxi\\RiderProjects\\LuminTask\\LuminTaskUniTest\\obj\\",
+        "projectPath": "C:\\Users\\28027\\Desktop\\C#\\LuminTask-main\\LuminTask-main\\LuminTaskUniTest\\LuminTaskUniTest.csproj",
+        "packagesPath": "C:\\Users\\28027\\.nuget\\packages\\",
+        "outputPath": "C:\\Users\\28027\\Desktop\\C#\\LuminTask-main\\LuminTask-main\\LuminTaskUniTest\\obj\\",
         "projectStyle": "PackageReference",
         "configFilePaths": [
-          "C:\\Users\\xiaoxi\\AppData\\Roaming\\NuGet\\NuGet.Config"
+          "C:\\Users\\28027\\AppData\\Roaming\\NuGet\\NuGet.Config",
+          "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.Offline.config"
         ],
         "originalTargetFrameworks": [
           "net9.0"
         ],
         "sources": {
+          "C:\\Program Files (x86)\\Microsoft SDKs\\NuGetPackages\\": {},
           "https://api.nuget.org/v3/index.json": {}
         },
         "frameworks": {
           "net9.0": {
             "targetAlias": "net9.0",
             "projectReferences": {
-              "C:\\Users\\xiaoxi\\RiderProjects\\LuminTask\\LuminTask\\LuminTask.csproj": {
-                "projectPath": "C:\\Users\\xiaoxi\\RiderProjects\\LuminTask\\LuminTask\\LuminTask.csproj"
+              "C:\\Users\\28027\\Desktop\\C#\\LuminTask-main\\LuminTask-main\\LuminTask\\LuminTask.csproj": {
+                "projectPath": "C:\\Users\\28027\\Desktop\\C#\\LuminTask-main\\LuminTask-main\\LuminTask\\LuminTask.csproj"
               }
             }
           }
@@ -47,6 +49,16 @@
       "frameworks": {
         "net9.0": {
           "targetAlias": "net9.0",
+          "dependencies": {
+            "BenchmarkDotNet": {
+              "target": "Package",
+              "version": "[0.15.6, )"
+            },
+            "UniTask": {
+              "target": "Package",
+              "version": "[2.5.10, )"
+            }
+          },
           "imports": [
             "net461",
             "net462",
@@ -63,22 +75,23 @@
               "privateAssets": "all"
             }
           },
-          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\9.0.305/PortableRuntimeIdentifierGraph.json"
+          "runtimeIdentifierGraphPath": "C:\\Program Files (x86)\\dotnet\\sdk\\9.0.307/PortableRuntimeIdentifierGraph.json"
         }
       }
     },
-    "C:\\Users\\xiaoxi\\RiderProjects\\LuminTask\\LuminTask\\LuminTask.csproj": {
+    "C:\\Users\\28027\\Desktop\\C#\\LuminTask-main\\LuminTask-main\\LuminTask\\LuminTask.csproj": {
       "version": "1.0.0",
       "restore": {
-        "projectUniqueName": "C:\\Users\\xiaoxi\\RiderProjects\\LuminTask\\LuminTask\\LuminTask.csproj",
+        "projectUniqueName": "C:\\Users\\28027\\Desktop\\C#\\LuminTask-main\\LuminTask-main\\LuminTask\\LuminTask.csproj",
         "projectName": "LuminTask",
-        "projectPath": "C:\\Users\\xiaoxi\\RiderProjects\\LuminTask\\LuminTask\\LuminTask.csproj",
-        "packagesPath": "C:\\Users\\xiaoxi\\.nuget\\packages\\",
-        "outputPath": "C:\\Users\\xiaoxi\\RiderProjects\\LuminTask\\LuminTask\\obj\\",
+        "projectPath": "C:\\Users\\28027\\Desktop\\C#\\LuminTask-main\\LuminTask-main\\LuminTask\\LuminTask.csproj",
+        "packagesPath": "C:\\Users\\28027\\.nuget\\packages\\",
+        "outputPath": "C:\\Users\\28027\\Desktop\\C#\\LuminTask-main\\LuminTask-main\\LuminTask\\obj\\",
         "projectStyle": "PackageReference",
         "crossTargeting": true,
         "configFilePaths": [
-          "C:\\Users\\xiaoxi\\AppData\\Roaming\\NuGet\\NuGet.Config"
+          "C:\\Users\\28027\\AppData\\Roaming\\NuGet\\NuGet.Config",
+          "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.Offline.config"
         ],
         "originalTargetFrameworks": [
           "net8.0",
@@ -86,6 +99,7 @@
           "netstandard2.1"
         ],
         "sources": {
+          "C:\\Program Files (x86)\\Microsoft SDKs\\NuGetPackages\\": {},
           "https://api.nuget.org/v3/index.json": {}
         },
         "frameworks": {
@@ -138,26 +152,12 @@
           ],
           "assetTargetFallback": true,
           "warn": true,
-          "downloadDependencies": [
-            {
-              "name": "Microsoft.AspNetCore.App.Ref",
-              "version": "[8.0.20, 8.0.20]"
-            },
-            {
-              "name": "Microsoft.NETCore.App.Ref",
-              "version": "[8.0.20, 8.0.20]"
-            },
-            {
-              "name": "Microsoft.WindowsDesktop.App.Ref",
-              "version": "[8.0.20, 8.0.20]"
-            }
-          ],
           "frameworkReferences": {
             "Microsoft.NETCore.App": {
               "privateAssets": "all"
             }
           },
-          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\9.0.305/PortableRuntimeIdentifierGraph.json"
+          "runtimeIdentifierGraphPath": "C:\\Program Files (x86)\\dotnet\\sdk\\9.0.307/PortableRuntimeIdentifierGraph.json"
         },
         "net9.0": {
           "targetAlias": "net9.0",
@@ -187,7 +187,7 @@
               "privateAssets": "all"
             }
           },
-          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\9.0.305/PortableRuntimeIdentifierGraph.json"
+          "runtimeIdentifierGraphPath": "C:\\Program Files (x86)\\dotnet\\sdk\\9.0.307/PortableRuntimeIdentifierGraph.json"
         },
         "netstandard2.1": {
           "targetAlias": "netstandard2.1",
@@ -217,7 +217,7 @@
               "privateAssets": "all"
             }
           },
-          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\9.0.305\\RuntimeIdentifierGraph.json"
+          "runtimeIdentifierGraphPath": "C:\\Program Files (x86)\\dotnet\\sdk\\9.0.307\\RuntimeIdentifierGraph.json"
         }
       }
     }
