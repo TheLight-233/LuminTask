@@ -3,7 +3,7 @@ using System.Threading.Tasks;
 
 namespace LuminThread;
 
-internal static class LuminTaskValueTaskExtensions
+public static class LuminTaskValueTaskExtensions
 {
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static ValueTask AsValueTask(this in LuminTask task)

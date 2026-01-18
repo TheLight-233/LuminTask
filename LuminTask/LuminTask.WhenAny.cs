@@ -23,8 +23,17 @@ public readonly partial struct LuminTask
     {
         if (tasks is null)
             return LuminTask<int>.FromResult(0);
-
-        var array = tasks.ToArray();
+        
+        LuminTask[] array;
+        
+        if (tasks is LuminTask[] tasksArray)
+        {
+            array = tasksArray;
+        }
+        else
+        {
+            array = tasks.ToArray();
+        }
         
         if (array.Length == 0)
             return LuminTask<int>.FromResult(0);
@@ -49,7 +58,16 @@ public readonly partial struct LuminTask
         if (tasks is null)
             return LuminTask<(int winArgumentIndex, T result)>.FromResult(default);
 
-        var array = tasks.ToArray();
+        LuminTask<T>[] array;
+        
+        if (tasks is LuminTask<T>[] tasksArray)
+        {
+            array = tasksArray;
+        }
+        else
+        {
+            array = tasks.ToArray();
+        }
         
         if (array.Length == 0)
             return LuminTask<(int winArgumentIndex, T result)>.FromResult(default);
@@ -154,5 +172,103 @@ public readonly partial struct LuminTask
     {
         var promise = new WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15>(task1, task2, task3, task4, task5, task6, task7, task8, task9, task10, task11, task12, task13, task14, task15);
         return new LuminTask<(int winArgumentIndex, T1 result1, T2 result2, T3 result3, T4 result4, T5 result5, T6 result6, T7 result7, T8 result8, T9 result9, T10 result10, T11 result11, T12 result12, T13 result13, T14 result14, T15 result15)>(LuminTaskSourceCore<(int, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15)>.MethodTable, promise.core, promise.core->Id);
+    }
+    
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static unsafe LuminTask<int> WhenAny(LuminTask task1, LuminTask task2)
+    {
+        var promise = new WhenAnyPromise2(task1, task2);
+        return new LuminTask<int>(LuminTaskSourceCore<int>.MethodTable, promise._core, promise._core->Id);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static unsafe LuminTask<int> WhenAny(LuminTask task1, LuminTask task2, LuminTask task3)
+    {
+        var promise = new WhenAnyPromise3(task1, task2, task3);
+        return new LuminTask<int>(LuminTaskSourceCore<int>.MethodTable, promise._core, promise._core->Id);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static unsafe LuminTask<int> WhenAny(LuminTask task1, LuminTask task2, LuminTask task3, LuminTask task4)
+    {
+        var promise = new WhenAnyPromise4(task1, task2, task3, task4);
+        return new LuminTask<int>(LuminTaskSourceCore<int>.MethodTable, promise._core, promise._core->Id);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static unsafe LuminTask<int> WhenAny(LuminTask task1, LuminTask task2, LuminTask task3, LuminTask task4, LuminTask task5)
+    {
+        var promise = new WhenAnyPromise5(task1, task2, task3, task4, task5);
+        return new LuminTask<int>(LuminTaskSourceCore<int>.MethodTable, promise._core, promise._core->Id);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static unsafe LuminTask<int> WhenAny(LuminTask task1, LuminTask task2, LuminTask task3, LuminTask task4, LuminTask task5, LuminTask task6)
+    {
+        var promise = new WhenAnyPromise6(task1, task2, task3, task4, task5, task6);
+        return new LuminTask<int>(LuminTaskSourceCore<int>.MethodTable, promise._core, promise._core->Id);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static unsafe LuminTask<int> WhenAny(LuminTask task1, LuminTask task2, LuminTask task3, LuminTask task4, LuminTask task5, LuminTask task6, LuminTask task7)
+    {
+        var promise = new WhenAnyPromise7(task1, task2, task3, task4, task5, task6, task7);
+        return new LuminTask<int>(LuminTaskSourceCore<int>.MethodTable, promise._core, promise._core->Id);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static unsafe LuminTask<int> WhenAny(LuminTask task1, LuminTask task2, LuminTask task3, LuminTask task4, LuminTask task5, LuminTask task6, LuminTask task7, LuminTask task8)
+    {
+        var promise = new WhenAnyPromise8(task1, task2, task3, task4, task5, task6, task7, task8);
+        return new LuminTask<int>(LuminTaskSourceCore<int>.MethodTable, promise._core, promise._core->Id);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static unsafe LuminTask<int> WhenAny(LuminTask task1, LuminTask task2, LuminTask task3, LuminTask task4, LuminTask task5, LuminTask task6, LuminTask task7, LuminTask task8, LuminTask task9)
+    {
+        var promise = new WhenAnyPromise9(task1, task2, task3, task4, task5, task6, task7, task8, task9);
+        return new LuminTask<int>(LuminTaskSourceCore<int>.MethodTable, promise._core, promise._core->Id);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static unsafe LuminTask<int> WhenAny(LuminTask task1, LuminTask task2, LuminTask task3, LuminTask task4, LuminTask task5, LuminTask task6, LuminTask task7, LuminTask task8, LuminTask task9, LuminTask task10)
+    {
+        var promise = new WhenAnyPromise10(task1, task2, task3, task4, task5, task6, task7, task8, task9, task10);
+        return new LuminTask<int>(LuminTaskSourceCore<int>.MethodTable, promise._core, promise._core->Id);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static unsafe LuminTask<int> WhenAny(LuminTask task1, LuminTask task2, LuminTask task3, LuminTask task4, LuminTask task5, LuminTask task6, LuminTask task7, LuminTask task8, LuminTask task9, LuminTask task10, LuminTask task11)
+    {
+        var promise = new WhenAnyPromise11(task1, task2, task3, task4, task5, task6, task7, task8, task9, task10, task11);
+        return new LuminTask<int>(LuminTaskSourceCore<int>.MethodTable, promise._core, promise._core->Id);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static unsafe LuminTask<int> WhenAny(LuminTask task1, LuminTask task2, LuminTask task3, LuminTask task4, LuminTask task5, LuminTask task6, LuminTask task7, LuminTask task8, LuminTask task9, LuminTask task10, LuminTask task11, LuminTask task12)
+    {
+        var promise = new WhenAnyPromise12(task1, task2, task3, task4, task5, task6, task7, task8, task9, task10, task11, task12);
+        return new LuminTask<int>(LuminTaskSourceCore<int>.MethodTable, promise._core, promise._core->Id);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static unsafe LuminTask<int> WhenAny(LuminTask task1, LuminTask task2, LuminTask task3, LuminTask task4, LuminTask task5, LuminTask task6, LuminTask task7, LuminTask task8, LuminTask task9, LuminTask task10, LuminTask task11, LuminTask task12, LuminTask task13)
+    {
+        var promise = new WhenAnyPromise13(task1, task2, task3, task4, task5, task6, task7, task8, task9, task10, task11, task12, task13);
+        return new LuminTask<int>(LuminTaskSourceCore<int>.MethodTable, promise._core, promise._core->Id);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static unsafe LuminTask<int> WhenAny(LuminTask task1, LuminTask task2, LuminTask task3, LuminTask task4, LuminTask task5, LuminTask task6, LuminTask task7, LuminTask task8, LuminTask task9, LuminTask task10, LuminTask task11, LuminTask task12, LuminTask task13, LuminTask task14)
+    {
+        var promise = new WhenAnyPromise14(task1, task2, task3, task4, task5, task6, task7, task8, task9, task10, task11, task12, task13, task14);
+        return new LuminTask<int>(LuminTaskSourceCore<int>.MethodTable, promise._core, promise._core->Id);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static unsafe LuminTask<int> WhenAny(LuminTask task1, LuminTask task2, LuminTask task3, LuminTask task4, LuminTask task5, LuminTask task6, LuminTask task7, LuminTask task8, LuminTask task9, LuminTask task10, LuminTask task11, LuminTask task12, LuminTask task13, LuminTask task14, LuminTask task15)
+    {
+        var promise = new WhenAnyPromise15(task1, task2, task3, task4, task5, task6, task7, task8, task9, task10, task11, task12, task13, task14, task15);
+        return new LuminTask<int>(LuminTaskSourceCore<int>.MethodTable, promise._core, promise._core->Id);
     }
 }

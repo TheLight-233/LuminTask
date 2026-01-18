@@ -171,14 +171,6 @@ namespace LuminThread.Utility
         /// <summary>
         /// Deconstructs the current tuple.
         /// </summary>
-<#
-        for(int j = 1; j <= i; j++)
-        {
-#>
-        
-<#
-        }
-#>
         public void Deconstruct(<#= string.Join(", ", Enumerable.Range(1, i).Select(j => $"out T{j} item{j}")) #>)
         {
 <#

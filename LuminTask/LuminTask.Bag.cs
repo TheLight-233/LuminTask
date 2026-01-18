@@ -11,72 +11,117 @@ namespace LuminThread;
 [Preserve]
 public static class LuminTaskBag
 {
-    public static readonly LuminTaskItem[] TaskBag = new LuminTaskItem[MaxBagCount];
-    public static readonly int[] IndexList = new int[MaxBagCount];
-    private static volatile int _headWithTag;
-    public const int MaxBagCount = 255;
-    public const short End = 0;
+    private const int MAX_BAG_COUNT = 256;
+    private const int BAG_MASK = MAX_BAG_COUNT - 1;
     
+    public static readonly LuminTaskItem[] TaskBag = new LuminTaskItem[MAX_BAG_COUNT];
+    private static readonly LuminBitMap _idBitMap = new LuminBitMap(MAX_BAG_COUNT);
+    private static int _nextScanField = 0;
+    
+    private static object _sync = new ();
+
     static LuminTaskBag()
     {
-        for (short i = 0; i < MaxBagCount; i++)
+        for (short i = 0; i < MAX_BAG_COUNT; i++)
         {
             TaskBag[i] = new LuminTaskItem(i);
         }
-
-        for (short i = 1; i < MaxBagCount; i++)
-        {
-            IndexList[i] = i + 1;
-        }
-        IndexList[0] = End;
-        IndexList[MaxBagCount - 1] = End;
-
-        // 初始 head：索引 1，tag = 1
-        _headWithTag = (1 & 0xFF) | (1 << 8);
     }
     
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static short GetId()
     {
-        while (true)
+        int startFieldIdx = _nextScanField;
+        int remainingFields = _idBitMap.FieldCount;
+        
+        do
         {
-            int head = _headWithTag;
-            int idx = head & 0xFF;
-
-            if (idx == End) 
-                LuminTaskExceptionHelper.ThrowTaskItemExhausted();
+            if (_idBitMap.TryFindAndClaimFrom(startFieldIdx, 1, out var bitmapIndex))
+            {
+                int id = bitmapIndex.ToAbsoluteIndex();
+                _nextScanField = (id + 1) >> 3;
+                //Console.WriteLine("[LuminTaskBag] Allocated Id: " + id);
+                return (short)id;
+            }
             
-            ref int next = ref Unsafe.Add(ref LuminTaskMarshal.GetArrayDataReference(IndexList), (nint)(uint)idx);
-
-            int tag = head >> 8;
-            int newTag = unchecked(tag + 1);
-
-            int newHead = (next & 0xFF) | (newTag << 8);
+            startFieldIdx = 0;
+        } while (Interlocked.Decrement(ref remainingFields) > 0);
+        
+        LuminTaskExceptionHelper.ThrowTaskItemExhausted();
+        return -1;
+    }
+    
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static bool TryGetId(out short id)
+    {
+        int startFieldIdx = _nextScanField;
+        int remainingFields = _idBitMap.FieldCount;
+        
+        do
+        {
+            if (_idBitMap.TryFindAndClaimFrom(startFieldIdx, 1, out var bitmapIndex))
+            {
+                int absoluteId = bitmapIndex.ToAbsoluteIndex();
+                _nextScanField = (absoluteId + 1) >> 3;
+                id = (short)absoluteId;
+                return true;
+            }
             
-            if (Interlocked.CompareExchange(ref _headWithTag, newHead, head) == head)
-                return (short)idx;
-        }
+            startFieldIdx = 0;
+        } while (Interlocked.Decrement(ref remainingFields) > 0);
+        
+        id = -1;
+        return false;
     }
     
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static void ResetId(short idx)
     {
-        int i = idx;
+        //Console.WriteLine("[LuminTaskBag] Releasing Id: " + idx);
+        var bitmapIndex = LuminBitMap.BitmapIndex.FromAbsoluteIndex(idx);
+        _idBitMap.Unclaim(bitmapIndex, 1);
+    }
+    
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static int GetAvailableCount()
+    {
+        return _idBitMap.CountClearBits();
+    }
+    
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static bool IsIdAvailable(short idx)
+    {
+        var bitmapIndex = LuminBitMap.BitmapIndex.FromAbsoluteIndex(idx);
+        return !_idBitMap.IsAnyClaimed(bitmapIndex, 1);
+    }
+    
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static void ClearAllIds()
+    {
+        _idBitMap.ClearAll();
+        _nextScanField = 0;
+    }
+    
+    public static void PrintAllTasksStatus()
+    {
+        Console.WriteLine($"[LuminTaskBag Debug] Total tasks: {MAX_BAG_COUNT}, Available: {GetAvailableCount()}");
+        Console.WriteLine("Id  | Status               | Bitmap | HasContinuation | HasException | HasError | CapturedContext");
+        Console.WriteLine("----|----------------------|--------|-----------------|--------------|----------|----------------");
 
-        while (true)
+        for (int i = 0; i < MAX_BAG_COUNT; i++)
         {
-            int head = _headWithTag;
-            int headIndex = head & 0xFF;
-            int tag = head >> 8;
-            
-            Unsafe.Add(ref LuminTaskMarshal.GetArrayDataReference(IndexList), i) = headIndex;
+            ref readonly var task = ref TaskBag[i];
+            string status = task.Status.ToString().PadRight(20);
+            bool isOccupied = !IsIdAvailable((short)i);  // 检查位图是否标记为占用
+            string bitmapStatus = isOccupied ? "Y" : "N";
+            string hasContinuation = (task.Continuation != null).ToString();
+            string hasException = (task.Exception != null).ToString();
+            string hasError = (task.Error != null).ToString();
+            string hasCapturedContext = (task.CapturedContext != null).ToString();
 
-            int newTag = unchecked(tag + 1);
-            int newHead = (i & 0xFF) | (newTag << 8);
-            
-            if (Interlocked.CompareExchange(ref _headWithTag, newHead, head) == head)
-                return;
+            Console.WriteLine($"{task.Id,3} | {status} | {bitmapStatus,6} | {hasContinuation,15} | {hasException,12} | {hasError,8} | {hasCapturedContext}");
         }
+        Console.WriteLine();
     }
 }
 
@@ -178,6 +223,4 @@ public unsafe struct LuminTaskState
         State = state;
         ValueState = valueState;
     }
-    
-    
 }

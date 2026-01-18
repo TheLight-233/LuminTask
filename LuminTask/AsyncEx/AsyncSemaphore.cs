@@ -1,60 +1,50 @@
-﻿using System;
+using System;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Threading;
-using LuminThread.TaskSource;
 
 namespace LuminThread.AsyncEx
 {
     /// <summary>
-    /// 异步信号量
+    /// 高性能异步信号量
     /// </summary>
     [DebuggerDisplay("Id = {Id}, CurrentCount = {_count}")]
     public sealed class AsyncSemaphore
     {
-        private readonly AsyncLock _mutex;
+        private readonly object _mutex = new object();
         private readonly IAsyncWaitQueue<object> _queue;
         private long _count;
         private int _id;
 
-        /// <summary>
-        /// 创建新的异步信号量
-        /// </summary>
-        /// <param name="initialCount">初始计数，必须大于等于0</param>
         public AsyncSemaphore(long initialCount)
         {
             if (initialCount < 0)
                 throw new ArgumentOutOfRangeException(nameof(initialCount));
-            
-            _mutex = new AsyncLock();
+
             _queue = new DefaultAsyncWaitQueue<object>();
             _count = initialCount;
         }
 
-        /// <summary>
-        /// 获取实例的唯一标识符
-        /// </summary>
-        public int Id => IdManager<AsyncSemaphore>.GetId(ref _id);
-
-        /// <summary>
-        /// 获取当前可用的信号量计数
-        /// </summary>
-        public long CurrentCount
+        public int Id
         {
             get
             {
-                using (_mutex.LockAsync().Result)
+                if (_id == 0)
                 {
-                    return _count;
+                    Interlocked.CompareExchange(ref _id, GetNextId(), 0);
                 }
+                return _id;
             }
         }
 
-        /// <summary>
-        /// 异步等待信号量
-        /// </summary>
-        /// <param name="cancellationToken">取消令牌</param>
-        /// <returns>表示等待完成的任务</returns>
+        private static int _nextId = 1;
+        private static int GetNextId() => Interlocked.Increment(ref _nextId);
+
+        public long CurrentCount
+        {
+            get { lock (_mutex) return _count; }
+        }
+
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public LuminTask WaitAsync(CancellationToken cancellationToken = default)
         {
@@ -63,60 +53,20 @@ namespace LuminThread.AsyncEx
                 return LuminTask.FromCanceled(cancellationToken);
             }
 
-            return WaitInternalAsync(cancellationToken);
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private async LuminTask WaitInternalAsync(CancellationToken cancellationToken)
-        {
-            using (await _mutex.LockAsync(cancellationToken))
+            lock (_mutex)
             {
-                // 如果信号量可用，立即获取
+                // 快速路径：信号量可用
                 if (_count > 0)
                 {
                     _count--;
+                    return LuminTask.CompletedTask();
                 }
-                else
-                {
-                    // 等待信号量可用或取消
-                    await _queue.Enqueue();
-                }
+
+                // 使用扩展方法，自动处理取消
+                return _queue.Enqueue(cancellationToken);
             }
         }
 
-        /// <summary>
-        /// 异步等待信号量
-        /// </summary>
-        /// <returns>表示等待完成的任务</returns>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public LuminTask WaitAsync()
-        {
-            return WaitAsync(CancellationToken.None);
-        }
-
-        /// <summary>
-        /// 同步等待信号量
-        /// </summary>
-        /// <param name="cancellationToken">取消令牌</param>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void Wait(CancellationToken cancellationToken = default)
-        {
-            WaitAsync(cancellationToken).GetAwaiter().GetResult();
-        }
-
-        /// <summary>
-        /// 同步等待信号量
-        /// </summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void Wait()
-        {
-            Wait(CancellationToken.None);
-        }
-
-        /// <summary>
-        /// 释放信号量
-        /// </summary>
-        /// <param name="releaseCount">释放数量</param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void Release(long releaseCount = 1)
         {
@@ -126,9 +76,9 @@ namespace LuminThread.AsyncEx
             if (releaseCount == 0)
                 return;
 
-            using (_mutex.LockAsync().Result)
+            lock (_mutex)
             {
-                // 检查是否会溢出
+                // 检查溢出
                 checked
                 {
                     var test = _count + releaseCount;
@@ -141,16 +91,11 @@ namespace LuminThread.AsyncEx
                     releaseCount--;
                 }
 
-                // 剩余的增加到计数中
+                // 剩余增加到计数
                 _count += releaseCount;
             }
         }
 
-        /// <summary>
-        /// 异步获取信号量锁，返回可释放的对象
-        /// </summary>
-        /// <param name="cancellationToken">取消令牌</param>
-        /// <returns>释放信号量的 disposable 对象</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public LuminTask<IDisposable> LockAsync(CancellationToken cancellationToken = default)
         {
@@ -164,87 +109,25 @@ namespace LuminThread.AsyncEx
             return new SemaphoreLock(this);
         }
 
-        /// <summary>
-        /// 异步获取信号量锁，返回可释放的对象
-        /// </summary>
-        /// <returns>释放信号量的 disposable 对象</returns>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public LuminTask<IDisposable> LockAsync()
-        {
-            return LockAsync(CancellationToken.None);
-        }
-
-        /// <summary>
-        /// 同步获取信号量锁，返回可释放的对象
-        /// </summary>
-        /// <param name="cancellationToken">取消令牌</param>
-        /// <returns>释放信号量的 disposable 对象</returns>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public IDisposable Lock(CancellationToken cancellationToken = default)
-        {
-            Wait(cancellationToken);
-            return new SemaphoreLock(this);
-        }
-
-        /// <summary>
-        /// 同步获取信号量锁，返回可释放的对象
-        /// </summary>
-        /// <returns>释放信号量的 disposable 对象</returns>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public IDisposable Lock()
-        {
-            return Lock(CancellationToken.None);
-        }
-
-        /// <summary>
-        /// 信号量锁释放器
-        /// </summary>
         private sealed class SemaphoreLock : IDisposable
         {
-            private readonly AsyncSemaphore _semaphore;
-            private volatile bool _isDisposed;
+            private AsyncSemaphore _semaphore;
 
             public SemaphoreLock(AsyncSemaphore semaphore)
             {
                 _semaphore = semaphore;
-                _isDisposed = false;
             }
 
             public void Dispose()
             {
-                if (!_isDisposed)
-                {
-                    _semaphore.Release();
-                    _isDisposed = true;
-                }
+                var semaphore = Interlocked.Exchange(ref _semaphore, null);
+                semaphore?.Release();
             }
-        }
-
-        // 调试视图
-        [DebuggerNonUserCode]
-        private sealed class DebugView
-        {
-            private readonly AsyncSemaphore _semaphore;
-
-            public DebugView(AsyncSemaphore semaphore)
-            {
-                _semaphore = semaphore;
-            }
-
-            public int Id => _semaphore.Id;
-            public long CurrentCount => _semaphore._count;
-            public bool HasWaitingTasks => !_semaphore._queue.IsEmpty;
         }
     }
 
-    /// <summary>
-    /// 扩展方法
-    /// </summary>
     public static class AsyncSemaphoreExtensions
     {
-        /// <summary>
-        /// 带超时的等待
-        /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static LuminTask WaitAsync(this AsyncSemaphore semaphore, TimeSpan timeout)
         {
@@ -252,9 +135,6 @@ namespace LuminThread.AsyncEx
             return semaphore.WaitAsync(cts.Token);
         }
 
-        /// <summary>
-        /// 带超时的锁获取
-        /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static LuminTask<IDisposable> LockAsync(this AsyncSemaphore semaphore, TimeSpan timeout)
         {

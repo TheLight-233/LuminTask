@@ -16,7 +16,7 @@ public readonly unsafe partial struct LuminTask
     {
         var source = DelayPromise<AsyncUnit>.Create(millisecondsDelay, loopTiming, cancellationToken, cancelImmediately);
 
-        return new LuminTask(LuminTaskSourceCore<AsyncUnit>.MethodTable, source.Source, source.Source->Id);
+        return source.Task;
     }
 
     [DebuggerHidden]

@@ -1,19 +1,21 @@
-﻿using System;
+using System;
 using System.Runtime.CompilerServices;
 using System.Threading;
-using LuminThread.TaskSource;
 
 namespace LuminThread.AsyncEx
 {
+    /// <summary>
+    /// 高性能异步条件变量
+    /// </summary>
     public sealed class AsyncConditionVariable
     {
-        internal readonly AsyncLock _asyncLock;
-        private readonly AsyncWaitQueue<AsyncLock.ReleaseScope> _waitQueue;
+        private readonly AsyncLock _asyncLock;
+        private readonly IAsyncWaitQueue<AsyncLock.ReleaseScope> _waitQueue;
 
         public AsyncConditionVariable(AsyncLock asyncLock)
         {
             _asyncLock = asyncLock ?? throw new ArgumentNullException(nameof(asyncLock));
-            _waitQueue = new AsyncWaitQueue<AsyncLock.ReleaseScope>();
+            _waitQueue = new DefaultAsyncWaitQueue<AsyncLock.ReleaseScope>();
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -24,6 +26,7 @@ namespace LuminThread.AsyncEx
                 return LuminTask.FromCanceled<AsyncLock.ReleaseScope>(cancellationToken);
             }
 
+            // 使用扩展方法，自动处理取消
             return _waitQueue.Enqueue(cancellationToken);
         }
 
@@ -44,170 +47,151 @@ namespace LuminThread.AsyncEx
                 _waitQueue.DequeueAll(new AsyncLock.ReleaseScope(_asyncLock));
             }
         }
-        
-        private sealed class AsyncWaitQueue<T> : IAsyncWaitQueue<T>
-        {
-            private readonly LuminDeque<Waiter> _waiters = new();
-            private readonly object _syncLock = new();
-
-            public bool IsEmpty
-            {
-                get { lock (_syncLock) return _waiters.Count == 0; }
-            }
-
-            public LuminTask<T> Enqueue()
-            {
-                return Enqueue(CancellationToken.None);
-            }
-
-            public LuminTask<T> Enqueue(CancellationToken cancellationToken)
-            {
-                lock (_syncLock)
-                {
-                    var waiter = new Waiter(cancellationToken);
-                    _waiters.PushBack(waiter);
-                    return waiter.Task;
-                }
-            }
-
-            public void Dequeue(T? result = default)
-            {
-                Waiter waiter;
-                lock (_syncLock)
-                {
-                    if (_waiters.Count == 0) return;
-                    waiter = _waiters.PopFront();
-                }
-
-                waiter.TrySetResult(result);
-            }
-
-            public void DequeueAll(T? result = default)
-            {
-                lock (_syncLock)
-                {
-                    foreach (var waiter in _waiters)
-                    {
-                        waiter.TrySetResult(result!);
-                    }
-                }
-                
-            }
-
-            public bool TryCancel(LuminTask task, CancellationToken cancellationToken)
-            {
-                lock (_syncLock)
-                {
-                    for (int i = 0; i < _waiters.Count; i++)
-                    {
-                        if (_waiters[i].Task.Equals(task))
-                        {
-                            _waiters[i].TrySetCanceled(cancellationToken);
-                            _waiters.RemoveAt(i);
-                            return true;
-                        }
-                    }
-                }
-                return false;
-            }
-
-            public void CancelAll(CancellationToken cancellationToken)
-            {
-                lock (_syncLock)
-                {
-                    foreach (var waiter in _waiters)
-                    {
-                        waiter.TrySetCanceled(cancellationToken);
-                    }
-                }
-            }
-
-            private sealed unsafe class Waiter
-            {
-                private readonly LuminTaskSourceCore<T>* _core;
-                private readonly CancellationTokenRegistration _cancellationRegistration;
-                private volatile bool _isCompleted;
-
-                public LuminTask<T> Task => new LuminTask<T>(
-                    LuminTaskSourceCore<T>.MethodTable, 
-                    _core, 
-                    _core->Id);
-
-                public Waiter(CancellationToken cancellationToken)
-                {
-                    _core = LuminTaskSourceCore<T>.Create();
-
-                    if (cancellationToken.CanBeCanceled)
-                    {
-                        _cancellationRegistration = cancellationToken.Register(() =>
-                        {
-                            if (!_isCompleted)
-                            {
-                                TrySetCanceled(cancellationToken);
-                            }
-                        });
-                    }
-                }
-
-                public bool TrySetResult(T result)
-                {
-                    if (_isCompleted) return false;
-                    
-                    if (LuminTaskSourceCore<T>.TrySetResult(_core, result))
-                    {
-                        Complete();
-                        return true;
-                    }
-                    return false;
-                }
-
-                public bool TrySetCanceled(CancellationToken cancellationToken = default)
-                {
-                    if (_isCompleted) return false;
-
-                    if (LuminTaskSourceCore<T>.TrySetCanceled(_core))
-                    {
-                        Complete();
-                        return true;
-                    }
-                    return false;
-                }
-
-                [MethodImpl(MethodImplOptions.AggressiveInlining)]
-                private void Complete()
-                {
-                    _isCompleted = true;
-                    _cancellationRegistration.Dispose();
-
-                    if (_core != null)
-                    {
-                        LuminTaskSourceCore<T>.Dispose(_core);
-                    }
-                }
-            }
-        }
     }
 
     public static class AsyncConditionVariableExtensions
     {
+        /// <summary>
+        /// 释放当前锁，等待条件变量信号，然后重新获取锁
+        /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static LuminTask<AsyncLock.ReleaseScope> WaitWithLockAsync(
             this AsyncConditionVariable conditionVariable,
-            AsyncLock.ReleaseScope currentLock)
+            AsyncLock.ReleaseScope currentLock,
+            CancellationToken cancellationToken = default)
         {
-            if (conditionVariable == null) throw new ArgumentNullException(nameof(conditionVariable));
+            if (conditionVariable == null)
+                throw new ArgumentNullException(nameof(conditionVariable));
 
+            // 释放当前锁
             currentLock.Dispose();
-            var waitTask = conditionVariable.WaitAsync();
-            return WaitAndRetakeLock(waitTask, conditionVariable._asyncLock);
+
+            // 等待条件变量信号（会返回新的锁）
+            return conditionVariable.WaitAsync(cancellationToken);
+        }
+    }
+
+    /// <summary>
+    /// 高性能异步监视器
+    /// </summary>
+    public sealed class AsyncMonitor
+    {
+        private readonly AsyncLock _asyncLock;
+        private readonly AsyncConditionVariable _conditionVariable;
+
+        public AsyncMonitor()
+        {
+            _asyncLock = new AsyncLock();
+            _conditionVariable = new AsyncConditionVariable(_asyncLock);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private static async LuminTask<AsyncLock.ReleaseScope> WaitAndRetakeLock(
-            LuminTask<AsyncLock.ReleaseScope> waitTask, AsyncLock asyncLock)
+        public LuminTask<MonitorScope> EnterAsync(CancellationToken cancellationToken = default)
         {
-            await waitTask;
-            return await asyncLock.LockAsync();
+            return EnterInternalAsync(cancellationToken);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private async LuminTask<MonitorScope> EnterInternalAsync(CancellationToken cancellationToken)
+        {
+            var lockScope = await _asyncLock.LockAsync(cancellationToken);
+            return new MonitorScope(this, lockScope);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal LuminTask<AsyncLock.ReleaseScope> WaitInternalAsync(
+            AsyncLock.ReleaseScope lockScope,
+            CancellationToken cancellationToken)
+        {
+            return _conditionVariable.WaitWithLockAsync(lockScope, cancellationToken);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal void PulseInternal()
+        {
+            _conditionVariable.Notify();
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal void PulseAllInternal()
+        {
+            _conditionVariable.NotifyAll();
+        }
+
+        /// <summary>
+        /// 监视器作用域
+        /// </summary>
+        public struct MonitorScope : IDisposable
+        {
+            private readonly AsyncMonitor _monitor;
+            private AsyncLock.ReleaseScope _lockScope;
+
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            internal MonitorScope(AsyncMonitor monitor, AsyncLock.ReleaseScope lockScope)
+            {
+                _monitor = monitor;
+                _lockScope = lockScope;
+            }
+
+            /// <summary>
+            /// 等待信号
+            /// </summary>
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            public LuminTask<MonitorScope> WaitAsync(CancellationToken cancellationToken = default)
+            {
+                return WaitInternalAsync(cancellationToken);
+            }
+
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            private async LuminTask<MonitorScope> WaitInternalAsync(CancellationToken cancellationToken)
+            {
+                var newLockScope = await _monitor.WaitInternalAsync(_lockScope, cancellationToken);
+                return new MonitorScope(_monitor, newLockScope);
+            }
+
+            /// <summary>
+            /// 唤醒一个等待者
+            /// </summary>
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            public void Pulse()
+            {
+                _monitor?.PulseInternal();
+            }
+
+            /// <summary>
+            /// 唤醒所有等待者
+            /// </summary>
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            public void PulseAll()
+            {
+                _monitor?.PulseAllInternal();
+            }
+
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            public void Dispose()
+            {
+                _lockScope.Dispose();
+            }
+        }
+    }
+
+    public static class AsyncMonitorExtensions
+    {
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static LuminTask<AsyncMonitor.MonitorScope> EnterAsync(
+            this AsyncMonitor monitor,
+            CancellationToken cancellationToken = default)
+        {
+            return monitor.EnterAsync(cancellationToken);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static LuminTask<AsyncMonitor.MonitorScope> EnterAsync(
+            this AsyncMonitor monitor,
+            TimeSpan timeout)
+        {
+            using var cts = new CancellationTokenSource(timeout);
+            return monitor.EnterAsync(cts.Token);
         }
     }
 }

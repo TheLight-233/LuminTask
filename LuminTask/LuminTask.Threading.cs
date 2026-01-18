@@ -86,7 +86,6 @@ public readonly partial struct LuminTask
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static SwitchToSynchronizationContextAwaitable SwitchToSynchronizationContext(SynchronizationContext synchronizationContext, CancellationToken cancellationToken = default)
     {
-    
         LuminTaskExceptionHelper.ThrowArgumentNullException(synchronizationContext, nameof(synchronizationContext));
         return new SwitchToSynchronizationContextAwaitable(synchronizationContext, cancellationToken);
     }

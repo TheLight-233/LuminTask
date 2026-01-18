@@ -161,6 +161,72 @@ public sealed unsafe class WhenAnyPromise<T>
     }
 }
 
+<#
+// 生成非泛型 WhenAnyPromise 的 2-15 个参数版本
+for (int i = 2; i <= 15; i++)
+{
+    var taskParams = string.Join(", ", Enumerable.Range(1, i).Select(n => $"LuminTask task{n}"));
+    var createParams = string.Join(", ", Enumerable.Range(1, i).Select(n => $"task{n}"));
+#>
+public sealed unsafe class WhenAnyPromise<#= i #>
+{
+    private int _completedCount;
+    private int _totalCount = <#= i #>;
+    internal LuminTaskSourceCore<int>* _core;
+
+    public WhenAnyPromise<#= i #>(<#= taskParams #>)
+    {
+        _core = LuminTaskSourceCore<int>.Create();
+        _completedCount = 0;
+
+<# for (int j = 1; j <= i; j++) { #>
+        {
+            var index = <#= j - 1 #>;
+            var awaiter = task<#= j #>.GetAwaiter();
+            if (awaiter.IsCompleted)
+            {
+                TryInvokeContinuationT<#= j #>(this, awaiter, index);
+            }
+            else
+            {
+                awaiter.SourceOnCompleted(static state =>
+                {
+                    var t = (Tuple<WhenAnyPromise<#= i #>, LuminTaskAwaiter, int>)state;
+                    TryInvokeContinuationT<#= j #>(t.Item1, t.Item2, t.Item3);
+                }, Tuple.Create(this, awaiter, index));
+            }
+        }
+<# } #>
+    }
+
+<# for (int j = 1; j <= i; j++) { #>
+    static void TryInvokeContinuationT<#= j #>(WhenAnyPromise<#= i #> self, in LuminTaskAwaiter awaiter, int index)
+    {
+        try
+        {
+            awaiter.GetResult();
+        }
+        catch (Exception ex)
+        {
+            if (Interlocked.Increment(ref self._completedCount) == 1)
+            {
+                LuminTaskSourceCore<int>.TrySetException(self._core, ex);
+                LuminTaskSourceCore<int>.Dispose(self._core);
+            }
+            return;
+        }
+                
+        if (Interlocked.Increment(ref self._completedCount) == 1)
+        {
+            LuminTaskSourceCore<int>.TrySetResult(self._core, index);
+            LuminTaskSourceCore<int>.Dispose(self._core);
+        }
+    }
+<# } #>
+}
+
+<# } #>
+
 public sealed unsafe class WhenAnyPromise
 {
     private int _completedCount;

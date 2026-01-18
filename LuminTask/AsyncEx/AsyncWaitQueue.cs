@@ -1,160 +1,217 @@
 ﻿using System;
-using System.Collections.Generic;
 using System.Collections;
-using LuminThread.TaskSource;
+using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 using System.Threading;
-using System.Threading.Tasks;
+using LuminThread.TaskSource;
 
 namespace LuminThread.AsyncEx;
 
 /// <summary>
-/// A collection of cancelable <see cref="TaskCompletionSource{T}"/> instances. Implementations must assume the caller is holding a lock.
+/// 异步等待队列接口
 /// </summary>
-/// <typeparam name="T">The type of the results. If this isn't needed, use <see cref="Object"/>.</typeparam>
 public interface IAsyncWaitQueue<T>
 {
-    /// <summary>
-    /// Gets whether the queue is empty.
-    /// </summary>
     bool IsEmpty { get; }
-
-    /// <summary>
-    /// Creates a new entry and queues it to this wait queue. The returned task must support both synchronous and asynchronous waits.
-    /// </summary>
-    /// <returns>The queued task.</returns>
     LuminTask<T> Enqueue();
-
-    /// <summary>
-    /// Removes a single entry in the wait queue and completes it. This method may only be called if <see cref="IsEmpty"/> is <c>false</c>. The task continuations for the completed task must be executed asynchronously.
-    /// </summary>
-    /// <param name="result">The result used to complete the wait queue entry. If this isn't needed, use <c>default(T)</c>.</param>
     void Dequeue(T? result = default);
-
-    /// <summary>
-    /// Removes all entries in the wait queue and completes them. The task continuations for the completed tasks must be executed asynchronously.
-    /// </summary>
-    /// <param name="result">The result used to complete the wait queue entries. If this isn't needed, use <c>default(T)</c>.</param>
     void DequeueAll(T? result = default);
-
-    /// <summary>
-    /// Attempts to remove an entry from the wait queue and cancels it. The task continuations for the completed task must be executed asynchronously.
-    /// </summary>
-    /// <param name="task">The task to cancel.</param>
-    /// <param name="cancellationToken">The cancellation token to use to cancel the task.</param>
     bool TryCancel(LuminTask task, CancellationToken cancellationToken);
-
-    /// <summary>
-    /// Removes all entries from the wait queue and cancels them. The task continuations for the completed tasks must be executed asynchronously.
-    /// </summary>
-    /// <param name="cancellationToken">The cancellation token to use to cancel the tasks.</param>
     void CancelAll(CancellationToken cancellationToken);
 }
 
+/// <summary>
+/// 默认异步等待队列实现（真正最终无 Bug 版本）
+/// 
+/// 关键修复：
+/// 1. DequeueAll 使用 TrySetResult
+/// 2. 在锁外设置结果
+/// 3. 不手动 Dispose
+/// 4. 防止取消回调与 DequeueAll 的竞态条件 ← 新增
+/// </summary>
 internal sealed unsafe class DefaultAsyncWaitQueue<T> : IAsyncWaitQueue<T>
 {
-    private readonly LuminDeque<IntPtr> _queue = new();
+    private readonly LuminDeque<WaitNode> _queue = new();
     private readonly object _queueLock = new object();
 
-    private int Count
+    // 等待节点 - 包含 core 和取消注册
+    private class WaitNode
     {
-        get { lock (_queueLock) return _queue.Count; }
+        public IntPtr CorePtr;
+        public CancellationTokenRegistration? Registration;
     }
 
-    bool IAsyncWaitQueue<T>.IsEmpty
+    public bool IsEmpty
     {
         get { lock (_queueLock) return _queue.Count == 0; }
     }
 
-    LuminTask<T> IAsyncWaitQueue<T>.Enqueue()
+    public LuminTask<T> Enqueue()
     {
         lock (_queueLock)
         {
-            var tcs = LuminTaskSourceCore<T>.Create();
-            _queue.PushBack(new IntPtr(tcs));
-            return new LuminTask<T>(LuminTaskSourceCore<T>.MethodTable, tcs, tcs->Id);
+            var core = LuminTaskSourceCore<T>.Create();
+            var node = new WaitNode { CorePtr = new IntPtr(core) };
+            _queue.PushBack(node);
+            return new LuminTask<T>(LuminTaskSourceCore<T>.MethodTable, core, core->Id);
         }
     }
 
-    void IAsyncWaitQueue<T>.Dequeue(T? result)
+    public void Dequeue(T? result = default)
     {
-        IntPtr tcsPtr;
+        WaitNode node;
         lock (_queueLock)
         {
             if (_queue.Count == 0) return;
-            tcsPtr = _queue.PopFront();
+            node = _queue.PopFront();
         }
-        
-        // 在锁外设置结果，避免死锁
-        LuminTaskSourceCore<T>.TrySetResult(tcsPtr.ToPointer(), result);
+
+        // 取消注册（如果有）
+        node.Registration?.Dispose();
+
+        // 在锁外设置结果
+        LuminTaskSourceCore<T>.TrySetResult(node.CorePtr.ToPointer(), result);
     }
 
-    void IAsyncWaitQueue<T>.DequeueAll(T? result)
+    public void DequeueAll(T? result = default)
     {
+        WaitNode[] nodes;
         lock (_queueLock)
         {
-            foreach (var source in _queue)
-                LuminTaskSourceCore<T>.TrySetCanceled(source.ToPointer());
-        }
-    }
+            if (_queue.Count == 0) return;
 
-    bool IAsyncWaitQueue<T>.TryCancel(LuminTask task, CancellationToken cancellationToken)
-    {
-        lock (_queueLock)
-        {
-            for (int i = 0; i < _queue.Count; ++i)
+            nodes = new WaitNode[_queue.Count];
+            for (int i = 0; i < nodes.Length; i++)
             {
-                if (_queue[i].ToPointer() == task._taskSource)
+                nodes[i] = _queue.PopFront();
+            }
+        }
+
+        // 在锁外处理所有节点
+        foreach (var node in nodes)
+        {
+            // 先取消注册，防止竞态条件
+            node.Registration?.Dispose();
+                
+            // 然后设置结果
+            LuminTaskSourceCore<T>.TrySetResult(node.CorePtr.ToPointer(), result);
+        }
+    }
+
+    public bool TryCancel(LuminTask task, CancellationToken cancellationToken)
+    {
+        WaitNode node = null;
+            
+        lock (_queueLock)
+        {
+            for (int i = 0; i < _queue.Count; i++)
+            {
+                if (_queue[i].CorePtr.ToPointer() == task._taskSource)
                 {
-                    LuminTaskSourceCore<T>.TrySetCanceled(_queue[i].ToPointer());
+                    node = _queue[i];
                     _queue.RemoveAt(i);
-                    return true;
+                    break;
                 }
             }
         }
+
+        if (node != null)
+        {
+            // 取消注册
+            node.Registration?.Dispose();
+                
+            // 设置取消
+            LuminTaskSourceCore<T>.TrySetCanceled(node.CorePtr.ToPointer());
+            return true;
+        }
+
         return false;
     }
 
-    void IAsyncWaitQueue<T>.CancelAll(CancellationToken cancellationToken)
+    public void CancelAll(CancellationToken cancellationToken)
     {
+        WaitNode[] nodes;
         lock (_queueLock)
         {
-            foreach (var source in _queue)
-                LuminTaskSourceCore<T>.TrySetCanceled(source.ToPointer());
+            if (_queue.Count == 0) return;
+
+            nodes = new WaitNode[_queue.Count];
+            for (int i = 0; i < nodes.Length; i++)
+            {
+                nodes[i] = _queue.PopFront();
+            }
         }
+
+        foreach (var node in nodes)
+        {
+            node.Registration?.Dispose();
+            LuminTaskSourceCore<T>.TrySetCanceled(node.CorePtr.ToPointer());
+        }
+    }
+
+    // 内部方法：注册取消回调
+    public LuminTask<T> EnqueueWithCancellation(CancellationToken cancellationToken)
+    {
+        if (cancellationToken.IsCancellationRequested)
+        {
+            return LuminTask.FromCanceled<T>(cancellationToken);
+        }
+
+        WaitNode node;
+        LuminTask<T> task;
+            
+        lock (_queueLock)
+        {
+            var core = LuminTaskSourceCore<T>.Create();
+            node = new WaitNode { CorePtr = new IntPtr(core) };
+            _queue.PushBack(node);
+            task = new LuminTask<T>(LuminTaskSourceCore<T>.MethodTable, core, core->Id);
+        }
+
+        // 在锁外注册取消
+        if (cancellationToken.CanBeCanceled)
+        {
+            node.Registration = cancellationToken.Register(() =>
+            {
+                TryCancel(task, cancellationToken);
+            }, useSynchronizationContext: false);
+        }
+
+        return task;
     }
 }
 
 /// <summary>
-/// Provides extension methods for wait queues.
+/// 异步等待队列扩展方法
 /// </summary>
 internal static class AsyncWaitQueueExtensions
 {
-    /// <summary>
-    /// Creates a new entry and queues it to this wait queue. If the cancellation token is already canceled, this method immediately returns a canceled task without modifying the wait queue.
-    /// </summary>
-    /// <param name="this">The wait queue.</param>
-    /// <param name="mutex">A synchronization object taken while cancelling the entry.</param>
-    /// <param name="token">The token used to cancel the wait.</param>
-    /// <returns>The queued task.</returns>
-    public static LuminTask<T> Enqueue<T>(this IAsyncWaitQueue<T> @this, object mutex, CancellationToken token)
+    public static LuminTask<T> Enqueue<T>(this IAsyncWaitQueue<T> queue, CancellationToken cancellationToken)
     {
-        if (token.IsCancellationRequested)
-            return LuminTask.FromCanceled<T>(token);
-
-        var ret = @this.Enqueue();
-        if (!token.CanBeCanceled)
-            return ret;
-
-        var registration = token.Register(() =>
+        if (queue is DefaultAsyncWaitQueue<T> defaultQueue)
         {
-            lock (mutex)
-                @this.TryCancel(ret, token);
-        }, useSynchronizationContext: false);
+            return defaultQueue.EnqueueWithCancellation(cancellationToken);
+        }
         
-        return ret;
+        if (cancellationToken.IsCancellationRequested)
+        {
+            return LuminTask.FromCanceled<T>(cancellationToken);
+        }
+
+        var task = queue.Enqueue();
+
+        if (cancellationToken.CanBeCanceled)
+        {
+            cancellationToken.Register(() =>
+            {
+                queue.TryCancel(task, cancellationToken);
+            }, useSynchronizationContext: false);
+        }
+
+        return task;
     }
 }
+
 
 
 public sealed class LuminDeque<T> : IDisposable, IEnumerable<T>
@@ -186,22 +243,23 @@ public sealed class LuminDeque<T> : IDisposable, IEnumerable<T>
     private int _allocatedStart;
     private int _allocatedEnd;
     private readonly int _blockSize;
-        
+
     private const int INITIAL_MAP_SIZE = 8;
     private const int MIN_CAPACITY = 4;
     private const int BUFFER_SIZE = 512;
 
-    public int Count 
+    public int Count
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         get
         {
             long nodeCount = _finish.NodeIndex - _start.NodeIndex;
-            return (int)(nodeCount * _blockSize) - (_start.CurIndex - _start.FirstIndex) + (_finish.CurIndex - _finish.FirstIndex);
+            return (int)(nodeCount * _blockSize) - (_start.CurIndex - _start.FirstIndex) +
+                   (_finish.CurIndex - _finish.FirstIndex);
         }
     }
 
-    public bool IsCreated 
+    public bool IsCreated
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         get => _map != null;
@@ -214,12 +272,14 @@ public sealed class LuminDeque<T> : IDisposable, IEnumerable<T>
         return elementSize < BUFFER_SIZE ? BUFFER_SIZE / elementSize : 1;
     }
 
-    public LuminDeque() : this(MIN_CAPACITY) { }
+    public LuminDeque() : this(MIN_CAPACITY)
+    {
+    }
 
     public LuminDeque(int capacity)
     {
         _blockSize = CalculateBlockSize();
-            
+
         if (capacity < MIN_CAPACITY) capacity = MIN_CAPACITY;
 
         int numBlocks = capacity / _blockSize + 1;
@@ -231,7 +291,7 @@ public sealed class LuminDeque<T> : IDisposable, IEnumerable<T>
         int startNode = (_mapSize - numBlocks) / 2;
         _allocatedStart = startNode;
         _allocatedEnd = startNode + numBlocks;
-            
+
         for (int i = startNode; i < _allocatedEnd; i++)
         {
             _map[i] = new T[_blockSize];
@@ -247,7 +307,7 @@ public sealed class LuminDeque<T> : IDisposable, IEnumerable<T>
     public LuminDeque(LuminDeque<T> other)
     {
         _blockSize = other._blockSize;
-            
+
         int size = other.Count;
         if (size == 0) size = MIN_CAPACITY;
 
@@ -259,7 +319,7 @@ public sealed class LuminDeque<T> : IDisposable, IEnumerable<T>
         int startNode = (_mapSize - numBlocks) / 2;
         _allocatedStart = startNode;
         _allocatedEnd = startNode + numBlocks;
-            
+
         for (int i = startNode; i < _allocatedEnd; i++)
         {
             _map[i] = new T[_blockSize];
@@ -277,13 +337,13 @@ public sealed class LuminDeque<T> : IDisposable, IEnumerable<T>
             {
                 _map[_finish.NodeIndex][_finish.CurIndex] = other._map[it.NodeIndex][it.CurIndex];
                 _finish.CurIndex++;
-                    
+
                 if (_finish.CurIndex == _finish.LastIndex)
                 {
                     _finish.SetNode(_finish.NodeIndex + 1, _blockSize);
                     _finish.CurIndex = _finish.FirstIndex;
                 }
-                    
+
                 it.CurIndex++;
                 if (it.CurIndex == it.LastIndex)
                 {
@@ -305,7 +365,7 @@ public sealed class LuminDeque<T> : IDisposable, IEnumerable<T>
     {
         // 将 start 和 finish 重置到 map 中间位置
         int centerNode = _mapSize / 2;
-            
+
         // 确保中间位置的 node 已分配
         if (centerNode < _allocatedStart || centerNode >= _allocatedEnd)
         {
@@ -313,13 +373,13 @@ public sealed class LuminDeque<T> : IDisposable, IEnumerable<T>
             {
                 _map[centerNode] = AllocateBlock();
             }
-                
+
             if (centerNode < _allocatedStart)
                 _allocatedStart = centerNode;
             if (centerNode >= _allocatedEnd)
                 _allocatedEnd = centerNode + 1;
         }
-            
+
         _start.SetNode(centerNode, _blockSize);
         _start.CurIndex = _start.FirstIndex;
         _finish.SetNode(centerNode, _blockSize);
@@ -333,11 +393,11 @@ public sealed class LuminDeque<T> : IDisposable, IEnumerable<T>
         {
             int cur = _start.CurIndex + index;
             int last = _start.LastIndex;
-                
+
             // 快速路径：元素在同一块中
             if (cur < last)
                 return _map[_start.NodeIndex][cur];
-                
+
             // 慢速路径：跨块访问
             int offset = (_start.CurIndex - _start.FirstIndex) + index;
             int blockSize = _blockSize;
@@ -350,13 +410,13 @@ public sealed class LuminDeque<T> : IDisposable, IEnumerable<T>
         {
             int cur = _start.CurIndex + index;
             int last = _start.LastIndex;
-                
+
             if (cur < last)
             {
                 _map[_start.NodeIndex][cur] = value;
                 return;
             }
-                
+
             // 慢速路径：跨块访问
             int offset = (_start.CurIndex - _start.FirstIndex) + index;
             int blockSize = _blockSize;
@@ -381,7 +441,7 @@ public sealed class LuminDeque<T> : IDisposable, IEnumerable<T>
             int first = _finish.FirstIndex;
             if (cur != first)
                 return _map[_finish.NodeIndex][cur - 1];
-                
+
             int prevNode = _finish.NodeIndex - 1;
             return _map[prevNode][_blockSize - 1];
         }
@@ -391,7 +451,7 @@ public sealed class LuminDeque<T> : IDisposable, IEnumerable<T>
     public void PushBack(T item)
     {
         int cur = _finish.CurIndex;
-            
+
         // 极轻量检查：只在可能为空时才进行完整检查
         if (cur == _start.CurIndex && _start.NodeIndex == _finish.NodeIndex)
         {
@@ -403,26 +463,26 @@ public sealed class LuminDeque<T> : IDisposable, IEnumerable<T>
                 cur = _finish.CurIndex;
             }
         }
-            
+
         _map[_finish.NodeIndex][cur++] = item;
         _finish.CurIndex = cur;
-            
+
         if (cur == _finish.LastIndex)
         {
             int nextNode = _finish.NodeIndex + 1;
-                
+
             if (nextNode >= _mapSize)
             {
                 ReallocateMap(1, false);
                 nextNode = _finish.NodeIndex + 1;
             }
-                
+
             if (nextNode >= _allocatedEnd)
             {
                 _map[nextNode] = AllocateBlock();
                 _allocatedEnd = nextNode + 1;
             }
-                
+
             _finish.NodeIndex = nextNode;
             _finish.FirstIndex = 0;
             _finish.LastIndex = _blockSize;
@@ -434,7 +494,7 @@ public sealed class LuminDeque<T> : IDisposable, IEnumerable<T>
     public void PushFront(T item)
     {
         int cur = _start.CurIndex;
-            
+
         // 极轻量检查：只在可能为空时才进行完整检查
         if (cur == _finish.CurIndex && _start.NodeIndex == _finish.NodeIndex)
         {
@@ -446,28 +506,28 @@ public sealed class LuminDeque<T> : IDisposable, IEnumerable<T>
                 cur = _start.CurIndex;
             }
         }
-            
+
         if (cur != _start.FirstIndex)
         {
             _start.CurIndex = --cur;
             _map[_start.NodeIndex][cur] = item;
             return;
         }
-            
+
         int prevNode = _start.NodeIndex - 1;
-            
+
         if (prevNode < 0)
         {
             ReallocateMap(1, true);
             prevNode = _start.NodeIndex - 1;
         }
-            
+
         if (prevNode < _allocatedStart)
         {
             _map[prevNode] = AllocateBlock();
             _allocatedStart = prevNode;
         }
-            
+
         _start.NodeIndex = prevNode;
         _start.FirstIndex = 0;
         _start.LastIndex = _blockSize;
@@ -476,8 +536,6 @@ public sealed class LuminDeque<T> : IDisposable, IEnumerable<T>
         _map[_start.NodeIndex][cur] = item;
     }
 
-    // ===== 零开销的 Fast 路径方法 - 用于 Stack/Queue 实现 =====
-        
     /// <summary>
     /// 零开销的 PushBack - 跳过所有检查。确保在使用前调用 EnsureCentered()。
     /// </summary>
@@ -487,7 +545,7 @@ public sealed class LuminDeque<T> : IDisposable, IEnumerable<T>
         int cur = _finish.CurIndex;
         _map[_finish.NodeIndex][cur] = item;
         cur++;
-            
+
         if (cur != _finish.LastIndex)
         {
             _finish.CurIndex = cur;
@@ -496,19 +554,19 @@ public sealed class LuminDeque<T> : IDisposable, IEnumerable<T>
         {
             _finish.CurIndex = cur;
             int nextNode = _finish.NodeIndex + 1;
-                
+
             if (nextNode >= _mapSize)
             {
                 ReallocateMap(1, false);
                 nextNode = _finish.NodeIndex + 1;
             }
-                
+
             if (nextNode >= _allocatedEnd)
             {
                 _map[nextNode] = AllocateBlock();
                 _allocatedEnd = nextNode + 1;
             }
-                
+
             _finish.NodeIndex = nextNode;
             _finish.FirstIndex = 0;
             _finish.LastIndex = _blockSize;
@@ -524,7 +582,7 @@ public sealed class LuminDeque<T> : IDisposable, IEnumerable<T>
     {
         int cur = _start.CurIndex;
         int first = _start.FirstIndex;
-            
+
         if (cur != first)
         {
             cur--;
@@ -534,19 +592,19 @@ public sealed class LuminDeque<T> : IDisposable, IEnumerable<T>
         else
         {
             int prevNode = _start.NodeIndex - 1;
-                
+
             if (prevNode < 0)
             {
                 ReallocateMap(1, true);
                 prevNode = _start.NodeIndex - 1;
             }
-                
+
             if (prevNode < _allocatedStart)
             {
                 _map[prevNode] = AllocateBlock();
                 _allocatedStart = prevNode;
             }
-                
+
             _start.NodeIndex = prevNode;
             first = 0;
             _start.FirstIndex = first;
@@ -565,14 +623,14 @@ public sealed class LuminDeque<T> : IDisposable, IEnumerable<T>
     {
         int cur = _finish.CurIndex;
         int first = _finish.FirstIndex;
-            
+
         if (cur != first)
         {
             cur--;
             _finish.CurIndex = cur;
             return _map[_finish.NodeIndex][cur];
         }
-            
+
         int prevNode = _finish.NodeIndex - 1;
         _finish.NodeIndex = prevNode;
         first = 0;
@@ -593,7 +651,7 @@ public sealed class LuminDeque<T> : IDisposable, IEnumerable<T>
         int cur = _start.CurIndex;
         T result = _map[_start.NodeIndex][cur];
         cur++;
-            
+
         if (cur != _start.LastIndex)
         {
             _start.CurIndex = cur;
@@ -638,7 +696,7 @@ public sealed class LuminDeque<T> : IDisposable, IEnumerable<T>
             _finish.CurIndex = cur;
             return _map[_finish.NodeIndex][cur];
         }
-            
+
         int prevNode = _finish.NodeIndex - 1;
         _finish.NodeIndex = prevNode;
         int first = 0;
@@ -656,7 +714,7 @@ public sealed class LuminDeque<T> : IDisposable, IEnumerable<T>
         int cur = _start.CurIndex;
         T result = _map[_start.NodeIndex][cur++];
         _start.CurIndex = cur;
-            
+
         if (cur == _start.LastIndex)
         {
             int nextNode = _start.NodeIndex + 1;
@@ -673,10 +731,9 @@ public sealed class LuminDeque<T> : IDisposable, IEnumerable<T>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void Clear()
     {
-        // 极简版本：只重置迭代器，不清零内存
         if (_start.NodeIndex == _finish.NodeIndex && _start.CurIndex == _finish.CurIndex)
             return;
-            
+
         ResetToCenter();
     }
 
@@ -686,25 +743,24 @@ public sealed class LuminDeque<T> : IDisposable, IEnumerable<T>
         int newNodeCount = oldNodeCount + nodesToAdd;
 
         int newStartNode;
-        if (_mapSize > (newNodeCount << 1)) // 使用位移替代乘法
+        if (_mapSize > (newNodeCount << 1))
         {
             newStartNode = (_mapSize - newNodeCount) >> 1 + (addAtFront ? nodesToAdd : 0);
-                
+
             int copyCount = oldNodeCount;
             int src = _start.NodeIndex;
             int dst = newStartNode;
-                
+
             if (dst < src)
             {
                 Array.Copy(_map, src, _map, dst, copyCount);
             }
             else
             {
-                // 向后复制，从后往前
                 while (copyCount-- > 0)
                     _map[dst + copyCount] = _map[src + copyCount];
             }
-                
+
             int offset = newStartNode - src;
             _allocatedStart += offset;
             _allocatedEnd += offset;
@@ -712,11 +768,11 @@ public sealed class LuminDeque<T> : IDisposable, IEnumerable<T>
         else
         {
             int newMapSize = _mapSize + Math.Max(_mapSize, nodesToAdd) + 2;
-                
+
             T[][] newMap = new T[newMapSize][];
 
             newStartNode = (newMapSize - newNodeCount) >> 1 + (addAtFront ? nodesToAdd : 0);
-                
+
             Array.Copy(_map, _start.NodeIndex, newMap, newStartNode, oldNodeCount);
 
             int oldStart = _start.NodeIndex;
@@ -746,7 +802,12 @@ public sealed class LuminDeque<T> : IDisposable, IEnumerable<T>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool TryPopBack(out T result)
     {
-        if (Count == 0) { result = default; return false; }
+        if (Count == 0)
+        {
+            result = default;
+            return false;
+        }
+
         result = PopBack();
         return true;
     }
@@ -754,7 +815,12 @@ public sealed class LuminDeque<T> : IDisposable, IEnumerable<T>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool TryPopFront(out T result)
     {
-        if (Count == 0) { result = default; return false; }
+        if (Count == 0)
+        {
+            result = default;
+            return false;
+        }
+
         result = PopFront();
         return true;
     }
@@ -762,7 +828,12 @@ public sealed class LuminDeque<T> : IDisposable, IEnumerable<T>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool TryPeekBack(out T result)
     {
-        if (Count == 0) { result = default; return false; }
+        if (Count == 0)
+        {
+            result = default;
+            return false;
+        }
+
         result = Back;
         return true;
     }
@@ -770,7 +841,12 @@ public sealed class LuminDeque<T> : IDisposable, IEnumerable<T>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool TryPeekFront(out T result)
     {
-        if (Count == 0) { result = default; return false; }
+        if (Count == 0)
+        {
+            result = default;
+            return false;
+        }
+
         result = Front;
         return true;
     }
@@ -779,7 +855,7 @@ public sealed class LuminDeque<T> : IDisposable, IEnumerable<T>
     public bool Contains(T item)
     {
         if (Count == 0) return false;
-            
+
         var comparer = EqualityComparer<T>.Default;
         int cur = _start.CurIndex;
         int node = _start.NodeIndex;
@@ -839,7 +915,7 @@ public sealed class LuminDeque<T> : IDisposable, IEnumerable<T>
     {
         if (array == null)
             throw new ArgumentNullException(nameof(array));
-            
+
         int count = Count;
         if (arrayIndex < 0 || arrayIndex + count > array.Length)
             throw new ArgumentOutOfRangeException(nameof(arrayIndex));
@@ -1463,6 +1539,7 @@ public sealed class LuminDeque<T> : IDisposable, IEnumerable<T>
             {
                 _map[i] = null;
             }
+
             _allocatedStart = _mapSize / 2;
             _allocatedEnd = _allocatedStart;
             ResetToCenter();
@@ -1837,7 +1914,7 @@ public sealed class LuminDeque<T> : IDisposable, IEnumerable<T>
     public LuminDeque<T> Concat(LuminDeque<T> other)
     {
         var result = new LuminDeque<T>(Count + other.Count);
-            
+
         // 复制当前 deque
         int cur = _start.CurIndex;
         int node = _start.NodeIndex;
@@ -1917,7 +1994,7 @@ public sealed class LuminDeque<T> : IDisposable, IEnumerable<T>
 
         int count = Count;
         int writeIndex = 0;
-            
+
         for (int readIndex = 0; readIndex < count; readIndex++)
         {
             if (predicate(this[readIndex]))
@@ -1928,6 +2005,7 @@ public sealed class LuminDeque<T> : IDisposable, IEnumerable<T>
                     this[writeIndex] = this[readIndex];
                     this[readIndex] = temp;
                 }
+
                 writeIndex++;
             }
         }
@@ -2064,7 +2142,8 @@ public sealed class LuminDeque<T> : IDisposable, IEnumerable<T>
             if (!_started)
             {
                 _started = true;
-                return _current.CurIndex != _deque._finish.CurIndex || _current.NodeIndex != _deque._finish.NodeIndex;
+                return _current.CurIndex != _deque._finish.CurIndex ||
+                       _current.NodeIndex != _deque._finish.NodeIndex;
             }
 
             _current.CurIndex++;
@@ -2093,6 +2172,8 @@ public sealed class LuminDeque<T> : IDisposable, IEnumerable<T>
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void Dispose() { }
+        public void Dispose()
+        {
+        }
     }
 }

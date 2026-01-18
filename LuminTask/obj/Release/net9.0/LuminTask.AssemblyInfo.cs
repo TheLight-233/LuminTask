@@ -10,13 +10,15 @@
 using System;
 using System.Reflection;
 
-[assembly: System.Reflection.AssemblyCompanyAttribute("LuminTask")]
+[assembly: System.Reflection.AssemblyCompanyAttribute("TheLight233")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Release")]
+[assembly: System.Reflection.AssemblyDescriptionAttribute("Ultra-Performance, Zero-GC async/await library for C#.")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
 [assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0")]
 [assembly: System.Reflection.AssemblyProductAttribute("LuminTask")]
 [assembly: System.Reflection.AssemblyTitleAttribute("LuminTask")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
+[assembly: System.Reflection.AssemblyMetadataAttribute("RepositoryUrl", "https://github.com/TheLight-233/LuminTask.git")]
 
 // 由 MSBuild WriteCodeFragment 类生成。
 

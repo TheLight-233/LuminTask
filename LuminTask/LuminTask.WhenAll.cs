@@ -26,9 +26,18 @@ public readonly partial struct LuminTask
     {
         if (tasks == null)
             return FromResult();
-        
-        var array = tasks.ToArray();
-        
+
+        LuminTask[] array;
+
+        if (tasks is LuminTask[] tasksArray)
+        {
+            array = tasksArray;
+        }
+        else
+        {
+            array = tasks.ToArray();
+        }
+
         if (array.Length == 0)
             return FromResult();
         
@@ -54,7 +63,16 @@ public readonly partial struct LuminTask
         if (tasks == null)
             return LuminTask<T[]>.FromResult([]);
         
-        var array = tasks.ToArray();
+        LuminTask<T>[] array;
+        
+        if (tasks is LuminTask<T>[] tasksArray)
+        {
+            array = tasksArray;
+        }
+        else
+        {
+            array = tasks.ToArray();
+        }
         
         if (array.Length == 0)
             return LuminTask<T[]>.FromResult([]);
@@ -230,5 +248,194 @@ public readonly partial struct LuminTask
 
         var promise = new WhenAllPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15>(task1, task2, task3, task4, task5, task6, task7, task8, task9, task10, task11, task12, task13, task14, task15);
         return new LuminTask<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15)>(LuminTaskSourceCore<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15)>.MethodTable, promise.core, promise.core->Id);
+    }
+    
+    // 1个任务
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static LuminTask WhenAll(in LuminTask task1)
+    {
+        return task1; // 单个任务直接返回
+    }
+
+    // 2个任务
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static unsafe LuminTask WhenAll(in LuminTask task1, in LuminTask task2)
+    {
+        if (task1.Status.IsCompletedSuccessfully() && task2.Status.IsCompletedSuccessfully())
+        {
+            return FromResult();
+        }
+
+        var promise = new WhenAllPromise2(task1, task2);
+        return new LuminTask(LuminTaskSourceCore<bool>.MethodTable, promise._core, promise._core->Id);
+    }
+
+    // 3个任务
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static unsafe LuminTask WhenAll(in LuminTask task1, in LuminTask task2, in LuminTask task3)
+    {
+        if (task1.Status.IsCompletedSuccessfully() && task2.Status.IsCompletedSuccessfully() && task3.Status.IsCompletedSuccessfully())
+        {
+            return FromResult();
+        }
+
+        var promise = new WhenAllPromise3(task1, task2, task3);
+        return new LuminTask(LuminTaskSourceCore<bool>.MethodTable, promise._core, promise._core->Id);
+    }
+
+    // 4个任务
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static unsafe LuminTask WhenAll(in LuminTask task1, in LuminTask task2, in LuminTask task3, in LuminTask task4)
+    {
+        if (task1.Status.IsCompletedSuccessfully() && task2.Status.IsCompletedSuccessfully() && task3.Status.IsCompletedSuccessfully() && task4.Status.IsCompletedSuccessfully())
+        {
+            return FromResult();
+        }
+
+        var promise = new WhenAllPromise4(task1, task2, task3, task4);
+        return new LuminTask(LuminTaskSourceCore<bool>.MethodTable, promise._core, promise._core->Id);
+    }
+
+    // 5个任务
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static unsafe LuminTask WhenAll(in LuminTask task1, in LuminTask task2, in LuminTask task3, in LuminTask task4, in LuminTask task5)
+    {
+        if (task1.Status.IsCompletedSuccessfully() && task2.Status.IsCompletedSuccessfully() && task3.Status.IsCompletedSuccessfully() && task4.Status.IsCompletedSuccessfully() && task5.Status.IsCompletedSuccessfully())
+        {
+            return FromResult();
+        }
+
+        var promise = new WhenAllPromise5(task1, task2, task3, task4, task5);
+        return new LuminTask(LuminTaskSourceCore<bool>.MethodTable, promise._core, promise._core->Id);
+    }
+
+    // 6个任务
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static unsafe LuminTask WhenAll(in LuminTask task1, in LuminTask task2, in LuminTask task3, in LuminTask task4, in LuminTask task5, in LuminTask task6)
+    {
+        if (task1.Status.IsCompletedSuccessfully() && task2.Status.IsCompletedSuccessfully() && task3.Status.IsCompletedSuccessfully() && task4.Status.IsCompletedSuccessfully() && task5.Status.IsCompletedSuccessfully() && task6.Status.IsCompletedSuccessfully())
+        {
+            return FromResult();
+        }
+
+        var promise = new WhenAllPromise6(task1, task2, task3, task4, task5, task6);
+        return new LuminTask(LuminTaskSourceCore<bool>.MethodTable, promise._core, promise._core->Id);
+    }
+
+    // 7个任务
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static unsafe LuminTask WhenAll(in LuminTask task1, in LuminTask task2, in LuminTask task3, in LuminTask task4, in LuminTask task5, in LuminTask task6, in LuminTask task7)
+    {
+        if (task1.Status.IsCompletedSuccessfully() && task2.Status.IsCompletedSuccessfully() && task3.Status.IsCompletedSuccessfully() && task4.Status.IsCompletedSuccessfully() && task5.Status.IsCompletedSuccessfully() && task6.Status.IsCompletedSuccessfully() && task7.Status.IsCompletedSuccessfully())
+        {
+            return FromResult();
+        }
+
+        var promise = new WhenAllPromise7(task1, task2, task3, task4, task5, task6, task7);
+        return new LuminTask(LuminTaskSourceCore<bool>.MethodTable, promise._core, promise._core->Id);
+    }
+
+    // 8个任务
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static unsafe LuminTask WhenAll(in LuminTask task1, in LuminTask task2, in LuminTask task3, in LuminTask task4, in LuminTask task5, in LuminTask task6, in LuminTask task7, in LuminTask task8)
+    {
+        if (task1.Status.IsCompletedSuccessfully() && task2.Status.IsCompletedSuccessfully() && task3.Status.IsCompletedSuccessfully() && task4.Status.IsCompletedSuccessfully() && task5.Status.IsCompletedSuccessfully() && task6.Status.IsCompletedSuccessfully() && task7.Status.IsCompletedSuccessfully() && task8.Status.IsCompletedSuccessfully())
+        {
+            return FromResult();
+        }
+
+        var promise = new WhenAllPromise8(task1, task2, task3, task4, task5, task6, task7, task8);
+        return new LuminTask(LuminTaskSourceCore<bool>.MethodTable, promise._core, promise._core->Id);
+    }
+
+    // 9个任务
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static unsafe LuminTask WhenAll(in LuminTask task1, in LuminTask task2, in LuminTask task3, in LuminTask task4, in LuminTask task5, in LuminTask task6, in LuminTask task7, in LuminTask task8, in LuminTask task9)
+    {
+        if (task1.Status.IsCompletedSuccessfully() && task2.Status.IsCompletedSuccessfully() && task3.Status.IsCompletedSuccessfully() && task4.Status.IsCompletedSuccessfully() && task5.Status.IsCompletedSuccessfully() && task6.Status.IsCompletedSuccessfully() && task7.Status.IsCompletedSuccessfully() && task8.Status.IsCompletedSuccessfully() && task9.Status.IsCompletedSuccessfully())
+        {
+            return FromResult();
+        }
+
+        var promise = new WhenAllPromise9(task1, task2, task3, task4, task5, task6, task7, task8, task9);
+        return new LuminTask(LuminTaskSourceCore<bool>.MethodTable, promise._core, promise._core->Id);
+    }
+
+    // 10个任务
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static unsafe LuminTask WhenAll(in LuminTask task1, in LuminTask task2, in LuminTask task3, in LuminTask task4, in LuminTask task5, in LuminTask task6, in LuminTask task7, in LuminTask task8, in LuminTask task9, in LuminTask task10)
+    {
+        if (task1.Status.IsCompletedSuccessfully() && task2.Status.IsCompletedSuccessfully() && task3.Status.IsCompletedSuccessfully() && task4.Status.IsCompletedSuccessfully() && task5.Status.IsCompletedSuccessfully() && task6.Status.IsCompletedSuccessfully() && task7.Status.IsCompletedSuccessfully() && task8.Status.IsCompletedSuccessfully() && task9.Status.IsCompletedSuccessfully() && task10.Status.IsCompletedSuccessfully())
+        {
+            return FromResult();
+        }
+
+        var promise = new WhenAllPromise10(task1, task2, task3, task4, task5, task6, task7, task8, task9, task10);
+        return new LuminTask(LuminTaskSourceCore<bool>.MethodTable, promise._core, promise._core->Id);
+    }
+
+    // 11个任务
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static unsafe LuminTask WhenAll(in LuminTask task1, in LuminTask task2, in LuminTask task3, in LuminTask task4, in LuminTask task5, in LuminTask task6, in LuminTask task7, in LuminTask task8, in LuminTask task9, in LuminTask task10, in LuminTask task11)
+    {
+        if (task1.Status.IsCompletedSuccessfully() && task2.Status.IsCompletedSuccessfully() && task3.Status.IsCompletedSuccessfully() && task4.Status.IsCompletedSuccessfully() && task5.Status.IsCompletedSuccessfully() && task6.Status.IsCompletedSuccessfully() && task7.Status.IsCompletedSuccessfully() && task8.Status.IsCompletedSuccessfully() && task9.Status.IsCompletedSuccessfully() && task10.Status.IsCompletedSuccessfully() && task11.Status.IsCompletedSuccessfully())
+        {
+            return FromResult();
+        }
+
+        var promise = new WhenAllPromise11(task1, task2, task3, task4, task5, task6, task7, task8, task9, task10, task11);
+        return new LuminTask(LuminTaskSourceCore<bool>.MethodTable, promise._core, promise._core->Id);
+    }
+
+    // 12个任务
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static unsafe LuminTask WhenAll(in LuminTask task1, in LuminTask task2, in LuminTask task3, in LuminTask task4, in LuminTask task5, in LuminTask task6, in LuminTask task7, in LuminTask task8, in LuminTask task9, in LuminTask task10, in LuminTask task11, in LuminTask task12)
+    {
+        if (task1.Status.IsCompletedSuccessfully() && task2.Status.IsCompletedSuccessfully() && task3.Status.IsCompletedSuccessfully() && task4.Status.IsCompletedSuccessfully() && task5.Status.IsCompletedSuccessfully() && task6.Status.IsCompletedSuccessfully() && task7.Status.IsCompletedSuccessfully() && task8.Status.IsCompletedSuccessfully() && task9.Status.IsCompletedSuccessfully() && task10.Status.IsCompletedSuccessfully() && task11.Status.IsCompletedSuccessfully() && task12.Status.IsCompletedSuccessfully())
+        {
+            return FromResult();
+        }
+
+        var promise = new WhenAllPromise12(task1, task2, task3, task4, task5, task6, task7, task8, task9, task10, task11, task12);
+        return new LuminTask(LuminTaskSourceCore<bool>.MethodTable, promise._core, promise._core->Id);
+    }
+
+    // 13个任务
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static unsafe LuminTask WhenAll(in LuminTask task1, in LuminTask task2, in LuminTask task3, in LuminTask task4, in LuminTask task5, in LuminTask task6, in LuminTask task7, in LuminTask task8, in LuminTask task9, in LuminTask task10, in LuminTask task11, in LuminTask task12, in LuminTask task13)
+    {
+        if (task1.Status.IsCompletedSuccessfully() && task2.Status.IsCompletedSuccessfully() && task3.Status.IsCompletedSuccessfully() && task4.Status.IsCompletedSuccessfully() && task5.Status.IsCompletedSuccessfully() && task6.Status.IsCompletedSuccessfully() && task7.Status.IsCompletedSuccessfully() && task8.Status.IsCompletedSuccessfully() && task9.Status.IsCompletedSuccessfully() && task10.Status.IsCompletedSuccessfully() && task11.Status.IsCompletedSuccessfully() && task12.Status.IsCompletedSuccessfully() && task13.Status.IsCompletedSuccessfully())
+        {
+            return FromResult();
+        }
+
+        var promise = new WhenAllPromise13(task1, task2, task3, task4, task5, task6, task7, task8, task9, task10, task11, task12, task13);
+        return new LuminTask(LuminTaskSourceCore<bool>.MethodTable, promise._core, promise._core->Id);
+    }
+
+    // 14个任务
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static unsafe LuminTask WhenAll(in LuminTask task1, in LuminTask task2, in LuminTask task3, in LuminTask task4, in LuminTask task5, in LuminTask task6, in LuminTask task7, in LuminTask task8, in LuminTask task9, in LuminTask task10, in LuminTask task11, in LuminTask task12, in LuminTask task13, in LuminTask task14)
+    {
+        if (task1.Status.IsCompletedSuccessfully() && task2.Status.IsCompletedSuccessfully() && task3.Status.IsCompletedSuccessfully() && task4.Status.IsCompletedSuccessfully() && task5.Status.IsCompletedSuccessfully() && task6.Status.IsCompletedSuccessfully() && task7.Status.IsCompletedSuccessfully() && task8.Status.IsCompletedSuccessfully() && task9.Status.IsCompletedSuccessfully() && task10.Status.IsCompletedSuccessfully() && task11.Status.IsCompletedSuccessfully() && task12.Status.IsCompletedSuccessfully() && task13.Status.IsCompletedSuccessfully() && task14.Status.IsCompletedSuccessfully())
+        {
+            return FromResult();
+        }
+
+        var promise = new WhenAllPromise14(task1, task2, task3, task4, task5, task6, task7, task8, task9, task10, task11, task12, task13, task14);
+        return new LuminTask(LuminTaskSourceCore<bool>.MethodTable, promise._core, promise._core->Id);
+    }
+
+    // 15个任务
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static unsafe LuminTask WhenAll(in LuminTask task1, in LuminTask task2, in LuminTask task3, in LuminTask task4, in LuminTask task5, in LuminTask task6, in LuminTask task7, in LuminTask task8, in LuminTask task9, in LuminTask task10, in LuminTask task11, in LuminTask task12, in LuminTask task13, in LuminTask task14, in LuminTask task15)
+    {
+        if (task1.Status.IsCompletedSuccessfully() && task2.Status.IsCompletedSuccessfully() && task3.Status.IsCompletedSuccessfully() && task4.Status.IsCompletedSuccessfully() && task5.Status.IsCompletedSuccessfully() && task6.Status.IsCompletedSuccessfully() && task7.Status.IsCompletedSuccessfully() && task8.Status.IsCompletedSuccessfully() && task9.Status.IsCompletedSuccessfully() && task10.Status.IsCompletedSuccessfully() && task11.Status.IsCompletedSuccessfully() && task12.Status.IsCompletedSuccessfully() && task13.Status.IsCompletedSuccessfully() && task14.Status.IsCompletedSuccessfully() && task15.Status.IsCompletedSuccessfully())
+        {
+            return FromResult();
+        }
+
+        var promise = new WhenAllPromise15(task1, task2, task3, task4, task5, task6, task7, task8, task9, task10, task11, task12, task13, task14, task15);
+        return new LuminTask(LuminTaskSourceCore<bool>.MethodTable, promise._core, promise._core->Id);
     }
 }

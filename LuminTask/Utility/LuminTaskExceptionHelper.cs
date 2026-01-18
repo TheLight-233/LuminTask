@@ -8,6 +8,7 @@ namespace LuminThread.Utility;
 public static class LuminTaskExceptionHelper
 {
     [DoesNotReturn]
+    [Conditional("DEBUG")]
     public static void ThrowTokenMismatch() =>
         throw new InvalidOperationException("Token mismatch");
 

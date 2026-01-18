@@ -84,7 +84,7 @@ public unsafe struct LuminTaskSourceCore<T>
         
         if (token != source.Id) LuminTaskExceptionHelper.ThrowTokenMismatch();
         
-        ref var item = ref LuminTaskMarshal.GetTaskItem(source.Id);
+        ref var item = ref LuminTaskMarshal.GetTaskItem(token);
 
         switch (item.Status)
         {
@@ -113,7 +113,7 @@ public unsafe struct LuminTaskSourceCore<T>
     
         if (token != source.Id) LuminTaskExceptionHelper.ThrowTokenMismatch();
     
-        ref var item = ref LuminTaskMarshal.GetTaskItem(source.Id);
+        ref var item = ref LuminTaskMarshal.GetTaskItem(token);
         
         switch (item.Status)
         {
@@ -181,21 +181,32 @@ public unsafe struct LuminTaskSourceCore<T>
         
         if (token != source.Id) LuminTaskExceptionHelper.ThrowTokenMismatch();
         
-        ref var item = ref LuminTaskMarshal.GetTaskItem(source.Id);
+        ref var item = ref LuminTaskMarshal.GetTaskItem(token);
+        
+        if (item.ContinueOnCapturedContext)
+        {
+            item.CapturedContext = ExecutionContext.Capture();
+        }
         
         if (item.Status != LuminTaskStatus.Pending)
         {
-            ExecuteContinuation(ref item);
+            if (item.CapturedContext != null)
+            {
+                ExecutionContext.Run(item.CapturedContext, static s =>
+                {
+                    var (cont, st) = (Tuple<Action<object>, object?>)s!;
+                    cont(st!);
+                }, Tuple.Create(continuation, state));
+            }
+            else
+            {
+                continuation(state);
+            }
             return;
         }
 
         item.Continuation = continuation;
         item.State = state;
-
-        if (item.ContinueOnCapturedContext)
-        {
-            item.CapturedContext = ExecutionContext.Capture();
-        }
     }
     
     [MethodImpl(MethodImplOptions.AggressiveInlining)]

@@ -3,7 +3,7 @@ using System.Runtime.CompilerServices;
 
 namespace LuminThread.Utility;
 
-internal static class StateTuple
+public static class StateTuple
 {
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static StateTuple<T1> Create<T1>(in T1 item1)
@@ -24,7 +24,7 @@ internal static class StateTuple
     }
 }
 
-internal class StateTuple<T1> : IDisposable
+public class StateTuple<T1> : IDisposable
 #if NET8_0_OR_GREATER
     , IPooledObjectPolicy<StateTuple<T1>>
 #endif
@@ -52,7 +52,7 @@ internal class StateTuple<T1> : IDisposable
 #endif
 }
 
-internal static class StatePool<T1>
+public static class StatePool<T1>
 {
 #if NET8_0_OR_GREATER
     private static readonly ObjectPool<StateTuple<T1>> _pool = new ();
@@ -87,7 +87,7 @@ internal static class StatePool<T1>
 #endif
 }
 
-internal class StateTuple<T1, T2> : IDisposable
+public class StateTuple<T1, T2> : IDisposable
 #if NET8_0_OR_GREATER
     , IPooledObjectPolicy<StateTuple<T1, T2>>
 #endif
@@ -117,7 +117,7 @@ internal class StateTuple<T1, T2> : IDisposable
 #endif
 }
 
-internal static class StatePool<T1, T2>
+public static class StatePool<T1, T2>
 {
 #if NET8_0_OR_GREATER
     private static readonly ObjectPool<StateTuple<T1, T2>> _pool = new ();
@@ -155,7 +155,7 @@ internal static class StatePool<T1, T2>
 #endif
 }
 
-internal class StateTuple<T1, T2, T3> : IDisposable
+public class StateTuple<T1, T2, T3> : IDisposable
 #if NET8_0_OR_GREATER
     , IPooledObjectPolicy<StateTuple<T1, T2, T3>>
 #endif
@@ -187,7 +187,7 @@ internal class StateTuple<T1, T2, T3> : IDisposable
 #endif
 }
 
-internal static class StatePool<T1, T2, T3>
+public static class StatePool<T1, T2, T3>
 {
 #if NET8_0_OR_GREATER
     private static readonly ObjectPool<StateTuple<T1, T2, T3>> _pool = new ();

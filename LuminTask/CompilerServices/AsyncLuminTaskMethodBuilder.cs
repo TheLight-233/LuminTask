@@ -9,7 +9,7 @@ using LuminThread.Utility;
 
 namespace LuminThread.CompilerServices
 {
-    [StructLayout(LayoutKind.Auto)]
+    [StructLayout(LayoutKind.Sequential)]
     public unsafe struct AsyncLuminTaskMethodBuilder
     {
         private LuminTaskSourceCore<AsyncUnit>* _source;
@@ -113,7 +113,7 @@ namespace LuminThread.CompilerServices
         }
     }
 
-    [StructLayout(LayoutKind.Auto)]
+    [StructLayout(LayoutKind.Sequential)]
     public unsafe struct AsyncLuminTaskMethodBuilder<T>
     {
         private LuminTaskSourceCore<T>* _source;

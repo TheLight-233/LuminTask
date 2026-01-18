@@ -12,6 +12,7 @@ using System.Linq;
 namespace LuminThread.TaskSource.Promise;
 
 <#
+// 生成泛型元组版本的 WhenAllPromise (2-15)
 for (int i = 2; i <= 15; i++)
 {
     var typeParams = string.Join(", ", Enumerable.Range(1, i).Select(n => $"T{n}"));
@@ -77,6 +78,68 @@ public sealed unsafe class WhenAllPromise<<#= typeParams #>>
         }
     }
 
+<# } #>
+}
+
+<# } #>
+
+<#
+// 生成非泛型 WhenAllPromise 的 1-15 个参数版本
+for (int i = 1; i <= 15; i++)
+{
+    var taskParams = string.Join(", ", Enumerable.Range(1, i).Select(n => $"LuminTask task{n}"));
+    var taskParamsWithType = string.Join(", ", Enumerable.Range(1, i).Select(n => $"LuminTask task{n}"));
+#>
+public sealed unsafe class WhenAllPromise<#= i #>
+{
+    private int _completedCount;
+    private int _totalCount = <#= i #>;
+    internal LuminTaskSourceCore<bool>* _core;
+
+    public WhenAllPromise<#= i #>(<#= taskParams #>)
+    {
+        _core = LuminTaskSourceCore<bool>.Create();
+        _completedCount = 0;
+
+<# for (int j = 1; j <= i; j++) { #>
+        {
+            var awaiter = task<#= j #>.GetAwaiter();
+            if (awaiter.IsCompleted)
+            {
+                TryInvokeContinuationT<#= j #>(this, awaiter);
+            }
+            else
+            {
+                awaiter.SourceOnCompleted(static state =>
+                {
+                    var t = (Tuple<WhenAllPromise<#= i #>, LuminTaskAwaiter>)state;
+                    TryInvokeContinuationT<#= j #>(t.Item1, t.Item2);
+                }, Tuple.Create(this, awaiter));
+            }
+        }
+<# } #>
+    }
+
+<# for (int j = 1; j <= i; j++) { #>
+    static void TryInvokeContinuationT<#= j #>(WhenAllPromise<#= i #> self, in LuminTaskAwaiter awaiter)
+    {
+        try
+        {
+            awaiter.GetResult();
+        }
+        catch (Exception ex)
+        {
+            LuminTaskSourceCore<bool>.TrySetException(self._core, ex);
+            LuminTaskSourceCore<bool>.Dispose(self._core);
+            return;
+        }
+                
+        if (Interlocked.Increment(ref self._completedCount) == self._totalCount)
+        {
+            LuminTaskSourceCore<bool>.TrySetResult(self._core, true);
+            LuminTaskSourceCore<bool>.Dispose(self._core);
+        }
+    }
 <# } #>
 }
 
