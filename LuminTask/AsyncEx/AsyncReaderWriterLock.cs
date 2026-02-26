@@ -5,18 +5,16 @@ using System.Threading;
 
 namespace LuminThread.AsyncEx
 {
-    /// <summary>
-    /// 高性能异步读写锁
-    /// </summary>
     [DebuggerDisplay("Id = {Id}, State = {GetStateForDebugger}, ReaderCount = {GetReaderCountForDebugger}")]
-    public sealed class AsyncReaderWriterLock
+    public sealed class AsyncReaderWriterLock : IDisposable
     {
         private readonly object _mutex = new object();
         private readonly IAsyncWaitQueue<IDisposable> _writerQueue;
         private readonly IAsyncWaitQueue<IDisposable> _readerQueue;
 
-        private int _locksHeld; // 0 = 无锁, >0 = 读者数量, -1 = 写者持有
+        private int _locksHeld;
         private int _id;
+        private volatile bool _isDisposed;
 
         public AsyncReaderWriterLock()
         {
@@ -24,14 +22,14 @@ namespace LuminThread.AsyncEx
             _readerQueue = new DefaultAsyncWaitQueue<IDisposable>();
         }
 
+        ~AsyncReaderWriterLock() => Dispose(false);
+
         public int Id
         {
             get
             {
                 if (_id == 0)
-                {
                     Interlocked.CompareExchange(ref _id, GetNextId(), 0);
-                }
                 return _id;
             }
         }
@@ -39,12 +37,7 @@ namespace LuminThread.AsyncEx
         private static int _nextId = 1;
         private static int GetNextId() => Interlocked.Increment(ref _nextId);
 
-        internal enum State
-        {
-            Unlocked,
-            ReadLocked,
-            WriteLocked,
-        }
+        internal enum State { Unlocked, ReadLocked, WriteLocked }
 
         [DebuggerNonUserCode]
         internal State GetStateForDebugger
@@ -63,21 +56,20 @@ namespace LuminThread.AsyncEx
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public LuminTask<IDisposable> ReaderLockAsync(CancellationToken cancellationToken = default)
         {
+            if (_isDisposed)
+                throw new ObjectDisposedException(nameof(AsyncReaderWriterLock));
+
             if (cancellationToken.IsCancellationRequested)
-            {
                 return LuminTask.FromCanceled<IDisposable>(cancellationToken);
-            }
 
             lock (_mutex)
             {
-                // 快速路径：无锁或读锁且无等待的写者
                 if (_locksHeld >= 0 && _writerQueue.IsEmpty)
                 {
                     _locksHeld++;
                     return LuminTask.FromResult<IDisposable>(new ReaderKey(this));
                 }
 
-                // 使用扩展方法，自动处理取消
                 return _readerQueue.Enqueue(cancellationToken);
             }
         }
@@ -85,21 +77,20 @@ namespace LuminThread.AsyncEx
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public LuminTask<IDisposable> WriterLockAsync(CancellationToken cancellationToken = default)
         {
+            if (_isDisposed)
+                throw new ObjectDisposedException(nameof(AsyncReaderWriterLock));
+
             if (cancellationToken.IsCancellationRequested)
-            {
                 return LuminTask.FromCanceled<IDisposable>(cancellationToken);
-            }
 
             lock (_mutex)
             {
-                // 快速路径：无锁
                 if (_locksHeld == 0)
                 {
                     _locksHeld = -1;
                     return LuminTask.FromResult<IDisposable>(new WriterKey(this));
                 }
 
-                // 使用扩展方法，自动处理取消
                 return _writerQueue.Enqueue(cancellationToken);
             }
         }
@@ -133,13 +124,11 @@ namespace LuminThread.AsyncEx
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void ReleaseWaitersNoLock()
         {
-            // 优先写者
             if (!_writerQueue.IsEmpty && _locksHeld == 0)
             {
                 _locksHeld = -1;
                 _writerQueue.Dequeue(new WriterKey(this));
             }
-            // 然后是所有读者
             else if (!_readerQueue.IsEmpty && _locksHeld >= 0)
             {
                 while (!_readerQueue.IsEmpty)
@@ -147,6 +136,22 @@ namespace LuminThread.AsyncEx
                     _readerQueue.Dequeue(new ReaderKey(this));
                     _locksHeld++;
                 }
+            }
+        }
+
+        public void Dispose()
+        {
+            Dispose(true);
+            GC.SuppressFinalize(this);
+        }
+
+        private void Dispose(bool disposing)
+        {
+            if (!_isDisposed)
+            {
+                _isDisposed = true;
+                _writerQueue.CancelAll(default);
+                _readerQueue.CancelAll(default);
             }
         }
 

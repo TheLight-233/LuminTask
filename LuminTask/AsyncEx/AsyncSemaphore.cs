@@ -5,16 +5,14 @@ using System.Threading;
 
 namespace LuminThread.AsyncEx
 {
-    /// <summary>
-    /// 高性能异步信号量
-    /// </summary>
     [DebuggerDisplay("Id = {Id}, CurrentCount = {_count}")]
-    public sealed class AsyncSemaphore
+    public sealed class AsyncSemaphore : IDisposable
     {
         private readonly object _mutex = new object();
         private readonly IAsyncWaitQueue<object> _queue;
         private long _count;
         private int _id;
+        private volatile bool _isDisposed;
 
         public AsyncSemaphore(long initialCount)
         {
@@ -25,14 +23,14 @@ namespace LuminThread.AsyncEx
             _count = initialCount;
         }
 
+        ~AsyncSemaphore() => Dispose(false);
+
         public int Id
         {
             get
             {
                 if (_id == 0)
-                {
                     Interlocked.CompareExchange(ref _id, GetNextId(), 0);
-                }
                 return _id;
             }
         }
@@ -48,21 +46,20 @@ namespace LuminThread.AsyncEx
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public LuminTask WaitAsync(CancellationToken cancellationToken = default)
         {
+            if (_isDisposed)
+                throw new ObjectDisposedException(nameof(AsyncSemaphore));
+
             if (cancellationToken.IsCancellationRequested)
-            {
                 return LuminTask.FromCanceled(cancellationToken);
-            }
 
             lock (_mutex)
             {
-                // 快速路径：信号量可用
                 if (_count > 0)
                 {
                     _count--;
                     return LuminTask.CompletedTask();
                 }
 
-                // 使用扩展方法，自动处理取消
                 return _queue.Enqueue(cancellationToken);
             }
         }
@@ -78,20 +75,14 @@ namespace LuminThread.AsyncEx
 
             lock (_mutex)
             {
-                // 检查溢出
-                checked
-                {
-                    var test = _count + releaseCount;
-                }
+                checked { var test = _count + releaseCount; }
 
-                // 先释放等待的任务
                 while (releaseCount > 0 && !_queue.IsEmpty)
                 {
                     _queue.Dequeue(null);
                     releaseCount--;
                 }
 
-                // 剩余增加到计数
                 _count += releaseCount;
             }
         }
@@ -107,6 +98,21 @@ namespace LuminThread.AsyncEx
         {
             await WaitAsync(cancellationToken);
             return new SemaphoreLock(this);
+        }
+
+        public void Dispose()
+        {
+            Dispose(true);
+            GC.SuppressFinalize(this);
+        }
+
+        private void Dispose(bool disposing)
+        {
+            if (!_isDisposed)
+            {
+                _isDisposed = true;
+                _queue.CancelAll(default);
+            }
         }
 
         private sealed class SemaphoreLock : IDisposable

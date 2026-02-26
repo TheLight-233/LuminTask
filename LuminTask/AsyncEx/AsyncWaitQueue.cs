@@ -21,13 +21,7 @@ public interface IAsyncWaitQueue<T>
 }
 
 /// <summary>
-/// 默认异步等待队列实现（真正最终无 Bug 版本）
-/// 
-/// 关键修复：
-/// 1. DequeueAll 使用 TrySetResult
-/// 2. 在锁外设置结果
-/// 3. 不手动 Dispose
-/// 4. 防止取消回调与 DequeueAll 的竞态条件 ← 新增
+/// 默认异步等待队列实现
 /// </summary>
 internal sealed unsafe class DefaultAsyncWaitQueue<T> : IAsyncWaitQueue<T>
 {
@@ -66,11 +60,11 @@ internal sealed unsafe class DefaultAsyncWaitQueue<T> : IAsyncWaitQueue<T>
             node = _queue.PopFront();
         }
 
-        // 取消注册（如果有）
         node.Registration?.Dispose();
 
-        // 在锁外设置结果
-        LuminTaskSourceCore<T>.TrySetResult(node.CorePtr.ToPointer(), result);
+        var ptr = node.CorePtr.ToPointer();
+        LuminTaskSourceCore<T>.TrySetResult(ptr, result);
+        LuminTaskSourceCore<T>.Dispose(ptr);
     }
 
     public void DequeueAll(T? result = default)
@@ -87,14 +81,13 @@ internal sealed unsafe class DefaultAsyncWaitQueue<T> : IAsyncWaitQueue<T>
             }
         }
 
-        // 在锁外处理所有节点
         foreach (var node in nodes)
         {
-            // 先取消注册，防止竞态条件
             node.Registration?.Dispose();
-                
-            // 然后设置结果
-            LuminTaskSourceCore<T>.TrySetResult(node.CorePtr.ToPointer(), result);
+
+            var ptr = node.CorePtr.ToPointer();
+            LuminTaskSourceCore<T>.TrySetResult(ptr, result);
+            LuminTaskSourceCore<T>.Dispose(ptr);
         }
     }
 
@@ -117,11 +110,11 @@ internal sealed unsafe class DefaultAsyncWaitQueue<T> : IAsyncWaitQueue<T>
 
         if (node != null)
         {
-            // 取消注册
             node.Registration?.Dispose();
-                
-            // 设置取消
-            LuminTaskSourceCore<T>.TrySetCanceled(node.CorePtr.ToPointer());
+
+            var ptr = node.CorePtr.ToPointer();
+            LuminTaskSourceCore<T>.TrySetCanceled(ptr);
+            LuminTaskSourceCore<T>.Dispose(ptr);
             return true;
         }
 
@@ -145,7 +138,10 @@ internal sealed unsafe class DefaultAsyncWaitQueue<T> : IAsyncWaitQueue<T>
         foreach (var node in nodes)
         {
             node.Registration?.Dispose();
-            LuminTaskSourceCore<T>.TrySetCanceled(node.CorePtr.ToPointer());
+
+            var ptr = node.CorePtr.ToPointer();
+            LuminTaskSourceCore<T>.TrySetCanceled(ptr);
+            LuminTaskSourceCore<T>.Dispose(ptr);
         }
     }
 

@@ -4,13 +4,11 @@ using System.Threading;
 
 namespace LuminThread.AsyncEx
 {
-    /// <summary>
-    /// 高性能异步条件变量
-    /// </summary>
-    public sealed class AsyncConditionVariable
+    public sealed class AsyncConditionVariable : IDisposable
     {
         private readonly AsyncLock _asyncLock;
         private readonly IAsyncWaitQueue<AsyncLock.ReleaseScope> _waitQueue;
+        private volatile bool _isDisposed;
 
         public AsyncConditionVariable(AsyncLock asyncLock)
         {
@@ -18,15 +16,17 @@ namespace LuminThread.AsyncEx
             _waitQueue = new DefaultAsyncWaitQueue<AsyncLock.ReleaseScope>();
         }
 
+        ~AsyncConditionVariable() => Dispose(false);
+
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public LuminTask<AsyncLock.ReleaseScope> WaitAsync(CancellationToken cancellationToken = default)
         {
-            if (cancellationToken.IsCancellationRequested)
-            {
-                return LuminTask.FromCanceled<AsyncLock.ReleaseScope>(cancellationToken);
-            }
+            if (_isDisposed)
+                throw new ObjectDisposedException(nameof(AsyncConditionVariable));
 
-            // 使用扩展方法，自动处理取消
+            if (cancellationToken.IsCancellationRequested)
+                return LuminTask.FromCanceled<AsyncLock.ReleaseScope>(cancellationToken);
+
             return _waitQueue.Enqueue(cancellationToken);
         }
 
@@ -34,26 +34,34 @@ namespace LuminThread.AsyncEx
         public void Notify()
         {
             if (!_waitQueue.IsEmpty)
-            {
                 _waitQueue.Dequeue(new AsyncLock.ReleaseScope(_asyncLock));
-            }
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void NotifyAll()
         {
             if (!_waitQueue.IsEmpty)
-            {
                 _waitQueue.DequeueAll(new AsyncLock.ReleaseScope(_asyncLock));
+        }
+
+        public void Dispose()
+        {
+            Dispose(true);
+            GC.SuppressFinalize(this);
+        }
+
+        private void Dispose(bool disposing)
+        {
+            if (!_isDisposed)
+            {
+                _isDisposed = true;
+                _waitQueue.CancelAll(default);
             }
         }
     }
 
     public static class AsyncConditionVariableExtensions
     {
-        /// <summary>
-        /// 释放当前锁，等待条件变量信号，然后重新获取锁
-        /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static LuminTask<AsyncLock.ReleaseScope> WaitWithLockAsync(
             this AsyncConditionVariable conditionVariable,
@@ -63,21 +71,16 @@ namespace LuminThread.AsyncEx
             if (conditionVariable == null)
                 throw new ArgumentNullException(nameof(conditionVariable));
 
-            // 释放当前锁
             currentLock.Dispose();
-
-            // 等待条件变量信号（会返回新的锁）
             return conditionVariable.WaitAsync(cancellationToken);
         }
     }
 
-    /// <summary>
-    /// 高性能异步监视器
-    /// </summary>
-    public sealed class AsyncMonitor
+    public sealed class AsyncMonitor : IDisposable
     {
         private readonly AsyncLock _asyncLock;
         private readonly AsyncConditionVariable _conditionVariable;
+        private volatile bool _isDisposed;
 
         public AsyncMonitor()
         {
@@ -85,9 +88,14 @@ namespace LuminThread.AsyncEx
             _conditionVariable = new AsyncConditionVariable(_asyncLock);
         }
 
+        ~AsyncMonitor() => Dispose(false);
+
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public LuminTask<MonitorScope> EnterAsync(CancellationToken cancellationToken = default)
         {
+            if (_isDisposed)
+                throw new ObjectDisposedException(nameof(AsyncMonitor));
+
             return EnterInternalAsync(cancellationToken);
         }
 
@@ -107,20 +115,30 @@ namespace LuminThread.AsyncEx
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void PulseInternal()
-        {
-            _conditionVariable.Notify();
-        }
+        internal void PulseInternal() => _conditionVariable.Notify();
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void PulseAllInternal()
+        internal void PulseAllInternal() => _conditionVariable.NotifyAll();
+
+        public void Dispose()
         {
-            _conditionVariable.NotifyAll();
+            Dispose(true);
+            GC.SuppressFinalize(this);
         }
 
-        /// <summary>
-        /// 监视器作用域
-        /// </summary>
+        private void Dispose(bool disposing)
+        {
+            if (!_isDisposed)
+            {
+                _isDisposed = true;
+                if (disposing)
+                {
+                    _conditionVariable.Dispose();
+                    _asyncLock.Dispose();
+                }
+            }
+        }
+
         public struct MonitorScope : IDisposable
         {
             private readonly AsyncMonitor _monitor;
@@ -133,9 +151,6 @@ namespace LuminThread.AsyncEx
                 _lockScope = lockScope;
             }
 
-            /// <summary>
-            /// 等待信号
-            /// </summary>
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public LuminTask<MonitorScope> WaitAsync(CancellationToken cancellationToken = default)
             {
@@ -149,29 +164,14 @@ namespace LuminThread.AsyncEx
                 return new MonitorScope(_monitor, newLockScope);
             }
 
-            /// <summary>
-            /// 唤醒一个等待者
-            /// </summary>
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public void Pulse()
-            {
-                _monitor?.PulseInternal();
-            }
-
-            /// <summary>
-            /// 唤醒所有等待者
-            /// </summary>
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public void PulseAll()
-            {
-                _monitor?.PulseAllInternal();
-            }
+            public void Pulse() => _monitor?.PulseInternal();
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public void Dispose()
-            {
-                _lockScope.Dispose();
-            }
+            public void PulseAll() => _monitor?.PulseAllInternal();
+
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            public void Dispose() => _lockScope.Dispose();
         }
     }
 
