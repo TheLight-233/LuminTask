@@ -16,7 +16,7 @@ LuminTask 是一个面向 .NET 的高性能异步任务库，为 C# 提供可直
 * 支持 `Task`、`ValueTask` 与 `LuminTask` 之间的互操作
 * 提供 `AsyncLock`、`AsyncSemaphore`、`AsyncLazy`、异步事件等工具类型
 * 支持可配置的 `PlayerLoopTiming`、线程池调度和主线程切换
-* 保留可选的 Unity 扩展，覆盖常用 Unity 和 TextMeshPro 场景
+* 保留可选的 Unity 扩展，覆盖常用 Unity、Addressables、DotWeen、TextMeshPro 和 YooAsset 场景
 * Debug 构建包含任务泄漏跟踪器，帮助发现未消费的任务源
 * 支持 .NET Standard 2.1、.NET 8 和 .NET 9
 
@@ -127,7 +127,7 @@ ValueTask<int> valueTask = luminTask.AsValueTask();
 仓库中的 `Unity/` 目录提供可选的 Unity 集成代码，包括：
 
 * Unity 常用对象和组件的异步扩展
-* TextMeshPro 扩展
+* Addressables、DotWeen、TextMeshPro 和 YooAsset 扩展
 * Unity PlayerLoop 接入与主线程调度
 
 这些文件不参与当前 .NET 解决方案的默认构建，使用 Unity 时可按项目需要导入对应源文件。
