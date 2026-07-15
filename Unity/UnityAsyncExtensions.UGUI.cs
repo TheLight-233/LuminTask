@@ -307,7 +307,7 @@ namespace LuminThread.Unity
 
                 PlayerLoopHelper.AddAction(timing, state, &MoveNext);
 
-                return new LuminTask(LuminTaskSourceCore<AsyncUnit>.MethodTable, core, core->Id);
+                return new LuminTask(LuminTaskSourceCore<AsyncUnit>.MethodTablePtr, core, core->Id);
             }
 
             public static bool MoveNext(in LuminTaskState state)
@@ -401,7 +401,7 @@ namespace LuminThread.Unity
 
                 PlayerLoopHelper.AddAction(timing, state, &MoveNext);
 
-                return new LuminTask<T>(LuminTaskSourceCore<T>.MethodTable, core, core->Id);
+                return new LuminTask<T>(LuminTaskSourceCore<T>.MethodTablePtr, core, core->Id);
             }
 
             public static bool MoveNext(in LuminTaskState state)
@@ -491,7 +491,7 @@ namespace LuminThread.Unity
                     return LuminTask.FromCanceled(_cancellationToken);
                 }
 
-                return new LuminTask(LuminTaskSourceCore<AsyncUnit>.MethodTable, _core, _core->Id);
+                return new LuminTask(LuminTaskSourceCore<AsyncUnit>.MethodTablePtr, _core, _core->Id);
             }
 
             private void Invoke()
@@ -640,7 +640,7 @@ namespace LuminThread.Unity
                     return LuminTask.FromCanceled<T>(_cancellationToken);
                 }
 
-                return new LuminTask<T>(LuminTaskSourceCore<T>.MethodTable, _core, _core->Id);
+                return new LuminTask<T>(LuminTaskSourceCore<T>.MethodTablePtr, _core, _core->Id);
             }
 
             private void Invoke(T result)

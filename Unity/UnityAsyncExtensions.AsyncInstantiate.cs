@@ -128,7 +128,7 @@ namespace LuminThread.Unity
 
                 PlayerLoopHelper.AddAction(timing, state, &MoveNext);
 
-                return new LuminTask<UnityEngine.Object[]>(LuminTaskSourceCore<UnityEngine.Object[]>.MethodTable, core, core->Id);
+                return new LuminTask<UnityEngine.Object[]>(LuminTaskSourceCore<UnityEngine.Object[]>.MethodTablePtr, core, core->Id);
             }
 
             public static unsafe bool MoveNext(in LuminTaskState state)
@@ -228,7 +228,7 @@ namespace LuminThread.Unity
 
                 PlayerLoopHelper.AddAction(timing, state, &MoveNext);
 
-                return new LuminTask<T[]>(LuminTaskSourceCore<T[]>.MethodTable, core, core->Id);
+                return new LuminTask<T[]>(LuminTaskSourceCore<T[]>.MethodTablePtr, core, core->Id);
             }
 
             public static unsafe bool MoveNext(in LuminTaskState state)

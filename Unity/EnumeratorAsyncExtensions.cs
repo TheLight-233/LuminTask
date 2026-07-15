@@ -59,7 +59,7 @@ public static unsafe class EnumeratorAsyncExtensions
     {
         var source = LuminTaskSourceCore<AsyncUnit>.Create();
         coroutineRunner.StartCoroutine(Core(enumerator, coroutineRunner, new IntPtr(source)));
-        return new LuminTask(LuminTaskSourceCore<AsyncUnit>.MethodTable, source, source->Id);
+        return new LuminTask(LuminTaskSourceCore<AsyncUnit>.MethodTablePtr, source, source->Id);
     }
     
     public struct EnumeratorPromise
@@ -99,7 +99,7 @@ public static unsafe class EnumeratorAsyncExtensions
                 PlayerLoopHelper.AddAction(timing, state, &MoveNext);
             }
             
-            return new LuminTask(LuminTaskSourceCore<AsyncUnit>.MethodTable, core, core->Id);
+            return new LuminTask(LuminTaskSourceCore<AsyncUnit>.MethodTablePtr, core, core->Id);
         }
 
         public static bool MoveNext(in LuminTaskState state)

@@ -72,7 +72,7 @@ namespace LuminThread.Unity
 
                 PlayerLoopHelper.AddAction(timing, state, &MoveNext);
 
-                return new LuminTask<AsyncGPUReadbackRequest>(LuminTaskSourceCore<AsyncGPUReadbackRequest>.MethodTable, core, core->Id);
+                return new LuminTask<AsyncGPUReadbackRequest>(LuminTaskSourceCore<AsyncGPUReadbackRequest>.MethodTablePtr, core, core->Id);
             }
 
             public static unsafe bool MoveNext(in LuminTaskState state)

@@ -105,7 +105,7 @@ namespace LuminThread.Unity
                 // Add to player loop
                 PlayerLoopHelper.AddAction(timing, state, &MoveNext);
 
-                return new LuminTask(LuminTaskSourceCore<AsyncUnit>.MethodTable, core, core->Id);
+                return new LuminTask(LuminTaskSourceCore<AsyncUnit>.MethodTablePtr, core, core->Id);
             }
 
             static bool MoveNext(in LuminTaskState state)
@@ -236,7 +236,7 @@ namespace LuminThread.Unity
                 // Add to player loop
                 PlayerLoopHelper.AddAction(timing, state, &MoveNext);
 
-                return new LuminTask(LuminTaskSourceCore<AsyncUnit>.MethodTable, core, core->Id);
+                return new LuminTask(LuminTaskSourceCore<AsyncUnit>.MethodTablePtr, core, core->Id);
             }
 
             static bool MoveNext(in LuminTaskState state)
@@ -369,7 +369,7 @@ namespace LuminThread.Unity
                 // Add to player loop
                 PlayerLoopHelper.AddAction(timing, state, &MoveNext);
 
-                return new LuminTask(LuminTaskSourceCore<AsyncUnit>.MethodTable, core, core->Id);
+                return new LuminTask(LuminTaskSourceCore<AsyncUnit>.MethodTablePtr, core, core->Id);
             }
 
             static bool MoveNext(in LuminTaskState state)
@@ -490,7 +490,7 @@ namespace LuminThread.Unity
                 // Add to player loop for error checking
                 PlayerLoopHelper.AddAction(timing, state, &MoveNext);
 
-                return new LuminTask(LuminTaskSourceCore<AsyncUnit>.MethodTable, core, core->Id);
+                return new LuminTask(LuminTaskSourceCore<AsyncUnit>.MethodTablePtr, core, core->Id);
             }
 
             static bool MoveNext(in LuminTaskState state)

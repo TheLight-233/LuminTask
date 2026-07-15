@@ -394,7 +394,7 @@ namespace LuminThread.Unity
                     return LuminTask.FromCanceled<(string, int, int)>(_cancellationToken);
                 }
 
-                return new LuminTask<(string, int, int)>(LuminTaskSourceCore<(string, int, int)>.MethodTable, _core, _core->Id);
+                return new LuminTask<(string, int, int)>(LuminTaskSourceCore<(string, int, int)>.MethodTablePtr, _core, _core->Id);
             }
 
             private void Invoke(string text, int start, int end)

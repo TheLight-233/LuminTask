@@ -44,7 +44,7 @@ namespace LuminThread.Unity
 
                 PlayerLoopHelper.AddAction(timing, state, &MoveNext);
 
-                return new LuminTask(LuminTaskSourceCore<AsyncUnit>.MethodTable, core, core->Id);
+                return new LuminTask(LuminTaskSourceCore<AsyncUnit>.MethodTablePtr, core, core->Id);
             }
 
             public static unsafe bool MoveNext(in LuminTaskState state)

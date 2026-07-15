@@ -141,7 +141,7 @@ namespace LuminThread.Unity
 
                 PlayerLoopHelper.AddAction(timing, state, &MoveNext);
 
-                return new LuminTask(LuminTaskSourceCore<AsyncUnit>.MethodTable, core, core->Id);
+                return new LuminTask(LuminTaskSourceCore<AsyncUnit>.MethodTablePtr, core, core->Id);
             }
 
             public static unsafe bool MoveNext(in LuminTaskState state)
@@ -313,7 +313,7 @@ namespace LuminThread.Unity
 
                 PlayerLoopHelper.AddAction(timing, state, &MoveNext);
 
-                return new LuminTask<UnityEngine.Object>(LuminTaskSourceCore<UnityEngine.Object>.MethodTable, core, core->Id);
+                return new LuminTask<UnityEngine.Object>(LuminTaskSourceCore<UnityEngine.Object>.MethodTablePtr, core, core->Id);
             }
 
             public static unsafe bool MoveNext(in LuminTaskState state)
@@ -354,7 +354,6 @@ namespace LuminThread.Unity
         }
 
         #endregion
-
 
         #region AssetBundleRequest
 
@@ -486,7 +485,7 @@ namespace LuminThread.Unity
 
                 PlayerLoopHelper.AddAction(timing, state, &MoveNext);
 
-                return new LuminTask<UnityEngine.Object>(LuminTaskSourceCore<UnityEngine.Object>.MethodTable, core, core->Id);
+                return new LuminTask<UnityEngine.Object>(LuminTaskSourceCore<UnityEngine.Object>.MethodTablePtr, core, core->Id);
             }
 
             public static unsafe bool MoveNext(in LuminTaskState state)
@@ -658,7 +657,7 @@ namespace LuminThread.Unity
 
                 PlayerLoopHelper.AddAction(timing, state, &MoveNext);
 
-                return new LuminTask<AssetBundle>(LuminTaskSourceCore<AssetBundle>.MethodTable, core, core->Id);
+                return new LuminTask<AssetBundle>(LuminTaskSourceCore<AssetBundle>.MethodTablePtr, core, core->Id);
             }
 
             public static unsafe bool MoveNext(in LuminTaskState state)
@@ -846,7 +845,7 @@ namespace LuminThread.Unity
 
                 PlayerLoopHelper.AddAction(timing, state, &MoveNext);
 
-                return new LuminTask<UnityWebRequest>(LuminTaskSourceCore<UnityWebRequest>.MethodTable, core, core->Id);
+                return new LuminTask<UnityWebRequest>(LuminTaskSourceCore<UnityWebRequest>.MethodTablePtr, core, core->Id);
             }
 
             public static unsafe bool MoveNext(in LuminTaskState state)
