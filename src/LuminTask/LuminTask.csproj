@@ -1,0 +1,59 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <Nullable>enable</Nullable>
+        <LangVersion>13</LangVersion>
+        <TargetFrameworks>netstandard2.1;net8.0;net9.0</TargetFrameworks>
+        <NoWarn>$(NoWarn);CS1591;CA2255</NoWarn>
+        <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+        <PackageId>LuminTask</PackageId>
+        <Version>1.0.2</Version>
+        <Authors>TheLight233</Authors>
+        <Description>High-performance custom async/await task-like types for .NET.</Description>
+        <PackageTags>async;task;awaitable;zero-allocation</PackageTags>
+        <PackageProjectUrl>https://github.com/TheLight-233/LuminTask</PackageProjectUrl>
+        <RepositoryUrl>https://github.com/TheLight-233/LuminTask.git</RepositoryUrl>
+        <RepositoryType>git</RepositoryType>
+        <PackageLicenseExpression>MIT</PackageLicenseExpression>
+        <IncludeSymbols>true</IncludeSymbols>
+        <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+        <PackageReadmeFile>README.md</PackageReadmeFile>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <PackageReference Include="System.Runtime.CompilerServices.Unsafe" Version="6.1.2" />
+        <PackageReference Include="System.Threading.Tasks.Extensions" Version="4.6.3" />
+        <None Include="README.md" Pack="true" PackagePath="\"/>
+    </ItemGroup>
+
+    <ItemGroup>
+      <None Update="TaskSource\Promise\WhenAllPromise.tt">
+        <Generator>TextTemplatingFileGenerator</Generator>
+        <LastGenOutput>WhenAllPromise.cs</LastGenOutput>
+      </None>
+      <None Update="Utility\LuminTuple.tt">
+        <Generator>TextTemplatingFileGenerator</Generator>
+        <LastGenOutput>LuminTuple.cs</LastGenOutput>
+      </None>
+      <None Update="TaskSource\Promise\WhenAnyPromise.tt">
+        <Generator>TextTemplatingFileGenerator</Generator>
+        <LastGenOutput>WhenAnyPromise.cs</LastGenOutput>
+      </None>
+    </ItemGroup>
+
+    <ItemGroup>
+      <Compile Update="TaskSource\Promise\WhenAllPromise.cs">
+        <DependentUpon>WhenAllPromise.tt</DependentUpon>
+      </Compile>
+      <Compile Update="Utility\LuminTuple.cs">
+        <AutoGen>True</AutoGen>
+        <DesignTime>True</DesignTime>
+        <DependentUpon>LuminTuple.tt</DependentUpon>
+      </Compile>
+      <Compile Update="TaskSource\Promise\WhenAnyPromise.cs">
+        <DependentUpon>WhenAnyPromise.tt</DependentUpon>
+      </Compile>
+      <Compile Remove="Utility\Lock.cs" />
+    </ItemGroup>
+
+</Project>

@@ -1,0 +1,29 @@
+# Build output
+[Bb]in/
+[Oo]bj/
+
+# Visual Studio
+.vs/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# JetBrains Rider / ReSharper
+.idea/
+_ReSharper*/
+*.DotSettings.user
+
+# NuGet packages and local artifacts
+*.nupkg
+*.snupkg
+*.zip
+BenchmarkDotNet.Artifacts/
+
+# Test output
+TestResults/
+coverage/
+
+# OS files
+.DS_Store
+Thumbs.db
