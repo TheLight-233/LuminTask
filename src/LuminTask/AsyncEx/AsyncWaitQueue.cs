@@ -1,9 +1,11 @@
 using System;
 using System.Collections;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using LuminThread.TaskSource;
+using LuminThread.Utility;
 
 namespace LuminThread.AsyncEx;
 
@@ -20,13 +22,113 @@ public interface IAsyncWaitQueue<T>
 
 internal sealed unsafe class DefaultAsyncWaitQueue<T> : IAsyncWaitQueue<T>
 {
+    private static readonly Action<object> s_cancellationCallback = CancellationCallback;
+    private static readonly ConcurrentQueue<WaitNode> s_nodePool = new();
+    private static readonly int s_maxRetainedNodes = Math.Max(16, Environment.ProcessorCount * 4);
+    private static WaitNode? s_fastNode;
+    private static int s_retainedNodeCount;
+
     private readonly LuminDeque<WaitNode> _queue = new();
     private readonly object _queueLock = new object();
 
-    private class WaitNode
+    private sealed class WaitNode
     {
         public IntPtr CorePtr;
-        public CancellationTokenRegistration? Registration;
+        public DefaultAsyncWaitQueue<T>? Owner;
+        public CancellationTokenRegistration Registration;
+        public CancellationToken CancellationToken;
+        public bool HasRegistration;
+        public bool IsQueued;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static WaitNode RentNode(DefaultAsyncWaitQueue<T> owner, void* core)
+    {
+        var reused = false;
+        var node = Volatile.Read(ref s_fastNode);
+        if (node is not null &&
+            ReferenceEquals(Interlocked.CompareExchange(ref s_fastNode, null, node), node))
+        {
+            reused = true;
+        }
+        else if (s_nodePool.TryDequeue(out node))
+        {
+            reused = true;
+        }
+        else
+        {
+            node = new WaitNode();
+        }
+
+        if (reused)
+            Interlocked.Decrement(ref s_retainedNodeCount);
+
+        node.Owner = owner;
+        node.CorePtr = new IntPtr(core);
+        node.IsQueued = true;
+        return node;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static void ReturnNode(WaitNode node)
+    {
+        node.Owner = null;
+        node.CorePtr = IntPtr.Zero;
+        node.Registration = default;
+        node.CancellationToken = default;
+        node.HasRegistration = false;
+        node.IsQueued = false;
+
+        if (Interlocked.Increment(ref s_retainedNodeCount) > s_maxRetainedNodes)
+        {
+            Interlocked.Decrement(ref s_retainedNodeCount);
+            return;
+        }
+
+        if (Volatile.Read(ref s_fastNode) is not null ||
+            Interlocked.CompareExchange(ref s_fastNode, node, null) is not null)
+        {
+            s_nodePool.Enqueue(node);
+        }
+    }
+
+    private static void CancellationCallback(object state)
+    {
+        var node = (WaitNode)state;
+        node.Owner?.CancelFromCallback(node);
+    }
+
+    private void CancelFromCallback(WaitNode node)
+    {
+        lock (_queueLock)
+        {
+            if (!node.IsQueued)
+                return;
+
+            for (var i = 0; i < _queue.Count; i++)
+            {
+                if (!ReferenceEquals(_queue[i], node))
+                    continue;
+
+                _queue.RemoveAt(i);
+                node.IsQueued = false;
+                break;
+            }
+
+            if (node.IsQueued)
+                return;
+        }
+
+        var ptr = node.CorePtr.ToPointer();
+        LuminTaskSourceCore<T>.TrySetCanceled(ptr, node.CancellationToken);
+
+        // A callback cannot synchronously Dispose its own registration on every target runtime.
+        // Do not pool this node; clear references so a canceled CTS cannot retain a later waiter.
+        node.Owner = null;
+        node.CorePtr = IntPtr.Zero;
+        node.Registration = default;
+        node.CancellationToken = default;
+        node.HasRegistration = false;
     }
 
     public bool IsEmpty
@@ -39,7 +141,7 @@ internal sealed unsafe class DefaultAsyncWaitQueue<T> : IAsyncWaitQueue<T>
         lock (_queueLock)
         {
             var core = LuminTaskSourceCore<T>.Create();
-            var node = new WaitNode { CorePtr = new IntPtr(core) };
+            var node = RentNode(this, core);
             _queue.PushBack(node);
             return new LuminTask<T>(LuminTaskSourceCore<T>.MethodTableAutoDisposePtr, core, core->Id);
         }
@@ -54,10 +156,13 @@ internal sealed unsafe class DefaultAsyncWaitQueue<T> : IAsyncWaitQueue<T>
             node = _queue.PopFront();
         }
 
-        node.Registration?.Dispose();
+        node.IsQueued = false;
+        if (node.HasRegistration)
+            node.Registration.Dispose();
 
         var ptr = node.CorePtr.ToPointer();
         LuminTaskSourceCore<T>.TrySetResult(ptr, result);
+        ReturnNode(node);
     }
 
     public bool TryDequeue(T? result = default)
@@ -69,10 +174,13 @@ internal sealed unsafe class DefaultAsyncWaitQueue<T> : IAsyncWaitQueue<T>
             node = _queue.PopFront();
         }
 
-        node.Registration?.Dispose();
+        node.IsQueued = false;
+        if (node.HasRegistration)
+            node.Registration.Dispose();
 
         var ptr = node.CorePtr.ToPointer();
         LuminTaskSourceCore<T>.TrySetResult(ptr, result);
+        ReturnNode(node);
         return true;
     }
 
@@ -92,10 +200,13 @@ internal sealed unsafe class DefaultAsyncWaitQueue<T> : IAsyncWaitQueue<T>
 
         foreach (var node in nodes)
         {
-            node.Registration?.Dispose();
+            node.IsQueued = false;
+            if (node.HasRegistration)
+                node.Registration.Dispose();
 
             var ptr = node.CorePtr.ToPointer();
             LuminTaskSourceCore<T>.TrySetResult(ptr, result);
+            ReturnNode(node);
         }
     }
 
@@ -118,10 +229,13 @@ internal sealed unsafe class DefaultAsyncWaitQueue<T> : IAsyncWaitQueue<T>
 
         if (node != null)
         {
-            node.Registration?.Dispose();
+            node.IsQueued = false;
+            if (node.HasRegistration)
+                node.Registration.Dispose();
 
             var ptr = node.CorePtr.ToPointer();
-            LuminTaskSourceCore<T>.TrySetCanceled(ptr);
+            LuminTaskSourceCore<T>.TrySetCanceled(ptr, cancellationToken);
+            ReturnNode(node);
             return true;
         }
 
@@ -144,10 +258,13 @@ internal sealed unsafe class DefaultAsyncWaitQueue<T> : IAsyncWaitQueue<T>
 
         foreach (var node in nodes)
         {
-            node.Registration?.Dispose();
+            node.IsQueued = false;
+            if (node.HasRegistration)
+                node.Registration.Dispose();
 
             var ptr = node.CorePtr.ToPointer();
-            LuminTaskSourceCore<T>.TrySetCanceled(ptr);
+            LuminTaskSourceCore<T>.TrySetCanceled(ptr, cancellationToken);
+            ReturnNode(node);
         }
     }
 
@@ -164,17 +281,29 @@ internal sealed unsafe class DefaultAsyncWaitQueue<T> : IAsyncWaitQueue<T>
         lock (_queueLock)
         {
             var core = LuminTaskSourceCore<T>.Create();
-            node = new WaitNode { CorePtr = new IntPtr(core) };
+            node = RentNode(this, core);
             _queue.PushBack(node);
             task = new LuminTask<T>(LuminTaskSourceCore<T>.MethodTableAutoDisposePtr, core, core->Id);
-        }
 
-        if (cancellationToken.CanBeCanceled)
-        {
-            node.Registration = cancellationToken.Register(() =>
+            if (cancellationToken.CanBeCanceled)
             {
-                TryCancel(task, cancellationToken);
-            }, useSynchronizationContext: false);
+                node.CancellationToken = cancellationToken;
+                var registration = cancellationToken.RegisterWithoutCaptureExecutionContext(
+                    s_cancellationCallback,
+                    node);
+
+                // Register may invoke synchronously. In that case CancelFromCallback already
+                // removed and completed the node while this re-entrant lock was held.
+                if (node.IsQueued)
+                {
+                    node.Registration = registration;
+                    node.HasRegistration = true;
+                }
+                else
+                {
+                    registration.Dispose();
+                }
+            }
         }
 
         return task;

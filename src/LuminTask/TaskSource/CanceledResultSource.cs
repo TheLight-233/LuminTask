@@ -9,6 +9,8 @@ namespace LuminThread.TaskSource;
 
 public unsafe struct CanceledResultSource<T>
 {
+    private static IntPtr s_cachedSource;
+
     public static readonly VTable MethodTable = new VTable
     {
         GetResult = &GetResult,
@@ -40,7 +42,11 @@ public unsafe struct CanceledResultSource<T>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static CanceledResultSource<T>* Create(CancellationToken cancellationToken = default)
     {
-        CanceledResultSource<T>* ptr = (CanceledResultSource<T>*)MemoryHelper.Alloc((nuint)Unsafe.SizeOf<LuminTaskSourceCore<T>>());
+        var cached = Interlocked.Exchange(ref s_cachedSource, IntPtr.Zero);
+        var ptr = cached != IntPtr.Zero
+            ? (CanceledResultSource<T>*)cached.ToPointer()
+            : (CanceledResultSource<T>*)MemoryHelper.Alloc(
+                (nuint)Math.Max(Unsafe.SizeOf<CanceledResultSource<T>>(), IntPtr.Size));
 
         ptr->Id = LuminTaskBag.GetId();
 
@@ -103,11 +109,13 @@ public unsafe struct CanceledResultSource<T>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static void Dispose(void* ptr)
     {
-        ref var source = ref Unsafe.AsRef<ExceptionResultSource<T>>(ptr);
+        ref var source = ref Unsafe.AsRef<CanceledResultSource<T>>(ptr);
         ref var item = ref LuminTaskMarshal.GetTaskItem(source.Id);
+        item.CancellationToken = default;
 
         LuminTaskBag.ResetId(item.Id);
 
-        MemoryHelper.Free(ptr);
+        if (Interlocked.CompareExchange(ref s_cachedSource, new IntPtr(ptr), IntPtr.Zero) != IntPtr.Zero)
+            MemoryHelper.Free(ptr);
     }
 }

@@ -2,7 +2,6 @@ using System;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Threading;
-using System.Threading.Tasks;
 using LuminThread.Utility;
 
 namespace LuminThread;
@@ -269,24 +268,24 @@ public readonly struct SwitchToTaskPoolAwaitable
 
     public struct Awaiter : ICriticalNotifyCompletion
     {
-        static readonly Action<object> switchToCallback = Callback;
+        static readonly WaitCallback switchToCallback = Callback;
 
         public bool IsCompleted => false;
         public void GetResult() { }
 
         public void OnCompleted(Action continuation)
         {
-            Task.Factory.StartNew(switchToCallback, continuation, CancellationToken.None, TaskCreationOptions.DenyChildAttach, TaskScheduler.Default);
+            ThreadPool.QueueUserWorkItem(switchToCallback, continuation);
         }
 
         public void UnsafeOnCompleted(Action continuation)
         {
-            Task.Factory.StartNew(switchToCallback, continuation, CancellationToken.None, TaskCreationOptions.DenyChildAttach, TaskScheduler.Default);
+            ThreadPool.UnsafeQueueUserWorkItem(switchToCallback, continuation);
         }
 
-        static void Callback(object state)
+        static void Callback(object? state)
         {
-            var continuation = (Action)state;
+            var continuation = (Action)state!;
             continuation();
         }
     }

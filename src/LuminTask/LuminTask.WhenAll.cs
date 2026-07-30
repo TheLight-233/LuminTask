@@ -272,6 +272,8 @@ public readonly partial struct LuminTask
     {
         if (task1.Status.IsCompletedSuccessfully() && task2.Status.IsCompletedSuccessfully())
         {
+            task1.GetAwaiter().GetResult();
+            task2.GetAwaiter().GetResult();
             return FromResult();
         }
 
@@ -284,6 +286,9 @@ public readonly partial struct LuminTask
     {
         if (task1.Status.IsCompletedSuccessfully() && task2.Status.IsCompletedSuccessfully() && task3.Status.IsCompletedSuccessfully())
         {
+            task1.GetAwaiter().GetResult();
+            task2.GetAwaiter().GetResult();
+            task3.GetAwaiter().GetResult();
             return FromResult();
         }
 
@@ -296,6 +301,10 @@ public readonly partial struct LuminTask
     {
         if (task1.Status.IsCompletedSuccessfully() && task2.Status.IsCompletedSuccessfully() && task3.Status.IsCompletedSuccessfully() && task4.Status.IsCompletedSuccessfully())
         {
+            task1.GetAwaiter().GetResult();
+            task2.GetAwaiter().GetResult();
+            task3.GetAwaiter().GetResult();
+            task4.GetAwaiter().GetResult();
             return FromResult();
         }
 
@@ -308,6 +317,11 @@ public readonly partial struct LuminTask
     {
         if (task1.Status.IsCompletedSuccessfully() && task2.Status.IsCompletedSuccessfully() && task3.Status.IsCompletedSuccessfully() && task4.Status.IsCompletedSuccessfully() && task5.Status.IsCompletedSuccessfully())
         {
+            task1.GetAwaiter().GetResult();
+            task2.GetAwaiter().GetResult();
+            task3.GetAwaiter().GetResult();
+            task4.GetAwaiter().GetResult();
+            task5.GetAwaiter().GetResult();
             return FromResult();
         }
 
@@ -320,6 +334,12 @@ public readonly partial struct LuminTask
     {
         if (task1.Status.IsCompletedSuccessfully() && task2.Status.IsCompletedSuccessfully() && task3.Status.IsCompletedSuccessfully() && task4.Status.IsCompletedSuccessfully() && task5.Status.IsCompletedSuccessfully() && task6.Status.IsCompletedSuccessfully())
         {
+            task1.GetAwaiter().GetResult();
+            task2.GetAwaiter().GetResult();
+            task3.GetAwaiter().GetResult();
+            task4.GetAwaiter().GetResult();
+            task5.GetAwaiter().GetResult();
+            task6.GetAwaiter().GetResult();
             return FromResult();
         }
 
@@ -332,6 +352,13 @@ public readonly partial struct LuminTask
     {
         if (task1.Status.IsCompletedSuccessfully() && task2.Status.IsCompletedSuccessfully() && task3.Status.IsCompletedSuccessfully() && task4.Status.IsCompletedSuccessfully() && task5.Status.IsCompletedSuccessfully() && task6.Status.IsCompletedSuccessfully() && task7.Status.IsCompletedSuccessfully())
         {
+            task1.GetAwaiter().GetResult();
+            task2.GetAwaiter().GetResult();
+            task3.GetAwaiter().GetResult();
+            task4.GetAwaiter().GetResult();
+            task5.GetAwaiter().GetResult();
+            task6.GetAwaiter().GetResult();
+            task7.GetAwaiter().GetResult();
             return FromResult();
         }
 
@@ -344,6 +371,14 @@ public readonly partial struct LuminTask
     {
         if (task1.Status.IsCompletedSuccessfully() && task2.Status.IsCompletedSuccessfully() && task3.Status.IsCompletedSuccessfully() && task4.Status.IsCompletedSuccessfully() && task5.Status.IsCompletedSuccessfully() && task6.Status.IsCompletedSuccessfully() && task7.Status.IsCompletedSuccessfully() && task8.Status.IsCompletedSuccessfully())
         {
+            task1.GetAwaiter().GetResult();
+            task2.GetAwaiter().GetResult();
+            task3.GetAwaiter().GetResult();
+            task4.GetAwaiter().GetResult();
+            task5.GetAwaiter().GetResult();
+            task6.GetAwaiter().GetResult();
+            task7.GetAwaiter().GetResult();
+            task8.GetAwaiter().GetResult();
             return FromResult();
         }
 
@@ -356,6 +391,15 @@ public readonly partial struct LuminTask
     {
         if (task1.Status.IsCompletedSuccessfully() && task2.Status.IsCompletedSuccessfully() && task3.Status.IsCompletedSuccessfully() && task4.Status.IsCompletedSuccessfully() && task5.Status.IsCompletedSuccessfully() && task6.Status.IsCompletedSuccessfully() && task7.Status.IsCompletedSuccessfully() && task8.Status.IsCompletedSuccessfully() && task9.Status.IsCompletedSuccessfully())
         {
+            task1.GetAwaiter().GetResult();
+            task2.GetAwaiter().GetResult();
+            task3.GetAwaiter().GetResult();
+            task4.GetAwaiter().GetResult();
+            task5.GetAwaiter().GetResult();
+            task6.GetAwaiter().GetResult();
+            task7.GetAwaiter().GetResult();
+            task8.GetAwaiter().GetResult();
+            task9.GetAwaiter().GetResult();
             return FromResult();
         }
 
@@ -368,6 +412,16 @@ public readonly partial struct LuminTask
     {
         if (task1.Status.IsCompletedSuccessfully() && task2.Status.IsCompletedSuccessfully() && task3.Status.IsCompletedSuccessfully() && task4.Status.IsCompletedSuccessfully() && task5.Status.IsCompletedSuccessfully() && task6.Status.IsCompletedSuccessfully() && task7.Status.IsCompletedSuccessfully() && task8.Status.IsCompletedSuccessfully() && task9.Status.IsCompletedSuccessfully() && task10.Status.IsCompletedSuccessfully())
         {
+            task1.GetAwaiter().GetResult();
+            task2.GetAwaiter().GetResult();
+            task3.GetAwaiter().GetResult();
+            task4.GetAwaiter().GetResult();
+            task5.GetAwaiter().GetResult();
+            task6.GetAwaiter().GetResult();
+            task7.GetAwaiter().GetResult();
+            task8.GetAwaiter().GetResult();
+            task9.GetAwaiter().GetResult();
+            task10.GetAwaiter().GetResult();
             return FromResult();
         }
 
@@ -380,6 +434,17 @@ public readonly partial struct LuminTask
     {
         if (task1.Status.IsCompletedSuccessfully() && task2.Status.IsCompletedSuccessfully() && task3.Status.IsCompletedSuccessfully() && task4.Status.IsCompletedSuccessfully() && task5.Status.IsCompletedSuccessfully() && task6.Status.IsCompletedSuccessfully() && task7.Status.IsCompletedSuccessfully() && task8.Status.IsCompletedSuccessfully() && task9.Status.IsCompletedSuccessfully() && task10.Status.IsCompletedSuccessfully() && task11.Status.IsCompletedSuccessfully())
         {
+            task1.GetAwaiter().GetResult();
+            task2.GetAwaiter().GetResult();
+            task3.GetAwaiter().GetResult();
+            task4.GetAwaiter().GetResult();
+            task5.GetAwaiter().GetResult();
+            task6.GetAwaiter().GetResult();
+            task7.GetAwaiter().GetResult();
+            task8.GetAwaiter().GetResult();
+            task9.GetAwaiter().GetResult();
+            task10.GetAwaiter().GetResult();
+            task11.GetAwaiter().GetResult();
             return FromResult();
         }
 
@@ -392,6 +457,18 @@ public readonly partial struct LuminTask
     {
         if (task1.Status.IsCompletedSuccessfully() && task2.Status.IsCompletedSuccessfully() && task3.Status.IsCompletedSuccessfully() && task4.Status.IsCompletedSuccessfully() && task5.Status.IsCompletedSuccessfully() && task6.Status.IsCompletedSuccessfully() && task7.Status.IsCompletedSuccessfully() && task8.Status.IsCompletedSuccessfully() && task9.Status.IsCompletedSuccessfully() && task10.Status.IsCompletedSuccessfully() && task11.Status.IsCompletedSuccessfully() && task12.Status.IsCompletedSuccessfully())
         {
+            task1.GetAwaiter().GetResult();
+            task2.GetAwaiter().GetResult();
+            task3.GetAwaiter().GetResult();
+            task4.GetAwaiter().GetResult();
+            task5.GetAwaiter().GetResult();
+            task6.GetAwaiter().GetResult();
+            task7.GetAwaiter().GetResult();
+            task8.GetAwaiter().GetResult();
+            task9.GetAwaiter().GetResult();
+            task10.GetAwaiter().GetResult();
+            task11.GetAwaiter().GetResult();
+            task12.GetAwaiter().GetResult();
             return FromResult();
         }
 
@@ -404,6 +481,19 @@ public readonly partial struct LuminTask
     {
         if (task1.Status.IsCompletedSuccessfully() && task2.Status.IsCompletedSuccessfully() && task3.Status.IsCompletedSuccessfully() && task4.Status.IsCompletedSuccessfully() && task5.Status.IsCompletedSuccessfully() && task6.Status.IsCompletedSuccessfully() && task7.Status.IsCompletedSuccessfully() && task8.Status.IsCompletedSuccessfully() && task9.Status.IsCompletedSuccessfully() && task10.Status.IsCompletedSuccessfully() && task11.Status.IsCompletedSuccessfully() && task12.Status.IsCompletedSuccessfully() && task13.Status.IsCompletedSuccessfully())
         {
+            task1.GetAwaiter().GetResult();
+            task2.GetAwaiter().GetResult();
+            task3.GetAwaiter().GetResult();
+            task4.GetAwaiter().GetResult();
+            task5.GetAwaiter().GetResult();
+            task6.GetAwaiter().GetResult();
+            task7.GetAwaiter().GetResult();
+            task8.GetAwaiter().GetResult();
+            task9.GetAwaiter().GetResult();
+            task10.GetAwaiter().GetResult();
+            task11.GetAwaiter().GetResult();
+            task12.GetAwaiter().GetResult();
+            task13.GetAwaiter().GetResult();
             return FromResult();
         }
 
@@ -416,6 +506,20 @@ public readonly partial struct LuminTask
     {
         if (task1.Status.IsCompletedSuccessfully() && task2.Status.IsCompletedSuccessfully() && task3.Status.IsCompletedSuccessfully() && task4.Status.IsCompletedSuccessfully() && task5.Status.IsCompletedSuccessfully() && task6.Status.IsCompletedSuccessfully() && task7.Status.IsCompletedSuccessfully() && task8.Status.IsCompletedSuccessfully() && task9.Status.IsCompletedSuccessfully() && task10.Status.IsCompletedSuccessfully() && task11.Status.IsCompletedSuccessfully() && task12.Status.IsCompletedSuccessfully() && task13.Status.IsCompletedSuccessfully() && task14.Status.IsCompletedSuccessfully())
         {
+            task1.GetAwaiter().GetResult();
+            task2.GetAwaiter().GetResult();
+            task3.GetAwaiter().GetResult();
+            task4.GetAwaiter().GetResult();
+            task5.GetAwaiter().GetResult();
+            task6.GetAwaiter().GetResult();
+            task7.GetAwaiter().GetResult();
+            task8.GetAwaiter().GetResult();
+            task9.GetAwaiter().GetResult();
+            task10.GetAwaiter().GetResult();
+            task11.GetAwaiter().GetResult();
+            task12.GetAwaiter().GetResult();
+            task13.GetAwaiter().GetResult();
+            task14.GetAwaiter().GetResult();
             return FromResult();
         }
 
@@ -428,6 +532,21 @@ public readonly partial struct LuminTask
     {
         if (task1.Status.IsCompletedSuccessfully() && task2.Status.IsCompletedSuccessfully() && task3.Status.IsCompletedSuccessfully() && task4.Status.IsCompletedSuccessfully() && task5.Status.IsCompletedSuccessfully() && task6.Status.IsCompletedSuccessfully() && task7.Status.IsCompletedSuccessfully() && task8.Status.IsCompletedSuccessfully() && task9.Status.IsCompletedSuccessfully() && task10.Status.IsCompletedSuccessfully() && task11.Status.IsCompletedSuccessfully() && task12.Status.IsCompletedSuccessfully() && task13.Status.IsCompletedSuccessfully() && task14.Status.IsCompletedSuccessfully() && task15.Status.IsCompletedSuccessfully())
         {
+            task1.GetAwaiter().GetResult();
+            task2.GetAwaiter().GetResult();
+            task3.GetAwaiter().GetResult();
+            task4.GetAwaiter().GetResult();
+            task5.GetAwaiter().GetResult();
+            task6.GetAwaiter().GetResult();
+            task7.GetAwaiter().GetResult();
+            task8.GetAwaiter().GetResult();
+            task9.GetAwaiter().GetResult();
+            task10.GetAwaiter().GetResult();
+            task11.GetAwaiter().GetResult();
+            task12.GetAwaiter().GetResult();
+            task13.GetAwaiter().GetResult();
+            task14.GetAwaiter().GetResult();
+            task15.GetAwaiter().GetResult();
             return FromResult();
         }
 

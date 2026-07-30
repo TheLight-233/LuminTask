@@ -13,14 +13,12 @@ namespace LuminThread.CompilerServices
     {
         private LuminTaskSourceCore<AsyncUnit>* _source;
         private IStateMachineBox? _box;
-        private bool _continueOnCapturedContext;
         private Exception? _exception;
-        private bool _isCompleted;
 
         [DebuggerHidden]
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static AsyncLuminTaskMethodBuilder Create()
-            => new() { _continueOnCapturedContext = false };
+            => default;
 
         public LuminTask Task
         {
@@ -30,6 +28,8 @@ namespace LuminThread.CompilerServices
             {
                 if (_source != null)
                     return new(LuminTaskSourceCore<AsyncUnit>.MethodTableAutoDisposePtr, _source, _source->Id);
+                if (_exception is OperationCanceledException canceled)
+                    return LuminTask.FromCanceled(canceled.CancellationToken);
                 if (_exception != null)
                 {
                     var es = ExceptionResultSource<AsyncUnit>.Create(_exception);
@@ -51,10 +51,6 @@ namespace LuminThread.CompilerServices
                 box.Return();   // zeroes the state machine (== `this`); read nothing off `this` after.
                 LuminTaskSourceCore<AsyncUnit>.TrySetResult(source);
             }
-            else
-            {
-                _isCompleted = true;
-            }
         }
 
         [DebuggerHidden]
@@ -66,7 +62,10 @@ namespace LuminThread.CompilerServices
                 var source = _source;
                 var box = _box;
                 box.Return();
-                LuminTaskSourceCore<AsyncUnit>.TrySetException(source, exception);
+                if (exception is OperationCanceledException canceled)
+                    LuminTaskSourceCore<AsyncUnit>.TrySetCanceled(source, canceled.CancellationToken);
+                else
+                    LuminTaskSourceCore<AsyncUnit>.TrySetException(source, exception);
             }
             else
             {
@@ -85,7 +84,7 @@ namespace LuminThread.CompilerServices
             if (_box == null)
             {
                 if (_source == null)
-                    _source = LuminTaskSourceCore<AsyncUnit>.Create(_continueOnCapturedContext);
+                    _source = LuminTaskSourceCore<AsyncUnit>.Create();
                 var box = StateMachineBox<TStateMachine>.Rent();
                 _box = box;                       // set this._box BEFORE copying the state machine
                 box.StateMachine = stateMachine;  // the copy now carries _box / _source
@@ -105,7 +104,7 @@ namespace LuminThread.CompilerServices
             if (_box == null)
             {
                 if (_source == null)
-                    _source = LuminTaskSourceCore<AsyncUnit>.Create(_continueOnCapturedContext);
+                    _source = LuminTaskSourceCore<AsyncUnit>.Create();
                 var box = StateMachineBox<TStateMachine>.Rent();
                 _box = box;
                 box.StateMachine = stateMachine;
@@ -131,15 +130,13 @@ namespace LuminThread.CompilerServices
     {
         private LuminTaskSourceCore<T>* _source;
         private IStateMachineBox? _box;
-        private bool _continueOnCapturedContext;
         private Exception? _exception;
         private T _result;
-        private bool _haveResult;
 
         [DebuggerHidden]
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static AsyncLuminTaskMethodBuilder<T> Create()
-            => new() { _continueOnCapturedContext = false };
+            => default;
 
         public LuminTask<T> Task
         {
@@ -149,6 +146,8 @@ namespace LuminThread.CompilerServices
             {
                 if (_source != null)
                     return new(LuminTaskSourceCore<T>.MethodTableAutoDisposePtr, _source, _source->Id);
+                if (_exception is OperationCanceledException canceled)
+                    return LuminTask.FromCanceled<T>(canceled.CancellationToken);
                 if (_exception != null)
                 {
                     var es = ExceptionResultSource<T>.Create(_exception);
@@ -172,7 +171,6 @@ namespace LuminThread.CompilerServices
             else
             {
                 _result = result;
-                _haveResult = true;
             }
         }
 
@@ -185,7 +183,10 @@ namespace LuminThread.CompilerServices
                 var source = _source;
                 var box = _box;
                 box.Return();
-                LuminTaskSourceCore<T>.TrySetException(source, exception);
+                if (exception is OperationCanceledException canceled)
+                    LuminTaskSourceCore<T>.TrySetCanceled(source, canceled.CancellationToken);
+                else
+                    LuminTaskSourceCore<T>.TrySetException(source, exception);
             }
             else
             {
@@ -204,7 +205,7 @@ namespace LuminThread.CompilerServices
             if (_box == null)
             {
                 if (_source == null)
-                    _source = LuminTaskSourceCore<T>.Create(_continueOnCapturedContext);
+                    _source = LuminTaskSourceCore<T>.Create();
                 var box = StateMachineBox<TStateMachine>.Rent();
                 _box = box;
                 box.StateMachine = stateMachine;
@@ -224,7 +225,7 @@ namespace LuminThread.CompilerServices
             if (_box == null)
             {
                 if (_source == null)
-                    _source = LuminTaskSourceCore<T>.Create(_continueOnCapturedContext);
+                    _source = LuminTaskSourceCore<T>.Create();
                 var box = StateMachineBox<TStateMachine>.Rent();
                 _box = box;
                 box.StateMachine = stateMachine;

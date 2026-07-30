@@ -18,7 +18,9 @@ namespace LuminThread.CompilerServices
     internal sealed class StateMachineBox<TStateMachine> : IStateMachineBox
         where TStateMachine : IAsyncStateMachine
     {
+        private const int MaxRetainedPerThread = 16;
         [ThreadStatic] private static StateMachineBox<TStateMachine>? _freeList;
+        [ThreadStatic] private static int _freeCount;
 
         private StateMachineBox<TStateMachine>? _next;
         public TStateMachine StateMachine = default!;
@@ -43,6 +45,7 @@ namespace LuminThread.CompilerServices
             {
                 _freeList = box._next;
                 box._next = null;
+                _freeCount--;
                 return box;
             }
             return new StateMachineBox<TStateMachine>();
@@ -52,8 +55,15 @@ namespace LuminThread.CompilerServices
         public void Return()
         {
             StateMachine = default!;
+            if (_freeCount >= MaxRetainedPerThread)
+            {
+                _next = null;
+                return;
+            }
+
             _next = _freeList;
             _freeList = this;
+            _freeCount++;
         }
 
         private void MoveNext() => StateMachine.MoveNext();

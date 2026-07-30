@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.CompilerServices;
@@ -12,7 +13,7 @@ public readonly partial struct LuminTask
     public static unsafe LuminTask<int> WhenAny(LuminTask[]? tasks)
     {
         if (tasks is null || tasks.Length == 0)
-            return LuminTask<int>.FromResult(0);
+            return FromException<int>(new InvalidOperationException("At least one task is required."));
 
         var promise = new WhenAnyPromise(tasks);
         return new LuminTask<int>(LuminTaskSourceCore<int>.MethodTablePtr, promise._core, promise._core->Id);
@@ -22,7 +23,7 @@ public readonly partial struct LuminTask
     public static unsafe LuminTask<int> WhenAny(IEnumerable<LuminTask>? tasks)
     {
         if (tasks is null)
-            return LuminTask<int>.FromResult(0);
+            return FromException<int>(new ArgumentNullException(nameof(tasks)));
 
         LuminTask[] array;
 
@@ -30,13 +31,18 @@ public readonly partial struct LuminTask
         {
             array = tasksArray;
         }
+        else if (tasks is ICollection<LuminTask> collection)
+        {
+            array = new LuminTask[collection.Count];
+            collection.CopyTo(array, 0);
+        }
         else
         {
             array = tasks.ToArray();
         }
 
         if (array.Length == 0)
-            return LuminTask<int>.FromResult(0);
+            return FromException<int>(new InvalidOperationException("At least one task is required."));
 
         var promise = new WhenAnyPromise(array);
         return new LuminTask<int>(LuminTaskSourceCore<int>.MethodTablePtr, promise._core, promise._core->Id);
@@ -46,7 +52,8 @@ public readonly partial struct LuminTask
     public static unsafe LuminTask<(int winArgumentIndex, T result)> WhenAny<T>(LuminTask<T>[]? tasks)
     {
         if (tasks is null || tasks.Length == 0)
-            return LuminTask<(int winArgumentIndex, T result)>.FromResult(default);
+            return FromException<(int winArgumentIndex, T result)>(
+                new InvalidOperationException("At least one task is required."));
 
         var promise = new WhenAnyPromise<T>(tasks);
         return new LuminTask<(int winArgumentIndex, T result)>(LuminTaskSourceCore<(int, T)>.MethodTablePtr, promise._core, promise._core->Id);
@@ -56,7 +63,7 @@ public readonly partial struct LuminTask
     public static unsafe LuminTask<(int winArgumentIndex, T result)> WhenAny<T>(IEnumerable<LuminTask<T>>? tasks)
     {
         if (tasks is null)
-            return LuminTask<(int winArgumentIndex, T result)>.FromResult(default);
+            return FromException<(int winArgumentIndex, T result)>(new ArgumentNullException(nameof(tasks)));
 
         LuminTask<T>[] array;
 
@@ -64,13 +71,19 @@ public readonly partial struct LuminTask
         {
             array = tasksArray;
         }
+        else if (tasks is ICollection<LuminTask<T>> collection)
+        {
+            array = new LuminTask<T>[collection.Count];
+            collection.CopyTo(array, 0);
+        }
         else
         {
             array = tasks.ToArray();
         }
 
         if (array.Length == 0)
-            return LuminTask<(int winArgumentIndex, T result)>.FromResult(default);
+            return FromException<(int winArgumentIndex, T result)>(
+                new InvalidOperationException("At least one task is required."));
 
         var promise = new WhenAnyPromise<T>(array);
         return new LuminTask<(int winArgumentIndex, T result)>(LuminTaskSourceCore<(int, T)>.MethodTablePtr, promise._core, promise._core->Id);

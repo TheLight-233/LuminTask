@@ -20,6 +20,8 @@ public static class AsyncExTests
         await r.Run("AsyncReaderWriterLock writer is exclusive", RwWriterExclusive);
         await r.Run("AsyncLazy initializes once", LazyInitOnce);
         await r.Run("AsyncMonitor enter/wait/pulse", Monitor);
+        await r.Run("AsyncResetEvent timeout remains armed", ResetEventTimeout);
+        await r.Run("AsyncSemaphore timeout remains armed", SemaphoreTimeout);
     }
 
     private static async LuminTask LockMutualExclusion()
@@ -253,5 +255,31 @@ public static class AsyncExTests
         using (await monitor.EnterAsync()) { log++; }
         using (await monitor.EnterAsync()) { log++; }
         Assert.Equal(2, log);
+    }
+
+    private static async LuminTask ResetEventTimeout()
+    {
+        using var evt = new AsyncManualResetEvent();
+        try
+        {
+            await evt.WaitAsync(TimeSpan.FromMilliseconds(30));
+            Assert.Fail("expected timeout cancellation");
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
+    private static async LuminTask SemaphoreTimeout()
+    {
+        using var semaphore = new AsyncSemaphore(0);
+        try
+        {
+            await semaphore.WaitAsync(TimeSpan.FromMilliseconds(30));
+            Assert.Fail("expected timeout cancellation");
+        }
+        catch (OperationCanceledException)
+        {
+        }
     }
 }

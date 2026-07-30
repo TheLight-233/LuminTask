@@ -242,7 +242,9 @@ public unsafe struct LuminTaskItem
     [FieldOffset(0)]  public readonly short Id;
     [FieldOffset(2)]  public LuminTaskStatus Status = LuminTaskStatus.Pending;
     [FieldOffset(3)]  public bool ContinueOnCapturedContext = true;
-    [FieldOffset(4)]  public bool ShouldClearResult;
+    // Uses the former padding between flags and the first reference field, keeping each task
+    // item compact while still providing the 32-bit alignment required by Interlocked.
+    [FieldOffset(4)]  public int CompletionState;
     [FieldOffset(8)]  public IDisposable? ResultRefDispose;
     [FieldOffset(16)]  public Action<object>? Continuation;
     [FieldOffset(24)] public object? State;
@@ -252,14 +254,20 @@ public unsafe struct LuminTaskItem
     [FieldOffset(56)] public CancellationToken CancellationToken;
     [FieldOffset(64)] public object? ResultRef;
     [FieldOffset(72)] public fixed byte ResultValue[64];
-
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal LuminTaskItem(short id) { Id = id; }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void Reset()
     {
+        if (ResultRefDispose != null)
+        {
+            ResultRefDispose.Dispose();
+            ResultRefDispose = null;
+        }
+
         Status = LuminTaskStatus.Pending;
+        CompletionState = 0;
         ContinueOnCapturedContext = false;
         Continuation = null;
         State = null;
@@ -269,21 +277,6 @@ public unsafe struct LuminTaskItem
         ResultRef = null;
         CancellationToken = default;
         unsafe { fixed (byte* p = ResultValue) Unsafe.InitBlock(p, 0, 64); }
-
-        if (ResultRefDispose != null)
-        {
-            ResultRefDispose.Dispose();
-            ResultRefDispose = null;
-        }
-        
-        if (ShouldClearResult)
-        {
-            var resultPtr = (void*)Unsafe.ReadUnaligned<nint>(ref ResultValue[0]);
-            if (resultPtr != null)
-            {
-                MemoryHelper.Free(resultPtr);
-            }
-        }
     }
 }
 

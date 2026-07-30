@@ -305,30 +305,42 @@ namespace LuminThread.AsyncEx
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static LuminTask WaitAsync(this AsyncManualResetEvent evt, TimeSpan timeout)
+            => WaitManualAsync(evt, timeout);
+
+        private static async LuminTask WaitManualAsync(AsyncManualResetEvent evt, TimeSpan timeout)
         {
             using var cts = new CancellationTokenSource(timeout);
-            return evt.WaitAsync(cts.Token);
+            await evt.WaitAsync(cts.Token);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static LuminTask<T> WaitAsync<T>(this AsyncManualResetEvent<T> evt, TimeSpan timeout)
+            => WaitManualAsync(evt, timeout);
+
+        private static async LuminTask<T> WaitManualAsync<T>(AsyncManualResetEvent<T> evt, TimeSpan timeout)
         {
             using var cts = new CancellationTokenSource(timeout);
-            return evt.WaitAsync(cts.Token);
+            return await evt.WaitAsync(cts.Token);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static LuminTask WaitAsync(this AsyncAutoResetEvent evt, TimeSpan timeout)
+            => WaitAutoAsync(evt, timeout);
+
+        private static async LuminTask WaitAutoAsync(AsyncAutoResetEvent evt, TimeSpan timeout)
         {
             using var cts = new CancellationTokenSource(timeout);
-            return evt.WaitAsync(cts.Token);
+            await evt.WaitAsync(cts.Token);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static LuminTask<T> WaitAsync<T>(this AsyncAutoResetEvent<T> evt, TimeSpan timeout)
+            => WaitAutoAsync(evt, timeout);
+
+        private static async LuminTask<T> WaitAutoAsync<T>(AsyncAutoResetEvent<T> evt, TimeSpan timeout)
         {
             using var cts = new CancellationTokenSource(timeout);
-            return evt.WaitAsync(cts.Token);
+            return await evt.WaitAsync(cts.Token);
         }
     }
 }

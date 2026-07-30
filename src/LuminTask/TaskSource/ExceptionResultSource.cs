@@ -9,6 +9,8 @@ namespace LuminThread.TaskSource;
 
 public unsafe struct ExceptionResultSource<T>
 {
+    private static IntPtr s_cachedSource;
+
     public static readonly VTable MethodTable = new VTable
     {
         GetResult = &GetResult,
@@ -43,9 +45,16 @@ public unsafe struct ExceptionResultSource<T>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static ExceptionResultSource<T>* Create(Exception exception)
     {
-        ExceptionResultSource<T>* ptr = (ExceptionResultSource<T>*)MemoryHelper.Alloc((nuint)Unsafe.SizeOf<LuminTaskSourceCore<T>>());
+        if (exception is null) throw new ArgumentNullException(nameof(exception));
+
+        var cached = System.Threading.Interlocked.Exchange(ref s_cachedSource, IntPtr.Zero);
+        var ptr = cached != IntPtr.Zero
+            ? (ExceptionResultSource<T>*)cached.ToPointer()
+            : (ExceptionResultSource<T>*)MemoryHelper.Alloc(
+                (nuint)Math.Max(Unsafe.SizeOf<ExceptionResultSource<T>>(), IntPtr.Size));
 
         ptr->Id = LuminTaskBag.GetId();
+        ptr->_calledGet = false;
 
         ref var item = ref LuminTaskMarshal.GetTaskItem(ptr->Id);
         
@@ -123,14 +132,17 @@ public unsafe struct ExceptionResultSource<T>
     {
         ref var source = ref Unsafe.AsRef<ExceptionResultSource<T>>(ptr);
         ref var item = ref LuminTaskMarshal.GetTaskItem(source.Id);
+        var exception = source._calledGet ? null : item.Exception?.SourceException;
+        item.Exception = null;
 
         LuminTaskBag.ResetId(item.Id);
 
-        if (!source._calledGet)
-        {
-            LuminTaskScheduler.PublishUnobservedTaskException(item.Exception?.SourceException);
-        }
+        if (System.Threading.Interlocked.CompareExchange(
+                ref s_cachedSource,
+                new IntPtr(ptr),
+                IntPtr.Zero) != IntPtr.Zero)
+            MemoryHelper.Free(ptr);
 
-        MemoryHelper.Free(ptr);
+        LuminTaskScheduler.PublishUnobservedTaskException(exception);
     }
 }

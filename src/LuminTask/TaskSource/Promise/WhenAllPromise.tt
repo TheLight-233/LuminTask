@@ -1,4 +1,4 @@
-<#@ template language="C#" #>
+﻿<#@ template language="C#" #>
 <#@ assembly name="System.Core" #>
 <#@ import namespace="System.Linq" #>
 <#@ import namespace="System.Text" #>
@@ -8,6 +8,7 @@ using System;
 using System.Threading;
 using System.Collections.Generic;
 using System.Linq;
+using LuminThread.Utility;
 
 namespace LuminThread.TaskSource.Promise;
 
@@ -26,6 +27,7 @@ public sealed unsafe class WhenAllPromise<<#= typeParams #>>
     T<#= j #> t<#= j #> = default;
 <# } #>
     int completedCount;
+    int completionState;
     internal LuminTaskSourceCore<<#= tupleType #>>* core;
 
     public static WhenAllPromise<<#= typeParams #>> Create(<#= taskParams #>)
@@ -49,9 +51,12 @@ public sealed unsafe class WhenAllPromise<<#= typeParams #>>
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (Tuple<WhenAllPromise<<#= typeParams #>>, LuminTaskAwaiter<T<#= j #>>>)state;
-                    TryInvokeContinuationT<#= j #>(t.Item1, t.Item2);
-                }, Tuple.Create(this, awaiter));
+                    var t = (StateTuple<WhenAllPromise<<#= typeParams #>>, LuminTaskAwaiter<T<#= j #>>>)state;
+                    var owner = t.Item1;
+                    var awaiter = t.Item2;
+                    t.Dispose();
+                    TryInvokeContinuationT<#= j #>(owner, awaiter);
+                }, StateTuple.Create(this, awaiter));
             }
         }
 <# } #>
@@ -66,15 +71,15 @@ public sealed unsafe class WhenAllPromise<<#= typeParams #>>
         }
         catch (Exception ex)
         {
-            LuminTaskSourceCore<<#= tupleType #>>.TrySetException(self.core, ex);
-            LuminTaskSourceCore<<#= tupleType #>>.Dispose(self.core);
+            if (Interlocked.CompareExchange(ref self.completionState, 1, 0) == 0)
+                LuminTaskSourceCore<<#= tupleType #>>.TrySetException(self.core, ex);
             return;
         }
                 
-        if (Interlocked.Increment(ref self.completedCount) == <#= i #>)
+        if (Interlocked.Increment(ref self.completedCount) == <#= i #> &&
+            Interlocked.CompareExchange(ref self.completionState, 1, 0) == 0)
         {
             LuminTaskSourceCore<<#= tupleType #>>.TrySetResult(self.core, (self.t1<# for (int k = 2; k <= i; k++) { #>, self.t<#= k #><# } #>));
-            LuminTaskSourceCore<<#= tupleType #>>.Dispose(self.core);
         }
     }
 
@@ -94,6 +99,7 @@ public sealed unsafe class WhenAllPromise<#= i #>
 {
     private int _completedCount;
     private int _totalCount = <#= i #>;
+    private int _completionState;
     internal LuminTaskSourceCore<bool>* _core;
 
     public WhenAllPromise<#= i #>(<#= taskParams #>)
@@ -112,9 +118,12 @@ public sealed unsafe class WhenAllPromise<#= i #>
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (Tuple<WhenAllPromise<#= i #>, LuminTaskAwaiter>)state;
-                    TryInvokeContinuationT<#= j #>(t.Item1, t.Item2);
-                }, Tuple.Create(this, awaiter));
+                    var t = (StateTuple<WhenAllPromise<#= i #>, LuminTaskAwaiter>)state;
+                    var owner = t.Item1;
+                    var awaiter = t.Item2;
+                    t.Dispose();
+                    TryInvokeContinuationT<#= j #>(owner, awaiter);
+                }, StateTuple.Create(this, awaiter));
             }
         }
 <# } #>
@@ -129,15 +138,15 @@ public sealed unsafe class WhenAllPromise<#= i #>
         }
         catch (Exception ex)
         {
-            LuminTaskSourceCore<bool>.TrySetException(self._core, ex);
-            LuminTaskSourceCore<bool>.Dispose(self._core);
+            if (Interlocked.CompareExchange(ref self._completionState, 1, 0) == 0)
+                LuminTaskSourceCore<bool>.TrySetException(self._core, ex);
             return;
         }
                 
-        if (Interlocked.Increment(ref self._completedCount) == self._totalCount)
+        if (Interlocked.Increment(ref self._completedCount) == self._totalCount &&
+            Interlocked.CompareExchange(ref self._completionState, 1, 0) == 0)
         {
             LuminTaskSourceCore<bool>.TrySetResult(self._core, true);
-            LuminTaskSourceCore<bool>.Dispose(self._core);
         }
     }
 <# } #>
@@ -150,6 +159,7 @@ public sealed unsafe class WhenAllPromise<T>
     private T[] _results;
     private int _completedCount;
     private int _totalCount;
+    private int _completionState;
     internal LuminTaskSourceCore<T[]>* _core;
 
     public static WhenAllPromise<T> Create(params LuminTask<T>[] tasks)
@@ -190,9 +200,13 @@ public sealed unsafe class WhenAllPromise<T>
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var tuple = (Tuple<WhenAllPromise<T>, LuminTaskAwaiter<T>, int>)state;
-                    TryInvokeContinuation(tuple.Item1, tuple.Item2, tuple.Item3);
-                }, Tuple.Create(this, awaiter, index));
+                    var tuple = (StateTuple<WhenAllPromise<T>, LuminTaskAwaiter<T>, int>)state;
+                    var owner = tuple.Item1;
+                    var awaiter = tuple.Item2;
+                    var index = tuple.Item3;
+                    tuple.Dispose();
+                    TryInvokeContinuation(owner, awaiter, index);
+                }, StateTuple.Create(this, awaiter, index));
             }
         }
     }
@@ -205,15 +219,15 @@ public sealed unsafe class WhenAllPromise<T>
         }
         catch (Exception ex)
         {
-            LuminTaskSourceCore<T[]>.TrySetException(self._core, ex);
-            LuminTaskSourceCore<T[]>.Dispose(self._core);
+            if (Interlocked.CompareExchange(ref self._completionState, 1, 0) == 0)
+                LuminTaskSourceCore<T[]>.TrySetException(self._core, ex);
             return;
         }
                 
-        if (Interlocked.Increment(ref self._completedCount) == self._totalCount)
+        if (Interlocked.Increment(ref self._completedCount) == self._totalCount &&
+            Interlocked.CompareExchange(ref self._completionState, 1, 0) == 0)
         {
             LuminTaskSourceCore<T[]>.TrySetResult(self._core, self._results);
-            LuminTaskSourceCore<T[]>.Dispose(self._core);
         }
     }
 }
@@ -222,6 +236,7 @@ public sealed unsafe class WhenAllPromise
 {
     private int _completedCount;
     private int _totalCount;
+    private int _completionState;
     internal LuminTaskSourceCore<bool>* _core;
 
     public static WhenAllPromise Create(params LuminTask[] tasks)
@@ -259,9 +274,12 @@ public sealed unsafe class WhenAllPromise
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var tuple = (Tuple<WhenAllPromise, LuminTaskAwaiter>)state;
-                    TryInvokeContinuation(tuple.Item1, tuple.Item2);
-                }, Tuple.Create(this, awaiter));
+                    var tuple = (StateTuple<WhenAllPromise, LuminTaskAwaiter>)state;
+                    var owner = tuple.Item1;
+                    var awaiter = tuple.Item2;
+                    tuple.Dispose();
+                    TryInvokeContinuation(owner, awaiter);
+                }, StateTuple.Create(this, awaiter));
             }
         }
     }
@@ -274,15 +292,15 @@ public sealed unsafe class WhenAllPromise
         }
         catch (Exception ex)
         {
-            LuminTaskSourceCore<bool>.TrySetException(self._core, ex);
-            LuminTaskSourceCore<bool>.Dispose(self._core);
+            if (Interlocked.CompareExchange(ref self._completionState, 1, 0) == 0)
+                LuminTaskSourceCore<bool>.TrySetException(self._core, ex);
             return;
         }
                 
-        if (Interlocked.Increment(ref self._completedCount) == self._totalCount)
+        if (Interlocked.Increment(ref self._completedCount) == self._totalCount &&
+            Interlocked.CompareExchange(ref self._completionState, 1, 0) == 0)
         {
             LuminTaskSourceCore<bool>.TrySetResult(self._core, true);
-            LuminTaskSourceCore<bool>.Dispose(self._core);
         }
     }
 }

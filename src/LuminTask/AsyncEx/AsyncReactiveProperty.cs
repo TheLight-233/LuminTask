@@ -88,14 +88,14 @@ public sealed unsafe class AsyncReactiveProperty<T> : IDisposable
 
         var core = LuminTaskSourceCore<T>.Create();
         var awaiter = new AsyncReactivePropertyAwaiter<T>(core);
+        var task = new LuminTask<T>(LuminTaskSourceCore<T>.MethodTablePtr, core, core->Id);
 
         lock (_lock)
         {
             if (IsDisposed)
             {
                 LuminTaskSourceCore<T>.TrySetCanceled(core);
-                LuminTaskSourceCore<T>.Dispose(core);
-                return LuminTask.FromCanceled<T>(cancellationToken);
+                return task;
             }
             awaiter.Next = _awaiterHead;
             _awaiterHead = awaiter;
@@ -104,7 +104,7 @@ public sealed unsafe class AsyncReactiveProperty<T> : IDisposable
         if (cancellationToken.CanBeCanceled)
             awaiter.RegisterCancellation(cancellationToken, this);
 
-        return new LuminTask<T>(LuminTaskSourceCore<T>.MethodTablePtr, core, core->Id);
+        return task;
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]

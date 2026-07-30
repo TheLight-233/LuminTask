@@ -12,6 +12,7 @@ LuminTask 是一个面向 .NET 的高性能异步任务库，为 C# 提供可直
 * 支持同步完成、异常、取消、延迟和让出执行权
 * 支持 `WhenAll`、`WhenAny`、`WhenEach` 等组合操作
 * 支持 `Task`、`ValueTask` 与 `LuminTask` 互操作
+* 支持 `CancellationToken.WaitAsync()` 异步桥接
 * 提供异步锁、信号量、事件、倒计时和懒加载工具
 * 支持 .NET Standard 2.1、.NET 8 和 .NET 9
 
@@ -33,6 +34,14 @@ static async LuminTask<int> CalculateAsync()
 }
 
 var result = await CalculateAsync();
+```
+
+```csharp
+using LuminThread.Utility;
+
+LuminTask<int> task = new ValueTask<int>(42).AsLuminTask();
+await cancellationToken.WaitAsync(completeAsCanceled: true);
+await task.WaitAsync(TimeSpan.FromSeconds(5), cancellationToken);
 ```
 
 ## 使用注意

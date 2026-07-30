@@ -40,7 +40,7 @@ public unsafe struct WaitUntilValueChangedPromise<TTarget, TValue>
 
         var stateTuple = StateTuple.Create(target, currentValue, comparer);
 
-        PlayerLoopHelper.AddAction(timing, new LuminTaskState(core, cancellationToken, monitorFunction, stateTuple), &MoveNext);
+        PlayerLoopHelper.AddAction(timing, new LuminTaskState(core, cancellationToken, monitorFunction, stateTuple), MoveNext, &MoveNext);
 
         return waitPromise;
     }

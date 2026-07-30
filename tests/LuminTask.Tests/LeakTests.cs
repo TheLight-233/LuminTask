@@ -26,6 +26,10 @@ public static class LeakTests
             await r.Run("forgotten incomplete task does not leak", ForgetIncompleteNoLeak);
             await r.Run("WhenAll releases its inputs", WhenAllNoLeak);
             await r.Run("exception path releases the source", FaultNoLeak);
+            await r.Run("external cancellation drains inner source", ExternalCancellationDrainsInner);
+            await r.Run("timeout drains inner source", TimeoutDrainsInner);
+            await r.Run("reactive property dispose race does not lose source", ReactivePropertyDisposeRace);
+            await r.Run("channel completion and repeated waits do not leak", ChannelLifecycleNoLeak);
         }
         finally
         {
@@ -114,5 +118,91 @@ public static class LeakTests
             await LuminTask.Yield();
             throw new InvalidOperationException("leak-check");
         }
+    }
+
+    private static async LuminTask ExternalCancellationDrainsInner()
+    {
+        await LuminTask.Yield();
+        var before = LuminTaskLeakTracker.LiveCount;
+
+        var inner = new LuminTaskCompletionSource<int>();
+        using var cts = new CancellationTokenSource();
+        var waiting = inner.Task.AttachExternalCancellation(cts.Token);
+        cts.Cancel();
+
+        try { await waiting; }
+        catch (OperationCanceledException) { }
+
+        inner.TrySetResult(42);
+        await WaitForLiveCount(before);
+        Assert.Equal(before, LuminTaskLeakTracker.LiveCount,
+            "AttachExternalCancellation abandoned its inner source");
+    }
+
+    private static async LuminTask TimeoutDrainsInner()
+    {
+        await LuminTask.Yield();
+        var before = LuminTaskLeakTracker.LiveCount;
+
+        var inner = new LuminTaskCompletionSource<int>();
+        try { await inner.Task.Timeout(TimeSpan.FromMilliseconds(20)); }
+        catch (TimeoutException) { }
+
+        inner.TrySetResult(42);
+        await WaitForLiveCount(before);
+        Assert.Equal(before, LuminTaskLeakTracker.LiveCount,
+            "Timeout abandoned its inner source");
+    }
+
+    private static async LuminTask ReactivePropertyDisposeRace()
+    {
+        await LuminTask.Yield();
+        var before = LuminTaskLeakTracker.LiveCount;
+
+        for (var i = 0; i < 500; i++)
+        {
+            using var property = new LuminThread.AsyncEx.AsyncReactiveProperty<int>(0);
+            var dispose = Task.Run(property.Dispose);
+            var waiting = property.WaitAsync();
+            await dispose;
+            try { await waiting; }
+            catch (OperationCanceledException) { }
+        }
+
+        await WaitForLiveCount(before);
+        Assert.Equal(before, LuminTaskLeakTracker.LiveCount,
+            "AsyncReactiveProperty lost a source during Dispose/WaitAsync race");
+    }
+
+    private static async LuminTask ChannelLifecycleNoLeak()
+    {
+        await LuminTask.Yield();
+        var before = LuminTaskLeakTracker.LiveCount;
+
+        var channel = LuminChannel.CreateSingleConsumerUnbounded<int>();
+        for (var i = 0; i < 200; i++)
+        {
+            var waiting = channel.Reader.WaitToReadAsync();
+            Assert.True(channel.Writer.TryWrite(i));
+            Assert.True(await waiting);
+            Assert.True(channel.Reader.TryRead(out var value));
+            Assert.Equal(i, value);
+        }
+
+        var completion = channel.Reader.Completion;
+        Assert.True(channel.Writer.TryComplete());
+        await completion;
+        await channel.Reader.Completion;
+        ((IDisposable)channel).Dispose();
+
+        await WaitForLiveCount(before);
+        Assert.Equal(before, LuminTaskLeakTracker.LiveCount,
+            "LuminChannel retained a source or reused a dangling waiter");
+    }
+
+    private static async LuminTask WaitForLiveCount(int expected)
+    {
+        for (var i = 0; i < 100 && LuminTaskLeakTracker.LiveCount > expected; i++)
+            await Task.Delay(5);
     }
 }

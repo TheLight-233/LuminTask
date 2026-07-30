@@ -4,7 +4,7 @@ namespace LuminThread.Utility;
 
 public static class LuminTaskScheduler
 {
-    public static event Action<Exception> UnobservedTaskException;
+    public static event Action<Exception>? UnobservedTaskException;
 
     public static bool PropagateOperationCanceledException = false;
 
@@ -17,9 +17,18 @@ public static class LuminTaskScheduler
             return;
         }
 
-        if (UnobservedTaskException != null)
+        var handler = UnobservedTaskException;
+        if (handler != null)
         {
-            UnobservedTaskException.Invoke(ex);
+            try
+            {
+                handler(ex);
+            }
+            catch (Exception observerException)
+            {
+                // Diagnostic observers must not terminate the shared PlayerLoop worker.
+                Console.WriteLine("UnobservedTaskException handler failed: " + observerException);
+            }
         }
         else
         {

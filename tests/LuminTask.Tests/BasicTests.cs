@@ -1,4 +1,5 @@
 using LuminThread;
+using LuminThread.Utility;
 
 namespace LuminTaskUnitTest;
 
@@ -19,6 +20,8 @@ public static class BasicTests
         await r.Run("small struct result", SmallStructResult);
         await r.Run("large struct result (>64 bytes)", LargeStructResult);
         await r.Run("result observed after completion", ResultAfterCompletion);
+        await r.Run("ValueTask conversions preserve results", ValueTaskConversions);
+        await r.Run("CancellationToken.WaitAsync supports success/canceled modes", CancellationTokenWaitAsync);
     }
 
     private static async LuminTask FromResultReturnsValue()
@@ -140,6 +143,42 @@ public static class BasicTests
         tcs.TrySetResult(99);
         var v = await tcs.Task;
         Assert.Equal(99, v);
+    }
+
+    private static async LuminTask ValueTaskConversions()
+    {
+        var synchronous = await new ValueTask<int>(42).AsLuminTask();
+        Assert.Equal(42, synchronous);
+
+        var completion = new TaskCompletionSource<int>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var converted = new ValueTask<int>(completion.Task).AsLuminTask();
+        completion.SetResult(84);
+        Assert.Equal(84, await converted);
+    }
+
+    private static async LuminTask CancellationTokenWaitAsync()
+    {
+        using (var cts = new CancellationTokenSource())
+        {
+            var wait = cts.Token.WaitAsync();
+            cts.Cancel();
+            await wait;
+        }
+
+        using (var cts = new CancellationTokenSource())
+        {
+            var wait = cts.Token.WaitAsync(completeAsCanceled: true);
+            cts.Cancel();
+            try
+            {
+                await wait;
+                Assert.Fail("expected cancellation");
+            }
+            catch (OperationCanceledException canceled)
+            {
+                Assert.Equal(cts.Token, canceled.CancellationToken);
+            }
+        }
     }
 
     // 9 longs = 72 bytes > 64, exercises the heap-backed inline-result path.

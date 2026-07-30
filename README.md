@@ -14,6 +14,7 @@ LuminTask 是一个面向 .NET 的高性能异步任务库，为 C# 提供可直
 * 提供 `LuminTaskCompletionSource<T>`，便于桥接回调式 API
 * 提供 `Forget`、`ContinueWith`、`Timeout` 和外部取消令牌绑定
 * 支持 `Task`、`ValueTask` 与 `LuminTask` 之间的互操作
+* 支持将 `CancellationToken` 直接转换为可等待的 `LuminTask`
 * 提供 `AsyncLock`、`AsyncSemaphore`、`AsyncLazy`、异步事件等工具类型
 * 支持可配置的 `PlayerLoopTiming`、线程池调度和主线程切换
 * 保留可选的 Unity 扩展，覆盖常用 Unity、Addressables、DotWeen、TextMeshPro 和 YooAsset 场景
@@ -104,7 +105,24 @@ static async LuminTask<int> GetNumberAsync() => 42;
 Task<int> task = GetNumberAsync().AsTask();
 LuminTask<int> luminTask = task.AsLuminTask();
 ValueTask<int> valueTask = luminTask.AsValueTask();
+LuminTask<int> fromValueTask = valueTask.AsLuminTask();
 ```
+
+取消令牌也可以直接等待，并选择正常完成或以取消状态完成：
+
+```csharp
+using LuminThread.Utility;
+
+await cancellationToken.WaitAsync();
+await cancellationToken.WaitAsync(completeAsCanceled: true);
+
+await luminTask.WaitAsync(cancellationToken);
+await luminTask.WaitAsync(TimeSpan.FromSeconds(5), cancellationToken);
+```
+
+由 `OperationCanceledException` 结束的异步方法、完成源和 `AsTask()` 转换都会保留取消状态与原始取消令牌。
+
+任务源采用“完成后发布、首次消费后释放”的生命周期，并为每个结果类型保留一个无锁原生快槽；顺序异步工作负载在预热后可避免反复调用原生内存分配器。`WhenAll` / `WhenAny` 的回调状态使用有界池复用。
 
 对于只需要忽略结果的后台任务，可以使用 `Forget()`。如果需要处理后台任务异常，可以传入异常处理回调。
 

@@ -900,7 +900,13 @@ namespace LuminThread.Unity
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static bool IsError(UnityWebRequest request)
         {
+#if UNITY_2020_2_OR_NEWER
+            return request.result == UnityWebRequest.Result.ConnectionError ||
+                   request.result == UnityWebRequest.Result.ProtocolError ||
+                   request.result == UnityWebRequest.Result.DataProcessingError;
+#else
             return request.isNetworkError || request.isHttpError;
+#endif
         }
 
         public class UnityWebRequestException : Exception

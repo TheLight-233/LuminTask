@@ -26,16 +26,15 @@ public sealed class ObjectPool<T>
     where T : class, IDisposable
 #endif
 {
+    private readonly object _gate = new();
     private T?[] _items;
+    private T? _fastItem;
     private int _count;
-    private readonly int _maxSize;
+    private int _maxSize;
 
 #if !NET8_0_OR_GREATER
     private readonly IPooledObjectPolicy<T> _policy;
 #endif
-
-    [ThreadStatic]
-    private static T? _threadLocalCache;
 
     public ObjectPool(
 #if !NET8_0_OR_GREATER
@@ -43,7 +42,10 @@ public sealed class ObjectPool<T>
 #endif
         int maxSize = 16)
     {
-        _items = new T?[maxSize];
+        if (maxSize < 0) throw new ArgumentOutOfRangeException(nameof(maxSize));
+
+        // One item gets a lock-free fast slot; the array is only the contended fallback.
+        _items = new T?[Math.Max(0, maxSize - 1)];
         _count = 0;
         _maxSize = maxSize;
 
@@ -55,15 +57,14 @@ public sealed class ObjectPool<T>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public T Rent()
     {
-
-        if (_threadLocalCache != null)
+        var fastItem = Volatile.Read(ref _fastItem);
+        if (fastItem != null &&
+            ReferenceEquals(Interlocked.CompareExchange(ref _fastItem, null, fastItem), fastItem))
         {
-            var local = _threadLocalCache;
-            _threadLocalCache = null;
-            return local;
+            return fastItem;
         }
 
-        lock (_items)
+        lock (_gate)
         {
             if (_count > 0)
             {
@@ -84,6 +85,8 @@ public sealed class ObjectPool<T>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void Return(T item)
     {
+        if (item is null) throw new ArgumentNullException(nameof(item));
+
 #if NET8_0_OR_GREATER
         if (!T.Return(item))
 #else
@@ -94,15 +97,28 @@ public sealed class ObjectPool<T>
             return;
         }
 
-        if (_threadLocalCache == null)
+        if (Volatile.Read(ref _maxSize) == 0)
         {
-            _threadLocalCache = item;
+            item.Dispose();
             return;
         }
 
-        lock (_items)
+        if (Volatile.Read(ref _fastItem) is null &&
+            Interlocked.CompareExchange(ref _fastItem, item, null) is null)
         {
-            if (_count < _maxSize)
+            // Resize(0) can race this CAS. Recheck capacity and retract the item if it still
+            // belongs to this return operation; a concurrent renter may already own it.
+            if (Volatile.Read(ref _maxSize) != 0)
+                return;
+
+            if (ReferenceEquals(Interlocked.CompareExchange(ref _fastItem, null, item), item))
+                item.Dispose();
+            return;
+        }
+
+        lock (_gate)
+        {
+            if (_count < _items.Length)
             {
                 _items[_count] = item;
                 _count++;
@@ -115,45 +131,53 @@ public sealed class ObjectPool<T>
 
     public static void ClearThreadLocalCache()
     {
-        _threadLocalCache?.Dispose();
-        _threadLocalCache = null;
+        // Kept for source compatibility. Pools now use an instance-owned lock-free fast slot,
+        // avoiding cross-pool item migration caused by the previous static thread-local cache.
     }
 
-    public int AvailableCount => Volatile.Read(ref _count);
-    public int MaxSize => _maxSize;
+    public int AvailableCount => Volatile.Read(ref _count) + (Volatile.Read(ref _fastItem) is null ? 0 : 1);
+    public int MaxSize => Volatile.Read(ref _maxSize);
 
     public void Resize(int newSize)
     {
         if (newSize < 0) throw new ArgumentOutOfRangeException(nameof(newSize));
 
-        lock (this)
+        T?[] retiredItems;
+        lock (_gate)
         {
-            if (newSize > _items.Length)
-            {
-                Array.Resize(ref _items, newSize);
-            }
-            else if (newSize < _items.Length)
-            {
-                for (int i = newSize; i < _items.Length; i++)
-                {
-                    if (i < _count && _items[i] is IDisposable disposable)
-                        disposable.Dispose();
-                }
+            var newItems = new T?[Math.Max(0, newSize - 1)];
+            var itemsToCopy = Math.Min(_count, newItems.Length);
+            Array.Copy(_items, newItems, itemsToCopy);
 
-                var newItems = new T[newSize];
-                int itemsToCopy = Math.Min(_count, newSize);
-                Array.Copy(_items, newItems, itemsToCopy);
-                _items = newItems;
-                _count = itemsToCopy;
-            }
+            var retiredCount = _count - itemsToCopy;
+            retiredItems = new T?[retiredCount];
+            if (retiredCount > 0)
+                Array.Copy(_items, itemsToCopy, retiredItems, 0, retiredCount);
+
+            _items = newItems;
+            _count = itemsToCopy;
+            Volatile.Write(ref _maxSize, newSize);
         }
+
+        foreach (var retiredItem in retiredItems)
+            retiredItem?.Dispose();
+
+        if (newSize == 0)
+            Interlocked.Exchange(ref _fastItem, null)?.Dispose();
     }
 
     public T?[] GetAllItems()
     {
-        var result = new T?[_count];
-        Array.Copy(_items, result, _count);
-        return result;
+        lock (_gate)
+        {
+            var fastItem = Volatile.Read(ref _fastItem);
+            var result = new T?[_count + (fastItem is null ? 0 : 1)];
+            var offset = 0;
+            if (fastItem is not null)
+                result[offset++] = fastItem;
+            Array.Copy(_items, 0, result, offset, _count);
+            return result;
+        }
     }
 
 }

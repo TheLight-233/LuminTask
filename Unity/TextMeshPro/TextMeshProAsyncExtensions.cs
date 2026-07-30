@@ -332,10 +332,9 @@ namespace LuminThread.Unity
 
         #region AsyncTMPTextSelectionEventHandler（文本选择事件处理器）
 
-        public unsafe struct AsyncTMPTextSelectionEventHandler : 
+        public unsafe sealed class AsyncTMPTextSelectionEventHandler : 
             IAsyncTextSelectionEventHandler<(string, int, int)>, 
-            IAsyncEndTextSelectionEventHandler<(string, int, int)>,
-            ILuminTaskSource<(string, int, int)>
+            IAsyncEndTextSelectionEventHandler<(string, int, int)>
         {
             private readonly TMP_InputField.TextSelectionEvent _selectionEvent;
             private readonly CancellationToken _cancellationToken;
@@ -344,6 +343,7 @@ namespace LuminThread.Unity
             private LuminTaskSourceCore<(string, int, int)>* _core;
             private UnityEngine.Events.UnityAction<string, int, int> _continuation;
             private CancellationTokenRegistration _registration;
+            private bool _disposed;
 
             public AsyncTMPTextSelectionEventHandler(
                 TMP_InputField.TextSelectionEvent selectionEvent,
@@ -356,24 +356,28 @@ namespace LuminThread.Unity
                 _core = default;
                 _continuation = null;
                 _registration = default;
+                _disposed = false;
 
                 if (_cancellationToken.IsCancellationRequested)
                 {
                     return;
                 }
 
-                _core = LuminTaskSourceCore<(string, int, int)>.Create();
                 _continuation = Invoke;
 
                 selectionEvent.AddListener(_continuation);
 
                 if (_cancellationToken.CanBeCanceled)
                 {
-                    _registration = _cancellationToken.Register(static state =>
+                    var registration = _cancellationToken.Register(static state =>
                     {
                         var self = (AsyncTMPTextSelectionEventHandler)state;
-                        self.Dispose();
+                        self.DisposeFromCancellation();
                     }, this);
+                    if (_disposed)
+                        registration.Dispose();
+                    else
+                        _registration = registration;
                 }
             }
 
@@ -394,6 +398,12 @@ namespace LuminThread.Unity
                     return LuminTask.FromCanceled<(string, int, int)>(_cancellationToken);
                 }
 
+                if (_disposed)
+                    return LuminTask.FromCanceled<(string, int, int)>(new CancellationToken(canceled: true));
+
+                if (_core == null)
+                    _core = LuminTaskSourceCore<(string, int, int)>.Create();
+
                 return new LuminTask<(string, int, int)>(LuminTaskSourceCore<(string, int, int)>.MethodTablePtr, _core, _core->Id);
             }
 
@@ -401,11 +411,45 @@ namespace LuminThread.Unity
             {
                 if (!_cancellationToken.IsCancellationRequested)
                 {
-                    LuminTaskSourceCore<(string, int, int)>.TrySetResult(_core, (text, start, end));
+                    var core = _core;
+                    if (core == null) return;
+                    _core = null;
+
+                    if (_callOnce)
+                    {
+                        _disposed = true;
+                        Detach();
+                    }
+
+                    LuminTaskSourceCore<(string, int, int)>.TrySetResult(core, (text, start, end));
                 }
             }
 
             public void Dispose()
+            {
+                if (_disposed) return;
+                _disposed = true;
+                Detach();
+
+                var core = _core;
+                _core = null;
+                if (core != null)
+                    LuminTaskSourceCore<(string, int, int)>.TrySetCanceled(core, _cancellationToken);
+            }
+
+            private void DisposeFromCancellation()
+            {
+                if (_disposed) return;
+                _disposed = true;
+                Detach(disposeRegistration: false);
+
+                var core = _core;
+                _core = null;
+                if (core != null)
+                    LuminTaskSourceCore<(string, int, int)>.TrySetCanceled(core, _cancellationToken);
+            }
+
+            private void Detach(bool disposeRegistration = true)
             {
                 if (_continuation != null && _selectionEvent != null)
                 {
@@ -413,47 +457,12 @@ namespace LuminThread.Unity
                     _continuation = null;
                 }
 
-                _registration.Dispose();
-
-                if (_callOnce)
-                {
-                    LuminTaskSourceCore<(string, int, int)>.Dispose(_core);
-                }
+                if (disposeRegistration)
+                    _registration.Dispose();
+                _registration = default;
             }
 
             #region ILuminTaskSource<(string, int, int)> 实现
-
-            public (string, int, int) GetResult(short token)
-            {
-                var result = LuminTaskSourceCore<(string, int, int)>.GetResultValue(_core, token);
-
-                if (_callOnce)
-                {
-                    Dispose();
-                }
-
-                return result;
-            }
-
-            void ILuminTaskSource.GetResult(short token)
-            {
-                GetResult(token);
-            }
-
-            public LuminTaskStatus GetStatus(short token)
-            {
-                return LuminTaskSourceCore<(string, int, int)>.GetStatus(_core, token);
-            }
-
-            public LuminTaskStatus UnsafeGetStatus()
-            {
-                return LuminTaskSourceCore<(string, int, int)>.UnsafeGetStatus(_core);
-            }
-
-            public void OnCompleted(Action<object> continuation, object state, short token)
-            {
-                LuminTaskSourceCore<(string, int, int)>.OnCompleted(_core, continuation, state, token);
-            }
 
             #endregion
         }

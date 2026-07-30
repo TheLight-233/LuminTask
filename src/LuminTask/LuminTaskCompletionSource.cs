@@ -47,7 +47,7 @@ namespace LuminThread
         // not currently carry it (the core's cancel path is token-less).
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool TrySetCanceled(CancellationToken cancellationToken = default)
-            => LuminTaskSourceCore<T>.TrySetCanceled(_source);
+            => LuminTaskSourceCore<T>.TrySetCanceled(_source, cancellationToken);
     }
 
     public sealed unsafe class LuminTaskCompletionSource
@@ -77,6 +77,6 @@ namespace LuminThread
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool TrySetCanceled(CancellationToken cancellationToken = default)
-            => LuminTaskSourceCore<AsyncUnit>.TrySetCanceled(_source);
+            => LuminTaskSourceCore<AsyncUnit>.TrySetCanceled(_source, cancellationToken);
     }
 }

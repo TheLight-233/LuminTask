@@ -30,7 +30,7 @@ public unsafe struct WaitWhilePromise<T>
 
         token = core->Id;
 
-        PlayerLoopHelper.AddAction(timing, new LuminTaskState(core, cancellationToken, predicate), &MoveNext);
+        PlayerLoopHelper.AddAction(timing, new LuminTaskState(core, cancellationToken, predicate), MoveNext, &MoveNext);
 
         return waitPromise;
     }
@@ -143,21 +143,21 @@ public unsafe struct WaitWhilePromise<TState, TResult>
             {
                 var ptr = MemoryHelper.Alloc(TypeMeta<TState>.Size);
                 Unsafe.WriteUnaligned(ptr, state);
-                PlayerLoopHelper.AddAction(timing, new LuminTaskState(core, cancellationToken, predicate, ptr), &MoveNextValue);
+                PlayerLoopHelper.AddAction(timing, new LuminTaskState(core, cancellationToken, predicate, ptr), MoveNextValue, &MoveNextValue);
             }
             else
             {
-                PlayerLoopHelper.AddAction(timing, new LuminTaskState(core, cancellationToken, predicate, StateTuple.Create(state)), &MoveNextValueContainsReference);
+                PlayerLoopHelper.AddAction(timing, new LuminTaskState(core, cancellationToken, predicate, StateTuple.Create(state)), MoveNextValueContainsReference, &MoveNextValueContainsReference);
             }
 #else
             var ptr = MemoryHelper.Alloc(TypeMeta<TState>.Size);
             Unsafe.WriteUnaligned(ptr, state);
-            PlayerLoopHelper.AddAction(timing, new LuminTaskState(core, cancellationToken, predicate, ptr), &MoveNextValue);
+            PlayerLoopHelper.AddAction(timing, new LuminTaskState(core, cancellationToken, predicate, ptr), MoveNextValue, &MoveNextValue);
 #endif
         }
         else
         {
-            PlayerLoopHelper.AddAction(timing, new LuminTaskState(core, cancellationToken, predicate, state!), &MoveNextReference);
+            PlayerLoopHelper.AddAction(timing, new LuminTaskState(core, cancellationToken, predicate, state!), MoveNextReference, &MoveNextReference);
         }
 
         return waitPromise;

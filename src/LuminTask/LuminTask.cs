@@ -171,7 +171,7 @@ public readonly unsafe partial struct LuminTask<T>
     {
         if (self._taskSource is null)
         {
-            return default;
+            return new ValueTask<T>(self._result!);
         }
 
         return new ValueTask<T>(new ValueTaskSource<T>(self._vTable, self._taskSource), self._id);

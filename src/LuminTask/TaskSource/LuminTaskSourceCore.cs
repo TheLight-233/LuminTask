@@ -12,8 +12,8 @@ public unsafe struct LuminTaskSourceCore<T>
 {
     public static readonly VTable MethodTable = new VTable
     {
-        GetResult = &GetResult,
-        GetResultValue = (delegate*<void*, short, T>)&GetResultValue,
+        GetResult = &GetResultAndDispose,
+        GetResultValue = (delegate*<void*, short, T>)&GetResultValueAndDispose,
         GetStatus = &GetStatus,
         UnsafeGetStatus = &UnsafeGetStatus,
         OnCompleted = &OnCompleted,
@@ -33,33 +33,10 @@ public unsafe struct LuminTaskSourceCore<T>
         return p;
     }
 
-    // Variant vtable used by the async-method builder. Its result accessor releases the
-    // task source when the awaiter *consumes* the result (GetResult), not when the producer
-    // sets it. This mirrors how ExceptionResultSource disposes inside GetResult, and fixes
-    // the use-after-free where SetResult freed the source before a late / non-inline awaiter
-    // could read it.
-    public static readonly VTable MethodTableAutoDispose = new VTable
-    {
-        GetResult = &GetResultAndDispose,
-        GetResultValue = (delegate*<void*, short, T>)&GetResultValueAndDispose,
-        GetStatus = &GetStatus,
-        UnsafeGetStatus = &UnsafeGetStatus,
-        OnCompleted = &OnCompleted,
-        TrySetResult = &TrySetResult,
-        TrySetCanceled = &TrySetCanceled,
-        TrySetException = &TrySetException,
-    };
-    public static readonly VTable* MethodTableAutoDisposePtr = AllocAutoDisposeTablePtr();
-    private static VTable* AllocAutoDisposeTablePtr()
-    {
-#if NET5_0_OR_GREATER
-        var p = (VTable*)System.Runtime.InteropServices.NativeMemory.Alloc((nuint)System.Runtime.CompilerServices.Unsafe.SizeOf<VTable>());
-#else
-        var p = (VTable*)System.Runtime.InteropServices.Marshal.AllocHGlobal(System.Runtime.CompilerServices.Unsafe.SizeOf<VTable>()).ToPointer();
-#endif
-        *p = MethodTableAutoDispose;
-        return p;
-    }
+    // Kept as aliases for source compatibility. All core-backed tasks now follow the same
+    // consume-then-release lifecycle, so every closed T needs only one native vtable.
+    public static readonly VTable MethodTableAutoDispose = MethodTable;
+    public static readonly VTable* MethodTableAutoDisposePtr = MethodTablePtr;
 
     // Parked in LuminTaskItem.Continuation once the source completes, so the producer
     // (ExecuteContinuation) and the consumer (OnCompleted) can rendezvous with a single
@@ -69,9 +46,10 @@ public unsafe struct LuminTaskSourceCore<T>
         => LuminTaskExceptionHelper.ThrowInvalidOperation("LuminTask completion sentinel must never be invoked.");
 
     private static readonly ContextCallback s_executionContextCallback = RunWithExecutionContext;
+    private static IntPtr s_cachedSource;
 
     public short Id;
-    public static bool ShouldClearResult = TypeMeta<T>.Size > 64;
+    private static readonly bool ShouldClearResult = TypeMeta<T>.Size > 64;
 
     public LuminTaskSourceCore(short id)
     {
@@ -81,7 +59,11 @@ public unsafe struct LuminTaskSourceCore<T>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static LuminTaskSourceCore<T>* Create(bool continueOnCapturedContext = false)
     {
-        LuminTaskSourceCore<T>* ptr = (LuminTaskSourceCore<T>*)MemoryHelper.Alloc((nuint)Unsafe.SizeOf<LuminTaskSourceCore<T>>());
+        var cached = Interlocked.Exchange(ref s_cachedSource, IntPtr.Zero);
+        var ptr = cached != IntPtr.Zero
+            ? (LuminTaskSourceCore<T>*)cached.ToPointer()
+            : (LuminTaskSourceCore<T>*)MemoryHelper.Alloc(
+                (nuint)Math.Max(Unsafe.SizeOf<LuminTaskSourceCore<T>>(), IntPtr.Size));
 
         ptr->Id = LuminTaskBag.GetId();
         ref var item = ref LuminTaskMarshal.GetTaskItem(ptr->Id);
@@ -113,7 +95,7 @@ public unsafe struct LuminTaskSourceCore<T>
     [DebuggerHidden]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static LuminTaskStatus UnsafeGetStatus(void* ptr) =>
-        LuminTaskMarshal.GetTaskItem(Unsafe.AsRef<LuminTaskSourceCore<T>>(ptr).Id).Status;
+        ReadStatus(ref LuminTaskMarshal.GetTaskItem(Unsafe.AsRef<LuminTaskSourceCore<T>>(ptr).Id));
 
     [DebuggerHidden]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -123,7 +105,7 @@ public unsafe struct LuminTaskSourceCore<T>
 
         if (token != source.Id) return LuminTaskStatus.Faulted;
 
-        return LuminTaskMarshal.GetTaskItem(source.Id).Status;
+        return ReadStatus(ref LuminTaskMarshal.GetTaskItem(source.Id));
     }
 
     [DebuggerHidden]
@@ -136,7 +118,7 @@ public unsafe struct LuminTaskSourceCore<T>
 
         ref var item = ref LuminTaskMarshal.GetTaskItem(token);
 
-        switch (item.Status)
+        switch (ReadStatus(ref item))
         {
             case LuminTaskStatus.Succeeded:
                 break;
@@ -146,8 +128,7 @@ public unsafe struct LuminTaskSourceCore<T>
                 LuminTaskExceptionHelper.ThrowInvalidOperation("Task faulted");
                 break;
             case LuminTaskStatus.Canceled:
-                LuminTaskExceptionHelper.ThrowOperationCancel("Task canceled");
-                break;
+                throw new OperationCanceledException(item.CancellationToken);
             case LuminTaskStatus.Pending:
             default:
                 LuminTaskExceptionHelper.ThrowInvalidOperation("Task not completed");
@@ -165,24 +146,26 @@ public unsafe struct LuminTaskSourceCore<T>
 
         ref var item = ref LuminTaskMarshal.GetTaskItem(token);
 
-        switch (item.Status)
+        switch (ReadStatus(ref item))
         {
             case LuminTaskStatus.Succeeded:
-                Dispose(ptr);
+                Release(ptr);
                 break;
             case LuminTaskStatus.Faulted:
             {
                 var edi = item.Exception;
                 item.Exception = null;
-                Dispose(ptr);
+                Release(ptr);
                 edi?.Throw();
                 LuminTaskExceptionHelper.ThrowInvalidOperation("Task faulted");
                 break;
             }
             case LuminTaskStatus.Canceled:
-                Dispose(ptr);
-                LuminTaskExceptionHelper.ThrowOperationCancel("Task canceled");
-                break;
+            {
+                var cancellationToken = item.CancellationToken;
+                Release(ptr);
+                throw new OperationCanceledException(cancellationToken);
+            }
             case LuminTaskStatus.Pending:
             default:
                 LuminTaskExceptionHelper.ThrowInvalidOperation("Task not completed");
@@ -200,7 +183,7 @@ public unsafe struct LuminTaskSourceCore<T>
 
         ref var item = ref LuminTaskMarshal.GetTaskItem(token);
 
-        switch (item.Status)
+        switch (ReadStatus(ref item))
         {
             case LuminTaskStatus.Succeeded:
                 if (TypeMeta<T>.IsValueType)
@@ -248,8 +231,7 @@ public unsafe struct LuminTaskSourceCore<T>
                 LuminTaskExceptionHelper.ThrowInvalidOperation("Task faulted");
                 break;
             case LuminTaskStatus.Canceled:
-                LuminTaskExceptionHelper.ThrowOperationCancel("Task canceled");
-                break;
+                throw new OperationCanceledException(item.CancellationToken);
             case LuminTaskStatus.Pending:
             default:
                 LuminTaskExceptionHelper.ThrowInvalidOperation("Task not completed");
@@ -269,7 +251,7 @@ public unsafe struct LuminTaskSourceCore<T>
 
         ref var item = ref LuminTaskMarshal.GetTaskItem(token);
 
-        switch (item.Status)
+        switch (ReadStatus(ref item))
         {
             case LuminTaskStatus.Succeeded:
             {
@@ -311,22 +293,24 @@ public unsafe struct LuminTaskSourceCore<T>
                 }
 
                 // Result has been copied out; safe to release the source now.
-                Dispose(ptr);
+                Release(ptr);
                 return result;
             }
             case LuminTaskStatus.Faulted:
             {
                 var edi = item.Exception;
                 item.Exception = null;
-                Dispose(ptr);
+                Release(ptr);
                 edi?.Throw();
                 LuminTaskExceptionHelper.ThrowInvalidOperation("Task faulted");
                 break;
             }
             case LuminTaskStatus.Canceled:
-                Dispose(ptr);
-                LuminTaskExceptionHelper.ThrowOperationCancel("Task canceled");
-                break;
+            {
+                var cancellationToken = item.CancellationToken;
+                Release(ptr);
+                throw new OperationCanceledException(cancellationToken);
+            }
             case LuminTaskStatus.Pending:
             default:
                 LuminTaskExceptionHelper.ThrowInvalidOperation("Task not completed");
@@ -402,8 +386,8 @@ public unsafe struct LuminTaskSourceCore<T>
         ref var source = ref Unsafe.AsRef<LuminTaskSourceCore<T>>(ptr);
         ref var item = ref LuminTaskMarshal.GetTaskItem(source.Id);
 
-        if (item.Status != LuminTaskStatus.Pending) return false;
-        item.Status = LuminTaskStatus.Succeeded;
+        if (!TryBeginCompletion(ref item)) return false;
+        PublishStatus(ref item, LuminTaskStatus.Succeeded);
 
         ExecuteContinuation(ref item);
 
@@ -416,7 +400,7 @@ public unsafe struct LuminTaskSourceCore<T>
         ref var source = ref Unsafe.AsRef<LuminTaskSourceCore<T>>(ptr);
         ref var item = ref LuminTaskMarshal.GetTaskItem(source.Id);
 
-        if (item.Status != LuminTaskStatus.Pending) return false;
+        if (!TryBeginCompletion(ref item)) return false;
 
         if (TypeMeta<T>.IsValueType)
         {
@@ -457,7 +441,7 @@ public unsafe struct LuminTaskSourceCore<T>
             item.ResultRef = result;
         }
 
-        item.Status = LuminTaskStatus.Succeeded;
+        PublishStatus(ref item, LuminTaskStatus.Succeeded);
 
         ExecuteContinuation(ref item);
 
@@ -467,12 +451,16 @@ public unsafe struct LuminTaskSourceCore<T>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static bool TrySetException(void* ptr, Exception exception)
     {
+        if (exception is null) throw new ArgumentNullException(nameof(exception));
+        if (exception is OperationCanceledException canceled)
+            return TrySetCanceled(ptr, canceled.CancellationToken);
+
         ref var source = ref Unsafe.AsRef<LuminTaskSourceCore<T>>(ptr);
         ref var item = ref LuminTaskMarshal.GetTaskItem(source.Id);
 
-        if (item.Status != LuminTaskStatus.Pending) return false;
-        item.Status = LuminTaskStatus.Faulted;
+        if (!TryBeginCompletion(ref item)) return false;
         item.Exception = ExceptionDispatchInfo.Capture(exception);
+        PublishStatus(ref item, LuminTaskStatus.Faulted);
 
         ExecuteContinuation(ref item);
 
@@ -481,17 +469,34 @@ public unsafe struct LuminTaskSourceCore<T>
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static bool TrySetCanceled(void* ptr)
+        => TrySetCanceled(ptr, default);
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static bool TrySetCanceled(void* ptr, CancellationToken cancellationToken)
     {
         ref var source = ref Unsafe.AsRef<LuminTaskSourceCore<T>>(ptr);
         ref var item = ref LuminTaskMarshal.GetTaskItem(source.Id);
 
-        if (item.Status != LuminTaskStatus.Pending) return false;
-        item.Status = LuminTaskStatus.Canceled;
+        if (!TryBeginCompletion(ref item)) return false;
+        item.CancellationToken = cancellationToken;
+        PublishStatus(ref item, LuminTaskStatus.Canceled);
 
         ExecuteContinuation(ref item);
 
         return true;
     }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static bool TryBeginCompletion(ref LuminTaskItem item)
+        => Interlocked.CompareExchange(ref item.CompletionState, 1, 0) == 0;
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static LuminTaskStatus ReadStatus(ref LuminTaskItem item)
+        => (LuminTaskStatus)Volatile.Read(ref Unsafe.As<LuminTaskStatus, byte>(ref item.Status));
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static void PublishStatus(ref LuminTaskItem item, LuminTaskStatus status)
+        => Volatile.Write(ref Unsafe.As<LuminTaskStatus, byte>(ref item.Status), (byte)status);
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static void ExecuteContinuation(ref LuminTaskItem item)
@@ -517,7 +522,15 @@ public unsafe struct LuminTaskSourceCore<T>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static void Dispose(void* ptr)
     {
+        // Legacy producer-side call retained for source compatibility. A producer cannot
+        // safely release a single-consumer source: TrySet* may invoke the consumer inline,
+        // and that consumer can release the native pointer before control returns here.
+        // Actual release is owned exclusively by GetResultAndDispose.
+    }
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static void Release(void* ptr)
+    {
         ref var source = ref Unsafe.AsRef<LuminTaskSourceCore<T>>(ptr);
         ref var item = ref LuminTaskMarshal.GetTaskItem(source.Id);
 
@@ -526,20 +539,42 @@ public unsafe struct LuminTaskSourceCore<T>
             TypeMeta<T>.IsValueType && TypeMeta<T>.IsReferenceOrContainsReferences &&
             item.ResultRef is StateTuple<T> stateTuple)
         {
-            item.ResultRefDispose = stateTuple;
+            item.ResultRef = null;
+            stateTuple.Dispose();
         }
 #endif
 
         if (ShouldClearResult)
         {
-            item.ShouldClearResult = true;
+            var resultPtr = (void*)Unsafe.ReadUnaligned<nint>(ref item.ResultValue[0]);
+            if (resultPtr != null)
+            {
+                MemoryHelper.Free(resultPtr);
+                Unsafe.WriteUnaligned(ref item.ResultValue[0], (nint)0);
+            }
         }
+
+        // Drop managed roots at consumption time instead of retaining them until this slot is
+        // rented again. This mirrors DotNext's AfterConsumed cleanup and materially lowers
+        // retention when the task pool is mostly idle after a burst.
+        item.ResultRef = null;
+        item.ResultRefDispose = null;
+        item.Exception = null;
+        item.Error = null;
+        item.State = null;
+        item.CapturedContext = null;
+        item.Continuation = null;
+        item.CancellationToken = default;
 
         LuminTaskBag.ResetId(item.Id);
 
         LuminTaskLeakTracker.OnReturn(ptr); // DEBUG-only; compiled out in Release
 
-        MemoryHelper.Free(ptr);
+        // A single lock-free native slot eliminates alloc/free traffic for the overwhelmingly
+        // common sequential case without allowing an unbounded per-T cache. Contended excess
+        // sources still return directly to the configured allocator.
+        if (Interlocked.CompareExchange(ref s_cachedSource, new IntPtr(ptr), IntPtr.Zero) != IntPtr.Zero)
+            MemoryHelper.Free(ptr);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -552,14 +587,29 @@ public unsafe struct LuminTaskSourceCore<T>
             TypeMeta<T>.IsValueType && TypeMeta<T>.IsReferenceOrContainsReferences &&
             item.ResultRef is StateTuple<T> stateTuple)
         {
-            item.ResultRefDispose = stateTuple;
+            item.ResultRef = null;
+            stateTuple.Dispose();
         }
 #endif
 
         if (ShouldClearResult)
         {
-            item.ShouldClearResult = true;
+            var resultPtr = (void*)Unsafe.ReadUnaligned<nint>(ref item.ResultValue[0]);
+            if (resultPtr != null)
+            {
+                MemoryHelper.Free(resultPtr);
+                Unsafe.WriteUnaligned(ref item.ResultValue[0], (nint)0);
+            }
         }
+
+        item.ResultRef = null;
+        item.ResultRefDispose = null;
+        item.Exception = null;
+        item.Error = null;
+        item.State = null;
+        item.CapturedContext = null;
+        item.Continuation = null;
+        item.CancellationToken = default;
 
         LuminTaskBag.ResetId(item.Id);
     }

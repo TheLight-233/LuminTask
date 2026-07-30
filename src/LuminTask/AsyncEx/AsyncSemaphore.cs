@@ -137,16 +137,22 @@ namespace LuminThread.AsyncEx
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static LuminTask WaitAsync(this AsyncSemaphore semaphore, TimeSpan timeout)
+            => WaitWithTimeoutAsync(semaphore, timeout);
+
+        private static async LuminTask WaitWithTimeoutAsync(AsyncSemaphore semaphore, TimeSpan timeout)
         {
             using var cts = new CancellationTokenSource(timeout);
-            return semaphore.WaitAsync(cts.Token);
+            await semaphore.WaitAsync(cts.Token);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static LuminTask<IDisposable> LockAsync(this AsyncSemaphore semaphore, TimeSpan timeout)
+            => LockWithTimeoutAsync(semaphore, timeout);
+
+        private static async LuminTask<IDisposable> LockWithTimeoutAsync(AsyncSemaphore semaphore, TimeSpan timeout)
         {
             using var cts = new CancellationTokenSource(timeout);
-            return semaphore.LockAsync(cts.Token);
+            return await semaphore.LockAsync(cts.Token);
         }
     }
 }

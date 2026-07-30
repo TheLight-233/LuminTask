@@ -10,16 +10,13 @@ namespace LuminThread.TaskSource.Promise;
 
 public unsafe struct DelayPromise<T>
 {
-
-    private static readonly double s_ticksToMs = 1000.0 / Stopwatch.Frequency;
-
-    private long _startTime;
-    private int  _delayTime;
+    private long _startTimestamp;
+    private long _delayTimestampTicks;
     private LuminTaskSourceCore<T>* _core;
 
     internal LuminTaskSourceCore<T>* Source => _core;
 
-    public LuminTask Task => new LuminTask(LuminTaskSourceCore<T>.MethodTablePtr, _core, _core->Id);
+    public LuminTask Task => new LuminTask(LuminTaskSourceCore<T>.MethodTableAutoDisposePtr, _core, _core->Id);
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static DelayPromise<T> Create(
@@ -32,8 +29,8 @@ public unsafe struct DelayPromise<T>
 
         var delayPromise = new DelayPromise<T>
         {
-            _startTime = GetTimestamp(),
-            _delayTime = millisecondsDelay,
+            _startTimestamp = Stopwatch.GetTimestamp(),
+            _delayTimestampTicks = MillisecondsToStopwatchTicks(millisecondsDelay),
             _core      = core,
         };
 
@@ -63,18 +60,16 @@ public unsafe struct DelayPromise<T>
 
         if (state.CancellationToken.IsCancellationRequested)
         {
-            LuminTaskSourceCore<T>.TrySetCanceled(state.Source);
-            LuminTaskSourceCore<T>.Dispose(state.Source);
+            LuminTaskSourceCore<T>.TrySetCanceled(state.Source, state.CancellationToken);
             MemoryHelper.Free(promisePtr);
             return false;
         }
 
-        long elapsed = GetTimestamp() - promise._startTime;
+        long elapsed = Stopwatch.GetTimestamp() - promise._startTimestamp;
 
-        if (elapsed >= promise._delayTime)
+        if (elapsed >= promise._delayTimestampTicks)
         {
             LuminTaskSourceCore<T>.TrySetResult(state.Source);
-            LuminTaskSourceCore<T>.Dispose(state.Source);
             MemoryHelper.Free(promisePtr);
             return false;
         }
@@ -83,6 +78,8 @@ public unsafe struct DelayPromise<T>
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static long GetTimestamp()
-        => (long)(Stopwatch.GetTimestamp() * s_ticksToMs);
+    private static long MillisecondsToStopwatchTicks(int milliseconds)
+        => milliseconds == System.Threading.Timeout.Infinite
+            ? long.MaxValue
+            : (long)(milliseconds * ((double)Stopwatch.Frequency / 1000D));
 }

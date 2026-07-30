@@ -15,11 +15,6 @@ public sealed unsafe class ValueTaskSource : ILuminTaskSource
         _taskSource = taskSource;
     }
 
-    ~ValueTaskSource()
-    {
-        _method->Dispose(_taskSource);
-    }
-
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public LuminTaskStatus GetStatus(short token)
     {
@@ -54,11 +49,6 @@ public sealed unsafe class ValueTaskSource<T> : ILuminTaskSource<T>
     {
         _method = table;
         _taskSource = taskSource;
-    }
-
-    ~ValueTaskSource()
-    {
-        _method->Dispose(_taskSource);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]

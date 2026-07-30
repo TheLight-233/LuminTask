@@ -1,8 +1,10 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Runtime.CompilerServices;
 using System.Threading;
 using LuminThread.Interface;
+using LuminThread.Utility;
 
 namespace LuminThread
 {
@@ -78,7 +80,26 @@ namespace LuminThread
             var strategy = _strategies[(byte)timing];
             if (strategy is null)
                 ThrowInvalidLoopTiming(timing);
-            strategy!.AddAction(state, moveNext);
+            if (strategy is not IFunctionPointerPlayLoopStrategy pointerStrategy)
+                throw new PlatformNotSupportedException("The selected PlayerLoop strategy does not support function-pointer dispatch.");
+            pointerStrategy.AddAction(state, new IntPtr(moveNext));
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static unsafe void AddAction(
+            PlayerLoopTiming timing,
+            LuminTaskState state,
+            MoveNext managedMoveNext,
+            delegate*<in LuminTaskState, bool> functionPointer)
+        {
+            var strategy = _strategies[(byte)timing];
+            if (strategy is null)
+                ThrowInvalidLoopTiming(timing);
+
+            if (strategy is IFunctionPointerPlayLoopStrategy pointerStrategy)
+                pointerStrategy.AddAction(state, new IntPtr(functionPointer));
+            else
+                strategy!.AddAction(state, managedMoveNext);
         }
 
         public static void AddContinuation(PlayerLoopTiming timing, Action continuation)
@@ -108,10 +129,10 @@ namespace LuminThread
             }
         }
 
-        private sealed class StandardPlayLoopStrategy : IPlayLoopStrategy
+        private sealed class StandardPlayLoopStrategy : IPlayLoopStrategy, IFunctionPointerPlayLoopStrategy
         {
             private const int MaxTasksPerFrame = 1000;
-            private const int SleepWhenIdle = 1;
+            private const int ActivePollIntervalMilliseconds = 1;
 
             private readonly ConcurrentQueue<IPlayLoopItem> _incomingQueue1 = new();
             private readonly ConcurrentQueue<(LuminTaskState, MoveNext)> _incomingQueue2 = new();
@@ -122,8 +143,9 @@ namespace LuminThread
             private readonly ConcurrentQueue<Action> _continuations = new();
             private readonly CancellationTokenSource _cts = new();
             private Thread _workerThread;
-            private volatile bool _disposed;
-            private volatile bool _running;
+            private int _disposed;
+            private int _running;
+            private readonly object _startGate = new();
             private readonly ManualResetEventSlim _workAvailable = new();
 
             public StandardPlayLoopStrategy()
@@ -138,8 +160,7 @@ namespace LuminThread
 
             void IPlayLoopStrategy.AddAction(IPlayLoopItem item)
             {
-                if (_disposed)
-                    throw new ObjectDisposedException(nameof(StandardPlayLoopStrategy));
+                ThrowIfDisposed();
                 StartIfNeeded();
                 _incomingQueue1.Enqueue(item);
                 _workAvailable.Set();
@@ -147,37 +168,48 @@ namespace LuminThread
 
             void IPlayLoopStrategy.AddAction(LuminTaskState state, MoveNext item)
             {
-                if (_disposed)
-                    throw new ObjectDisposedException(nameof(StandardPlayLoopStrategy));
+                ThrowIfDisposed();
                 StartIfNeeded();
                 _incomingQueue2.Enqueue((state, item));
                 _workAvailable.Set();
             }
 
-            unsafe void IPlayLoopStrategy.AddAction(LuminTaskState state, delegate*<in LuminTaskState, bool> item)
+            void IFunctionPointerPlayLoopStrategy.AddAction(LuminTaskState state, IntPtr item)
             {
-                if (_disposed)
-                    throw new ObjectDisposedException(nameof(StandardPlayLoopStrategy));
+                ThrowIfDisposed();
                 StartIfNeeded();
-                _incomingQueue3.Enqueue((state, new IntPtr(item)));
+                _incomingQueue3.Enqueue((state, item));
                 _workAvailable.Set();
             }
 
             void IPlayLoopStrategy.AddContinuation(Action continuation)
             {
-                if (_disposed)
-                    throw new ObjectDisposedException(nameof(StandardPlayLoopStrategy));
+                ThrowIfDisposed();
                 StartIfNeeded();
                 _continuations.Enqueue(continuation);
                 _workAvailable.Set();
             }
 
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            private void ThrowIfDisposed()
+            {
+                if (Volatile.Read(ref _disposed) != 0)
+                    throw new ObjectDisposedException(nameof(StandardPlayLoopStrategy));
+            }
+
             private void StartIfNeeded()
             {
-                if (!_running)
+                if (Volatile.Read(ref _running) != 0)
+                    return;
+
+                lock (_startGate)
                 {
-                    _running = true;
+                    ThrowIfDisposed();
+                    if (Volatile.Read(ref _running) != 0)
+                        return;
+
                     _workerThread.Start();
+                    Volatile.Write(ref _running, 1);
                 }
             }
 
@@ -191,12 +223,7 @@ namespace LuminThread
                         ProcessActiveTasks();
                         ProcessContinuations();
 
-                        if (_activeTasks1.Count == 0 && _activeTasks2.Count == 0 && _activeTasks3.Count == 0 &&
-                            _incomingQueue1.IsEmpty && _incomingQueue2.IsEmpty && _incomingQueue3.IsEmpty)
-                        {
-                            _workAvailable.Wait(SleepWhenIdle, _cts.Token);
-                            _workAvailable.Reset();
-                        }
+                        WaitForWorkIfIdle();
                     }
                 }
                 catch (OperationCanceledException)
@@ -209,7 +236,36 @@ namespace LuminThread
                 finally
                 {
                     Cleanup();
+                    _workAvailable.Dispose();
+                    _cts.Dispose();
                 }
+            }
+
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            private bool HasActiveTasks()
+                => _activeTasks1.Count != 0 || _activeTasks2.Count != 0 || _activeTasks3.Count != 0;
+
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            private bool HasImmediateWork()
+                => !_incomingQueue1.IsEmpty || !_incomingQueue2.IsEmpty || !_incomingQueue3.IsEmpty ||
+                   !_continuations.IsEmpty;
+
+            private void WaitForWorkIfIdle()
+            {
+                var hasActiveTasks = HasActiveTasks();
+                if (HasImmediateWork())
+                    return;
+
+                // Reset before the second emptiness check. A producer racing either side of
+                // Reset will leave the queues non-empty or set the event, so no wake-up is lost.
+                _workAvailable.Reset();
+                if (HasImmediateWork())
+                    return;
+
+                if (hasActiveTasks)
+                    _workAvailable.Wait(ActivePollIntervalMilliseconds, _cts.Token);
+                else
+                    _workAvailable.Wait(_cts.Token);
             }
 
             private void ProcessIncomingTasks()
@@ -337,9 +393,19 @@ namespace LuminThread
 
             private void ProcessContinuations()
             {
-                while (_continuations.TryDequeue(out var continuation))
+                for (var i = 0;
+                     i < MaxTasksPerFrame && _continuations.TryDequeue(out var continuation);
+                     i++)
                 {
-                    continuation();
+                    try
+                    {
+                        continuation();
+                    }
+                    catch (Exception exception)
+                    {
+                        // One faulty callback must not terminate the shared scheduler thread.
+                        LuminTaskScheduler.PublishUnobservedTaskException(exception);
+                    }
                 }
             }
 
@@ -365,24 +431,29 @@ namespace LuminThread
 
             public void Dispose()
             {
-                if (_disposed) return;
+                if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
 
-                _disposed = true;
-                _cts.Cancel();
-                _workAvailable.Set();
+                lock (_startGate)
+                {
+                    _cts.Cancel();
+                    _workAvailable.Set();
+                }
 
-                if (_workerThread != null)
+                if (Volatile.Read(ref _running) != 0 &&
+                    !ReferenceEquals(Thread.CurrentThread, _workerThread))
                 {
                     if (!_workerThread.Join(TimeSpan.FromSeconds(2)))
                     {
                         _workerThread.Interrupt();
+                        _workerThread.Join(TimeSpan.FromSeconds(2));
                     }
-                    _workerThread = null;
                 }
-
-                _cts.Dispose();
-                _workAvailable.Dispose();
-                Cleanup();
+                else if (Volatile.Read(ref _running) == 0)
+                {
+                    Cleanup();
+                    _workAvailable.Dispose();
+                    _cts.Dispose();
+                }
             }
         }
     }

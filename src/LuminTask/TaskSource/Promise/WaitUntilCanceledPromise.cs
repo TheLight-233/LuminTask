@@ -28,7 +28,7 @@ public unsafe struct WaitUntilCanceledPromise<T>
 
         token = core->Id;
 
-        PlayerLoopHelper.AddAction(timing, new LuminTaskState(core, cancellationToken), &MoveNext);
+        PlayerLoopHelper.AddAction(timing, new LuminTaskState(core, cancellationToken), MoveNext, &MoveNext);
 
         return waitPromise;
     }
