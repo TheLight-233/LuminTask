@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using LuminThread;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using LuminThread.Analyzer;
@@ -15,6 +16,13 @@ public static class Program
     private static int s_failed;
     private static readonly List<string> s_failures = new();
 
+
+    public static async LuminTask<int> Add(int a, int b)
+    {
+        await LuminTask.Delay(100);
+        return await LuminTask.FromResult(a + b);
+    } 
+        
     public static int Main()
     {
         Console.WriteLine("==================== LuminTask.Analyzer Tests ====================");
@@ -31,6 +39,8 @@ public static class Program
         Run("FromResult().Result → 干净", "var x = LuminTask.FromResult(5).Result; Console.WriteLine(x);", Array.Empty<string>());
         Run("TCS 完成 + await Task → 干净", "var tcs = new LuminTaskCompletionSource<int>(); tcs.TrySetResult(1); await tcs.Task;", Array.Empty<string>());
         Run("TCS 转移给方法 → 干净", "var tcs = new LuminTaskCompletionSource<int>(); SinkTcs(tcs);", Array.Empty<string>());
+        Run("循环内 TCS 完成 + 消费 → 干净", "while (c) { var tcs = new LuminTaskCompletionSource<int>(); tcs.TrySetResult(1); await tcs.Task; }", Array.Empty<string>());
+        Run("TCS 在 lambda 中完成 → 干净", "var tcs = new LuminTaskCompletionSource<int>(); Action cb = () => tcs.TrySetResult(1); cb(); await tcs.Task;", Array.Empty<string>());
         Run("循环内重新赋值 → 干净", "LuminTask<int> t; while (c) { t = GetTask(); await t; }", Array.Empty<string>());
         Run("GetAwaiter().GetResult() → 干净", "var t = GetTask(); t.GetAwaiter().GetResult();", Array.Empty<string>());
         Run("yield return 转移 → 干净", "yield return GetTask();", Array.Empty<string>(), iterator: true);
@@ -39,6 +49,9 @@ public static class Program
         Run("return 转移 → 干净", "return t;", Array.Empty<string>(), returnsTask: true);
         Run("foreach 元素消费 → 干净", "foreach (var x in tasks) { await x; }", Array.Empty<string>());
         Run("被 lambda 捕获 → 干净", "var t = GetTask(); Func<Task> f = async () => { await t; };", Array.Empty<string>());
+        Run("提前 return 转移后再 await → 干净", "if (c) return t; await t;", Array.Empty<string>(), asyncReturnsTask: true);
+        Run("分支消费后 return，另一分支 await → 干净", "if (c) { await t; return default!; } await t;", Array.Empty<string>(), asyncReturnsTask: true);
+        Run("if/else return 后继续路径双消费 → LUM1002", "if (a) { await t; } else { return default!; } await t;", new[] { "LUM1002" }, asyncReturnsTask: true);
         Run("未引用 LuminTask → 不报任何诊断", "int x = 1;", Array.Empty<string>(), noReference: true);
 
         // --- violations -------------------------------------------------------------
@@ -149,6 +162,28 @@ public static class Program
         }
         """;
 
+    private const string AsyncReturnTaskTemplate = """
+        using System;
+        using System.Threading;
+        using System.Threading.Tasks;
+        using LuminThread;
+
+        class Test
+        {
+            bool c = true;
+            bool a = true;
+
+            async LuminTask<int> M()
+            {
+                var t = GetTask();
+        {BODY}
+                return default!;
+            }
+
+            static LuminTask<int> GetTask() => LuminTask.FromResult(1);
+        }
+        """;
+
     private static readonly MetadataReference[] s_luminTaskRefs = new[]
     {
         MetadataReference.CreateFromFile(typeof(LuminThread.LuminTask).Assembly.Location),
@@ -217,11 +252,13 @@ public static class Program
         bool noReference = false,
         bool iterator = false,
         bool asyncBody = false,
-        bool returnsTask = false)
+        bool returnsTask = false,
+        bool asyncReturnsTask = false)
     {
         string template = iterator ? IteratorTemplate
             : asyncBody ? AsyncTemplate
             : returnsTask ? ReturnTaskTemplate
+            : asyncReturnsTask ? AsyncReturnTaskTemplate
             : Template;
 
         string code = template.Replace("{BODY}", body);

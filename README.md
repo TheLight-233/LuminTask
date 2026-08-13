@@ -29,6 +29,8 @@ LuminTask 是一个面向 .NET 的高性能异步任务库，为 C# 提供可直
 dotnet add package LuminTask --version 1.0.2
 ```
 
+> 安装即自带编译期契约分析器（见下文「契约分析器」），违反消费契约的代码会直接编译报错。
+
 或者从源码构建：
 
 ```bash
@@ -139,20 +141,32 @@ await luminTask.WaitAsync(TimeSpan.FromSeconds(5), cancellationToken);
 | `LUM1005` | Error | 将 LuminTask 赋给丢弃符 `_`（不会释放任务源） |
 | `LUM1006` | Warning | LuminTaskCompletionSource 在同一路径上被多次完成 |
 
-使用方式：
+### 自动生效（无需任何配置）
 
-```xml
-<ItemGroup>
-  <ProjectReference Include="path\to\LuminTask.Analyzer\LuminTask.Analyzer.csproj"
-                    OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
-</ItemGroup>
+分析器以 NuGet 包依赖形式接入主库：**无论以 ProjectReference 还是 NuGet 包方式引用 LuminTask，NuGet 还原都会自动拉取 `LuminTask.Analyzer` 包，分析器随即可用**——消费方不需要添加任何额外引用或配置。
+
+> MSBuild 本身不支持分析器随项目引用传递（ProjectReference 的 Analyzer 项不会流向引用方），因此采用包依赖通道：
+> `LuminTask` 的 nuspec 携带 `LuminTask.Analyzer` 依赖（`PrivateAssets="none"`），所有消费方的还原都会获得分析器资产。
+
+### 从源码构建
+
+`LuminTask` 依赖本地打包的分析器包，克隆仓库后需先执行一次引导打包：
+
+```bash
+dotnet pack analyzer/LuminTask.Analyzer/LuminTask.Analyzer.csproj -c Release -o artifacts/packages
+dotnet build LuminTask.sln -c Release
 ```
 
-* 分析器基于 `IIncrementalGenerator` 实现，目标框架 `netstandard2.0`，Roslyn 依赖锁定在 `4.3.0`（Unity 支持的最高版本），可直接用于 Unity 2021.2+。
-* 分析器只分析使用方的代码，不会作用于 LuminTask 库自身；未引用 LuminTask 的编译不会产生任何诊断。
-* 分析采用保守的控制流（分支合并、部分路径、循环重赋值）推断，遇到无法静态确认的合法模式可用 `#pragma warning disable LUMxxxx` 局部抑制。
+仓库根目录的 [`nuget.config`](nuget.config) 已把 `artifacts/packages` 配置为本地源。修改分析器代码后需重新执行上述 `dotnet pack` 使改动对消费方生效。
 
-测试项目 `tests/LuminTask.AnalyzerTests/` 通过内存编译运行分析器并断言诊断结果，可使用以下命令运行：
+### 实现细节
+
+* 基于 `IIncrementalGenerator`，目标框架 `netstandard2.0`，Roslyn 依赖锁定在 `4.3.0`（Unity 支持的最高版本），可直接用于 Unity 2021.2+。
+* 分析器只分析使用方的代码；未引用 LuminTask 的编译不会产生任何诊断。
+* 分析采用保守的控制流推断（分支合并、部分路径、循环重赋值、提前返回），遇到无法静态确认的合法模式可用 `#pragma warning disable LUMxxxx` 局部抑制。
+* 主库自身构建时同样启用分析器（dogfooding），内部实现（PlayerLoop 轮询延迟消费等）通过项目级 `NoWarn` 屏蔽。
+
+测试项目 `tests/LuminTask.AnalyzerTests/` 通过内存编译运行分析器并断言诊断结果：
 
 ```bash
 dotnet run --project tests/LuminTask.AnalyzerTests/LuminTask.AnalyzerTests.csproj -c Release
@@ -218,7 +232,7 @@ dotnet pack src/LuminTask/LuminTask.csproj -c Release
 ```text
 LuminTask/
 ├── src/
-│   └── LuminTask/             # 核心库与 NuGet 包项目
+│   └── LuminTask/             # 核心库与 NuGet 包项目（自带契约分析器包依赖）
 ├── analyzer/
 │   └── LuminTask.Analyzer/    # Roslyn 契约分析器（源生成器，编译期强制消费契约）
 ├── tests/
@@ -227,7 +241,8 @@ LuminTask/
 ├── benchmarks/
 │   └── LuminTask.Benchmarks/  # BenchmarkDotNet 基准测试
 ├── Unity/                     # 可选 Unity 集成扩展
-├── LuminTask.sln              # Visual Studio / dotnet 解决方案
+├── LuminTask.sln              # Visual Studio / dotnet 解决方案（含 LuminTask / Tests / Benchmarks）
+├── nuget.config               # NuGet 源（本地打包目录 + nuget.org）
 ├── global.json                # .NET SDK 版本约束
 ├── LICENSE
 └── README.md

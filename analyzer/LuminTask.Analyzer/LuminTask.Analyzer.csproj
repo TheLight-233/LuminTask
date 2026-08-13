@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
     <PropertyGroup>
         <TargetFramework>netstandard2.0</TargetFramework>
@@ -8,6 +8,8 @@
         <IsRoslynComponent>true</IsRoslynComponent>
         <EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
         <IncludeBuildOutput>false</IncludeBuildOutput>
+        <!-- 纯分析器包：developmentDependency 使 NuGet 还原时始终携带 analyzers 资产，
+             不会向消费方传递任何运行时依赖。 -->
         <DevelopmentDependency>true</DevelopmentDependency>
         <NoWarn>$(NoWarn);RS1035;RS2008</NoWarn>
         <Version>1.0.0</Version>
@@ -22,7 +24,8 @@
     </ItemGroup>
 
     <ItemGroup>
-        <None Include="$(OutputPath)\$(AssemblyName).dll" Pack="true" PackagePath="analyzers/dotnet/cs" Visible="false" />
+        <!-- roslyn 版本子目录形式，确保分析器资产在还原时被 NuGet 选中 -->
+        <None Include="$(OutputPath)\$(AssemblyName).dll" Pack="true" PackagePath="analyzers/dotnet/roslyn4.3/cs" Visible="false" />
     </ItemGroup>
 
 </Project>

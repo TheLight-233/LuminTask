@@ -262,8 +262,9 @@ namespace LuminThread.Analyzer
             }
 
             /// <summary>
-            /// A task captured by an anonymous function is consumed outside this linear scope.
-            /// Mark its group trivial so the unconsumed-at-end check does not fire here.
+            /// A task/completion-source captured by an anonymous function is consumed outside
+            /// this linear scope. Mark its group trivial so the unconsumed-at-end check does
+            /// not fire here.
             /// </summary>
             internal void MarkCapturedAsTrivial(SyntaxNode body)
             {
@@ -272,8 +273,12 @@ namespace LuminThread.Analyzer
                     foreach (var id in anon.DescendantNodes().OfType<IdentifierNameSyntax>())
                     {
                         var symbol = ResolveSymbol(id);
-                        if (symbol != null && _taskGroups.TryGetValue(symbol, out var g))
+                        if (symbol == null) continue;
+
+                        if (_taskGroups.TryGetValue(symbol, out var g))
                             g.Trivial = true;
+                        else if (_tcsGroups.TryGetValue(symbol, out var tcsG))
+                            tcsG.Trivial = true;
                     }
                 }
             }
@@ -282,47 +287,73 @@ namespace LuminThread.Analyzer
             // Statement walking
             // ----------------------------------------------------------------------------
 
-            internal void WalkStatements(IEnumerable<StatementSyntax> statements, FlowEnv env, HashSet<Group>? assignedInLoop)
+            /// <summary>Walks statements; returns true when the current path terminates (return / throw / yield / goto).</summary>
+            internal bool WalkStatements(IEnumerable<StatementSyntax> statements, FlowEnv env, HashSet<Group>? assignedInLoop)
             {
                 foreach (var s in statements)
-                    WalkStatement(s, env, assignedInLoop);
+                {
+                    if (WalkStatement(s, env, assignedInLoop))
+                        return true;
+                }
+                return false;
             }
 
-            private void WalkStatement(StatementSyntax stmt, FlowEnv env, HashSet<Group>? assignedInLoop)
+            /// <summary>Walks a statement; returns true when the current path terminates.</summary>
+            private bool WalkStatement(StatementSyntax stmt, FlowEnv env, HashSet<Group>? assignedInLoop)
             {
                 switch (stmt)
                 {
                     case BlockSyntax b:
-                        WalkStatements(b.Statements, env, assignedInLoop);
-                        break;
+                        return WalkStatements(b.Statements, env, assignedInLoop);
 
                     case ExpressionStatementSyntax es:
                         AnalyzeExpression(es.Expression, env, transfer: false, bare: true, assignedInLoop);
-                        break;
+                        return false;
 
                     case LocalDeclarationStatementSyntax d:
                         HandleDeclaration(d.Declaration, env, assignedInLoop);
-                        break;
+                        return false;
 
                     case IfStatementSyntax i:
                         AnalyzeExpression(i.Condition, env, transfer: false, assignedInLoop: assignedInLoop);
                         var thenEnv = env.Clone();
-                        WalkStatement(i.Statement, thenEnv, assignedInLoop);
+                        bool thenTerm = WalkStatement(i.Statement, thenEnv, assignedInLoop);
+                        bool elseTerm = false;
+                        FlowEnv? elseEnv = null;
                         if (i.Else != null)
                         {
-                            var elseEnv = env.Clone();
-                            WalkStatement(i.Else.Statement, elseEnv, assignedInLoop);
-                            MergeBranches(env, thenEnv, elseEnv, hasElse: true);
+                            elseEnv = env.Clone();
+                            elseTerm = WalkStatement(i.Else.Statement, elseEnv, assignedInLoop);
                         }
-                        else
+
+                        if (thenTerm && elseTerm && elseEnv != null)
+                            return true; // both branches exit; code after the if is unreachable
+
+                        if (thenTerm && elseEnv == null)
+                            return false; // the continue-path is the implicit (condition false) branch: main stays unchanged
+
+                        if (thenTerm)
                         {
-                            MergeBranches(env, thenEnv, null, hasElse: false);
+                            // Only the else branch continues: it represents the surviving path.
+                            MergeMany(env, new List<FlowEnv> { elseEnv! }, coverCount: 1);
+                            return false;
                         }
-                        break;
+
+                        if (elseTerm)
+                        {
+                            // Only the then branch continues.
+                            MergeMany(env, new List<FlowEnv> { thenEnv }, coverCount: 1);
+                            return false;
+                        }
+
+                        // Neither branch terminates: normal merge.
+                        MergeBranches(env, thenEnv, elseEnv, hasElse: elseEnv != null);
+                        return false;
 
                     case SwitchStatementSyntax sw:
                         AnalyzeExpression(sw.Expression, env, transfer: false, assignedInLoop: assignedInLoop);
                         var sectionEnvs = new List<FlowEnv>();
+                        bool allSectionsTerminate = sw.Sections.Count > 0;
                         foreach (var section in sw.Sections)
                         {
                             var clone = env.Clone();
@@ -338,22 +369,30 @@ namespace LuminThread.Analyzer
                                         break;
                                 }
                             }
-                            WalkStatements(section.Statements, clone, assignedInLoop);
-                            sectionEnvs.Add(clone);
+                            bool sectionTerm = WalkStatements(section.Statements, clone, assignedInLoop);
+                            if (!sectionTerm)
+                            {
+                                sectionEnvs.Add(clone);
+                                allSectionsTerminate = false;
+                            }
                         }
+
+                        if (allSectionsTerminate)
+                            return true;
+
                         bool hasDefault = sw.Sections.Any(s => s.Labels.Any(l => l is DefaultSwitchLabelSyntax));
                         MergeMany(env, sectionEnvs, coverCount: hasDefault ? sectionEnvs.Count : 0);
-                        break;
+                        return false;
 
                     case WhileStatementSyntax w:
                         AnalyzeExpression(w.Condition, env, transfer: false, assignedInLoop: assignedInLoop);
                         WalkLoop(w.Statement, env);
-                        break;
+                        return false; // conservative: the loop may exit via its condition/break
 
                     case DoStatementSyntax d:
                         WalkLoop(d.Statement, env);
                         AnalyzeExpression(d.Condition, env, transfer: false, assignedInLoop: assignedInLoop);
-                        break;
+                        return false;
 
                     case ForStatementSyntax f:
                         if (f.Declaration != null) HandleDeclaration(f.Declaration, env, assignedInLoop);
@@ -363,19 +402,20 @@ namespace LuminThread.Analyzer
                         WalkLoop(f.Statement, env);
                         foreach (var inc in f.Incrementors)
                             AnalyzeExpression(inc, env, transfer: false, assignedInLoop: assignedInLoop);
-                        break;
+                        return false;
 
                     case ForEachStatementSyntax fe:
                         AnalyzeExpression(fe.Expression, env, transfer: false, assignedInLoop: assignedInLoop);
                         // The foreach variable is fresh on every iteration: register it inside
                         // the loop context so consuming it is not flagged as a double-consume.
                         WalkLoop(fe.Statement, env, preRegister: fe);
-                        break;
+                        return false;
 
                     case TryStatementSyntax t:
                         var tryEnv = env.Clone();
-                        WalkStatement(t.Block, tryEnv, assignedInLoop);
+                        bool tryTerm = WalkStatement(t.Block, tryEnv, assignedInLoop);
                         var branchEnvs = new List<FlowEnv> { tryEnv };
+                        bool allCatchTerm = t.Catches.Count > 0;
                         foreach (var c in t.Catches)
                         {
                             var catchEnv = env.Clone();
@@ -383,73 +423,73 @@ namespace LuminThread.Analyzer
                                 RegisterCatchVariable(c.Declaration);
                             if (c.Filter != null)
                                 AnalyzeExpression(c.Filter.FilterExpression, catchEnv, transfer: false, assignedInLoop: assignedInLoop);
-                            WalkStatement(c.Block, catchEnv, assignedInLoop);
+                            if (!WalkStatement(c.Block, catchEnv, assignedInLoop))
+                                allCatchTerm = false;
                             branchEnvs.Add(catchEnv);
                         }
+
                         if (t.Finally != null)
                         {
                             // The try block is the main path; catches are exceptional branches.
                             // Finally executes on every path: run it linearly on the merged result.
-                            MergeMany(env, branchEnvs, coverCount: 1);
-                            WalkStatement(t.Finally.Block, env, assignedInLoop);
+                            MergeMany(env, branchEnvs, coverCount: tryTerm ? 0 : 1);
+                            return WalkStatement(t.Finally.Block, env, assignedInLoop);
                         }
-                        else
-                        {
-                            MergeMany(env, branchEnvs, coverCount: 1);
-                        }
-                        break;
+
+                        if (tryTerm && allCatchTerm)
+                            return true; // no path escapes the try/catch region
+                        MergeMany(env, branchEnvs, coverCount: tryTerm ? 0 : 1);
+                        return false;
 
                     case ReturnStatementSyntax r:
                         if (r.Expression != null)
                             AnalyzeExpression(r.Expression, env, transfer: true, assignedInLoop: assignedInLoop);
-                        break;
+                        return true;
 
                     case ThrowStatementSyntax th:
                         if (th.Expression != null)
                             AnalyzeExpression(th.Expression, env, transfer: false, assignedInLoop: assignedInLoop);
-                        break;
+                        return true;
 
                     case YieldStatementSyntax y:
                         if (y.Expression != null)
                             AnalyzeExpression(y.Expression, env, transfer: true, assignedInLoop: assignedInLoop);
-                        break;
+                        return true;
 
                     case LockStatementSyntax l:
                         AnalyzeExpression(l.Expression, env, transfer: false, assignedInLoop: assignedInLoop);
-                        WalkStatement(l.Statement, env, assignedInLoop);
-                        break;
+                        return WalkStatement(l.Statement, env, assignedInLoop);
 
                     case UsingStatementSyntax u:
                         if (u.Declaration != null) HandleDeclaration(u.Declaration, env, assignedInLoop);
                         if (u.Expression != null)
                             AnalyzeExpression(u.Expression, env, transfer: false, assignedInLoop: assignedInLoop);
-                        WalkStatement(u.Statement, env, assignedInLoop);
-                        break;
+                        return WalkStatement(u.Statement, env, assignedInLoop);
 
                     case FixedStatementSyntax fx:
                         HandleDeclaration(fx.Declaration, env, assignedInLoop);
-                        WalkStatement(fx.Statement, env, assignedInLoop);
-                        break;
+                        return WalkStatement(fx.Statement, env, assignedInLoop);
 
                     case CheckedStatementSyntax ch:
-                        WalkStatement(ch.Block, env, assignedInLoop);
-                        break;
+                        return WalkStatement(ch.Block, env, assignedInLoop);
 
                     case UnsafeStatementSyntax un:
-                        WalkStatement(un.Block, env, assignedInLoop);
-                        break;
+                        return WalkStatement(un.Block, env, assignedInLoop);
 
                     case LabeledStatementSyntax lb:
-                        WalkStatement(lb.Statement, env, assignedInLoop);
-                        break;
+                        return WalkStatement(lb.Statement, env, assignedInLoop);
+
+                    case GotoStatementSyntax:
+                        return true;
 
                     case LocalFunctionStatementSyntax:
-                    case GotoStatementSyntax:
                     case BreakStatementSyntax:
                     case ContinueStatementSyntax:
                     case EmptyStatementSyntax:
-                        break;
+                        return false;
                 }
+
+                return false;
             }
 
             private void WalkLoop(StatementSyntax body, FlowEnv env, ForEachStatementSyntax? preRegister = null)
@@ -874,7 +914,12 @@ namespace LuminThread.Analyzer
                     }
                     else if (IsTcsType(type))
                     {
-                        RegisterTcs(symbol, v.Identifier.GetLocation(), symbol.Name);
+                        var tcsGroup = RegisterTcs(symbol, v.Identifier.GetLocation(), symbol.Name);
+                        if (assignedInLoop != null)
+                        {
+                            tcsGroup.LoopScoped = true;
+                            assignedInLoop.Add(tcsGroup);
+                        }
                         if (v.Initializer != null)
                             AnalyzeExpression(v.Initializer.Value, env, transfer: false, assignedInLoop: assignedInLoop);
                     }
