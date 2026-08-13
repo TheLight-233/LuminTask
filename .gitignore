@@ -1,4 +1,4 @@
-# Build output
+﻿# Build output
 [Bb]in/
 [Oo]bj/
 
@@ -28,5 +28,4 @@ coverage/
 .DS_Store
 Thumbs.db
 
-# Local NuGet feed (built analyzer packages)
-artifacts/packages/
+

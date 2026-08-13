@@ -143,28 +143,21 @@ await luminTask.WaitAsync(TimeSpan.FromSeconds(5), cancellationToken);
 
 ### 自动生效（无需任何配置）
 
-分析器以 NuGet 包依赖形式接入主库：**无论以 ProjectReference 还是 NuGet 包方式引用 LuminTask，NuGet 还原都会自动拉取 `LuminTask.Analyzer` 包，分析器随即可用**——消费方不需要添加任何额外引用或配置。
-
-> MSBuild 本身不支持分析器随项目引用传递（ProjectReference 的 Analyzer 项不会流向引用方），因此采用包依赖通道：
-> `LuminTask` 的 nuspec 携带 `LuminTask.Analyzer` 依赖（`PrivateAssets="none"`），所有消费方的还原都会获得分析器资产。
-
-### 从源码构建
-
-`LuminTask` 依赖本地打包的分析器包，克隆仓库后需先执行一次引导打包：
+分析器随 LuminTask 主包一起发布：**`LuminTask` 的 NuGet 包内直接携带分析器 dll（`analyzers/dotnet/cs/`），消费者只需安装 LuminTask 一个包，分析器即自动生效**，无需额外安装任何东西。编译时分析器通过 `ReportDiagnostic` 在不遵守契约的位置直接报错（红线）。
 
 ```bash
-dotnet pack analyzer/LuminTask.Analyzer/LuminTask.Analyzer.csproj -c Release -o artifacts/packages
-dotnet build LuminTask.sln -c Release
+dotnet add package LuminTask
+# 完成。违反契约的代码现在会编译报错 LUM1001~LUM1006
 ```
 
-仓库根目录的 [`nuget.config`](nuget.config) 已把 `artifacts/packages` 配置为本地源。修改分析器代码后需重新执行上述 `dotnet pack` 使改动对消费方生效。
+主库自身构建时同样启用分析器（dogfooding，通过 ProjectReference 引用分析器项目，仅作用于库自身的编译）。
 
 ### 实现细节
 
 * 基于 `IIncrementalGenerator`，目标框架 `netstandard2.0`，Roslyn 依赖锁定在 `4.3.0`（Unity 支持的最高版本），可直接用于 Unity 2021.2+。
 * 分析器只分析使用方的代码；未引用 LuminTask 的编译不会产生任何诊断。
 * 分析采用保守的控制流推断（分支合并、部分路径、循环重赋值、提前返回），遇到无法静态确认的合法模式可用 `#pragma warning disable LUMxxxx` 局部抑制。
-* 主库自身构建时同样启用分析器（dogfooding），内部实现（PlayerLoop 轮询延迟消费等）通过项目级 `NoWarn` 屏蔽。
+* 主库内部实现（PlayerLoop 轮询延迟消费等）通过项目级 `NoWarn` 屏蔽 LUM 诊断。
 
 测试项目 `tests/LuminTask.AnalyzerTests/` 通过内存编译运行分析器并断言诊断结果：
 
@@ -232,7 +225,7 @@ dotnet pack src/LuminTask/LuminTask.csproj -c Release
 ```text
 LuminTask/
 ├── src/
-│   └── LuminTask/             # 核心库与 NuGet 包项目（自带契约分析器包依赖）
+│   └── LuminTask/             # 核心库与 NuGet 包项目（包内自带契约分析器）
 ├── analyzer/
 │   └── LuminTask.Analyzer/    # Roslyn 契约分析器（源生成器，编译期强制消费契约）
 ├── tests/
@@ -242,7 +235,6 @@ LuminTask/
 │   └── LuminTask.Benchmarks/  # BenchmarkDotNet 基准测试
 ├── Unity/                     # 可选 Unity 集成扩展
 ├── LuminTask.sln              # Visual Studio / dotnet 解决方案（含 LuminTask / Tests / Benchmarks）
-├── nuget.config               # NuGet 源（本地打包目录 + nuget.org）
 ├── global.json                # .NET SDK 版本约束
 ├── LICENSE
 └── README.md

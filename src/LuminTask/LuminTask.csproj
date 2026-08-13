@@ -27,14 +27,17 @@
     </ItemGroup>
 
     <ItemGroup>
-        <!-- 契约分析器以包依赖形式接入：任何项目（ProjectReference 或 NuGet 包引用）引用
-             LuminTask 时，NuGet 还原会一并拉取 LuminTask.Analyzer 包，分析器自动生效。
-             构建本仓库前需先打包分析器：dotnet pack analyzer/LuminTask.Analyzer -o artifacts/packages。
+        <!-- 契约分析器：
+             1) ProjectReference(OutputItemType=Analyzer) 让库自身构建时被检查（dogfooding），
+                只作用于本项目的编译，不会传递给 ProjectReference 引用方；
+             2) None Include 把分析器 dll 直接打进 LuminTask 的 NuGet 包（analyzers/dotnet/cs），
+                消费者只需安装 LuminTask 一个包，分析器即自动生效（报告 LUM1001~LUM1006）。
              库内部实现（PlayerLoop 轮询延迟消费、三元表达式转移等）不受面向使用方的
              契约约束，因此在本项目 NoWarn 中屏蔽 LUM 诊断。 -->
-        <!-- PrivateAssets="none"：打包时依赖不携带 exclude="Build,Analyzers"，
-             分析器资产才能随 LuminTask 包依赖流向消费方。 -->
-        <PackageReference Include="LuminTask.Analyzer" Version="1.0.0" PrivateAssets="none" />
+        <ProjectReference Include="..\..\analyzer\LuminTask.Analyzer\LuminTask.Analyzer.csproj"
+                          OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+        <None Include="..\..\analyzer\LuminTask.Analyzer\bin\$(Configuration)\netstandard2.0\LuminTask.Analyzer.dll"
+              Pack="true" PackagePath="analyzers/dotnet/cs" Visible="false" />
     </ItemGroup>
 
     <ItemGroup>
