@@ -239,12 +239,10 @@ public static class LuminTaskBag
 [StructLayout(LayoutKind.Explicit)]
 public unsafe struct LuminTaskItem
 {
-    [FieldOffset(0)]  public readonly short Id;
-    [FieldOffset(2)]  public LuminTaskStatus Status = LuminTaskStatus.Pending;
-    [FieldOffset(3)]  public bool ContinueOnCapturedContext = true;
-    // Uses the former padding between flags and the first reference field, keeping each task
-    // item compact while still providing the 32-bit alignment required by Interlocked.
-    [FieldOffset(4)]  public int CompletionState;
+    // 单字同步状态：bits 0-7 = 完成起始标志（CAS 归属），bits 8-15 = 任务状态，
+    // bits 16-31 = 版本（槽位下标，稳定不变）。版本与状态一次读取即可校验。
+    [FieldOffset(0)]  public int SyncState;
+    [FieldOffset(4)]  public bool ContinueOnCapturedContext = true;
     [FieldOffset(8)]  public IDisposable? ResultRefDispose;
     [FieldOffset(16)]  public Action<object>? Continuation;
     [FieldOffset(24)] public object? State;
@@ -254,8 +252,23 @@ public unsafe struct LuminTaskItem
     [FieldOffset(56)] public CancellationToken CancellationToken;
     [FieldOffset(64)] public object? ResultRef;
     [FieldOffset(72)] public fixed byte ResultValue[64];
+
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal LuminTaskItem(short id) { Id = id; }
+    internal LuminTaskItem(short id) { SyncState = id << 16; }
+
+    public short Id
+    {
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        get => (short)(SyncState >> 16);
+    }
+
+    public LuminTaskStatus Status
+    {
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        get => (LuminTaskStatus)((Volatile.Read(ref SyncState) >> 8) & 0xFF);
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        set => Volatile.Write(ref SyncState, (SyncState & ~0xFF00) | ((int)value << 8));
+    }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void Reset()
@@ -266,8 +279,7 @@ public unsafe struct LuminTaskItem
             ResultRefDispose = null;
         }
 
-        Status = LuminTaskStatus.Pending;
-        CompletionState = 0;
+        SyncState &= ~0xFFFF;
         ContinueOnCapturedContext = false;
         Continuation = null;
         State = null;

@@ -404,8 +404,7 @@ internal unsafe class SingleConsumerUnboundedLuminChannel<T> : LuminChannel<T>, 
                 cancellationToken = default;
             }
 
-            cancellationTokenRegistration.Dispose();
-            cancellationTokenRegistration = default;
+            cancellationTokenRegistration.Release();
 
             if (error is OperationCanceledException)
                 LuminTaskSourceCore<bool>.TrySetCanceled(source, token);

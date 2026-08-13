@@ -45,8 +45,12 @@ public unsafe struct LuminTaskSourceCore<T>
     private static void SentinelInvoked(object _)
         => LuminTaskExceptionHelper.ThrowInvalidOperation("LuminTask completion sentinel must never be invoked.");
 
-    private static readonly ContextCallback s_executionContextCallback = RunWithExecutionContext;
-    private static IntPtr s_cachedSource;
+    // 每（封闭 T × 线程）一个缓存槽：顺序工作负载取槽无需任何原子操作。
+    private static class SlotCache
+    {
+        [ThreadStatic]
+        internal static IntPtr Cached;
+    }
 
     public short Id;
     private static readonly bool ShouldClearResult = TypeMeta<T>.Size > 64;
@@ -59,7 +63,8 @@ public unsafe struct LuminTaskSourceCore<T>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static LuminTaskSourceCore<T>* Create(bool continueOnCapturedContext = false)
     {
-        var cached = Interlocked.Exchange(ref s_cachedSource, IntPtr.Zero);
+        var cached = SlotCache.Cached;
+        SlotCache.Cached = IntPtr.Zero;
         var ptr = cached != IntPtr.Zero
             ? (LuminTaskSourceCore<T>*)cached.ToPointer()
             : (LuminTaskSourceCore<T>*)MemoryHelper.Alloc(
@@ -103,9 +108,11 @@ public unsafe struct LuminTaskSourceCore<T>
     {
         ref var source = ref Unsafe.AsRef<LuminTaskSourceCore<T>>(ptr);
 
-        if (token != source.Id) return LuminTaskStatus.Faulted;
-
-        return ReadStatus(ref LuminTaskMarshal.GetTaskItem(source.Id));
+        // 版本与状态同在一个字里：一次易失读完成校验与取值。
+        int word = Volatile.Read(ref LuminTaskMarshal.GetTaskItem(source.Id).SyncState);
+        return (short)(word >> 16) != token
+            ? LuminTaskStatus.Faulted
+            : (LuminTaskStatus)((word >> 8) & 0xFF);
     }
 
     [DebuggerHidden]
@@ -367,17 +374,8 @@ public unsafe struct LuminTaskSourceCore<T>
             return;
         }
 
-        var box = StateTuple.Create(continuation, state);
-        ExecutionContext.Run(capturedContext, s_executionContextCallback, box);
-    }
-
-    private static void RunWithExecutionContext(object? boxed)
-    {
-        var box = (StateTuple<Action<object>, object>)boxed!;
-        var continuation = box.Item1;
-        var state = box.Item2;
-        box.Dispose();
-        continuation(state);
+        // Action<object> 与 ContextCallback 委托形状一致，直接重解释引用，免去装箱。
+        ExecutionContext.Run(capturedContext, Unsafe.As<ContextCallback>(continuation), state);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -488,15 +486,24 @@ public unsafe struct LuminTaskSourceCore<T>
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static bool TryBeginCompletion(ref LuminTaskItem item)
-        => Interlocked.CompareExchange(ref item.CompletionState, 1, 0) == 0;
+    {
+        int observed = Volatile.Read(ref item.SyncState);
+        while ((observed & 0xFF) == 0)
+        {
+            if (Interlocked.CompareExchange(ref item.SyncState, observed | 1, observed) == observed)
+                return true;
+            observed = Volatile.Read(ref item.SyncState);
+        }
+        return false;
+    }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static LuminTaskStatus ReadStatus(ref LuminTaskItem item)
-        => (LuminTaskStatus)Volatile.Read(ref Unsafe.As<LuminTaskStatus, byte>(ref item.Status));
+        => item.Status;
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static void PublishStatus(ref LuminTaskItem item, LuminTaskStatus status)
-        => Volatile.Write(ref Unsafe.As<LuminTaskStatus, byte>(ref item.Status), (byte)status);
+        => item.Status = status;
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static void ExecuteContinuation(ref LuminTaskItem item)
@@ -570,10 +577,11 @@ public unsafe struct LuminTaskSourceCore<T>
 
         LuminTaskLeakTracker.OnReturn(ptr); // DEBUG-only; compiled out in Release
 
-        // A single lock-free native slot eliminates alloc/free traffic for the overwhelmingly
-        // common sequential case without allowing an unbounded per-T cache. Contended excess
-        // sources still return directly to the configured allocator.
-        if (Interlocked.CompareExchange(ref s_cachedSource, new IntPtr(ptr), IntPtr.Zero) != IntPtr.Zero)
+        // 每线程一个原生缓存块：顺序工作负载免于反复进出原生分配器；
+        // 槽位已占用时多余块直接归还分配器（有界，不会随线程数无限制增长）。
+        if (SlotCache.Cached == IntPtr.Zero)
+            SlotCache.Cached = new IntPtr(ptr);
+        else
             MemoryHelper.Free(ptr);
     }
 

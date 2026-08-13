@@ -4,6 +4,7 @@ using System.Runtime.CompilerServices;
 using System.Threading;
 using LuminThread.Interface;
 using LuminThread.TaskSource;
+using LuminThread.Utility;
 
 namespace LuminThread.AsyncEx;
 
@@ -296,7 +297,7 @@ internal sealed unsafe class AsyncReactivePropertyAwaiter<T>
         var core = (LuminTaskSourceCore<T>*)ptr;
         LuminTaskSourceCore<T>.TrySetResult(core, value);
         LuminTaskSourceCore<T>.Dispose(core);
-        _registration.Dispose();
+        _registration.Release();
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]

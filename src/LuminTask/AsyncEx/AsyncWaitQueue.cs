@@ -1,6 +1,5 @@
-using System;
+﻿using System;
 using System.Collections;
-using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 using System.Threading;
@@ -20,21 +19,31 @@ public interface IAsyncWaitQueue<T>
     void CancelAll(CancellationToken cancellationToken);
 }
 
+/// <summary>
+/// 侵入式等待队列：等待节点自身携带 Next/Previous 链接，队列与对象池零容器分配。
+/// 节点的 Next 指针同时充当池的空闲链；批量完成在锁外执行。
+/// </summary>
 internal sealed unsafe class DefaultAsyncWaitQueue<T> : IAsyncWaitQueue<T>
 {
     private static readonly Action<object> s_cancellationCallback = CancellationCallback;
-    private static readonly ConcurrentQueue<WaitNode> s_nodePool = new();
-    private static readonly int s_maxRetainedNodes = Math.Max(16, Environment.ProcessorCount * 4);
-    private static WaitNode? s_fastNode;
-    private static int s_retainedNodeCount;
 
-    private readonly LuminDeque<WaitNode> _queue = new();
-    private readonly object _queueLock = new object();
+    // 侵入式空闲链（复用节点 Next 指针），无锁快槽 + 有界链表回退。
+    private static WaitNode? s_fastNode;
+    private static WaitNode? s_poolHead;
+    private static int s_poolCount;
+    private static readonly int s_maxRetainedNodes = Math.Max(16, Environment.ProcessorCount * 4);
+    private static readonly object s_poolGate = new();
+
+    private WaitNode? _head;
+    private WaitNode? _tail;
+    private readonly object _queueLock = new();
 
     private sealed class WaitNode
     {
-        public IntPtr CorePtr;
+        public WaitNode? Next;
+        public WaitNode? Previous;
         public DefaultAsyncWaitQueue<T>? Owner;
+        public IntPtr CorePtr;
         public CancellationTokenRegistration Registration;
         public CancellationToken CancellationToken;
         public bool HasRegistration;
@@ -44,24 +53,22 @@ internal sealed unsafe class DefaultAsyncWaitQueue<T> : IAsyncWaitQueue<T>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static WaitNode RentNode(DefaultAsyncWaitQueue<T> owner, void* core)
     {
-        var reused = false;
-        var node = Volatile.Read(ref s_fastNode);
-        if (node is not null &&
-            ReferenceEquals(Interlocked.CompareExchange(ref s_fastNode, null, node), node))
+        var node = Interlocked.Exchange(ref s_fastNode, null);
+        if (node == null)
         {
-            reused = true;
-        }
-        else if (s_nodePool.TryDequeue(out node))
-        {
-            reused = true;
-        }
-        else
-        {
-            node = new WaitNode();
+            lock (s_poolGate)
+            {
+                if (s_poolHead != null)
+                {
+                    node = s_poolHead;
+                    s_poolHead = node.Next;
+                    node.Next = null;
+                    s_poolCount--;
+                }
+            }
         }
 
-        if (reused)
-            Interlocked.Decrement(ref s_retainedNodeCount);
+        node ??= new WaitNode();
 
         node.Owner = owner;
         node.CorePtr = new IntPtr(core);
@@ -78,18 +85,31 @@ internal sealed unsafe class DefaultAsyncWaitQueue<T> : IAsyncWaitQueue<T>
         node.CancellationToken = default;
         node.HasRegistration = false;
         node.IsQueued = false;
+        node.Previous = null;
 
-        if (Interlocked.Increment(ref s_retainedNodeCount) > s_maxRetainedNodes)
-        {
-            Interlocked.Decrement(ref s_retainedNodeCount);
+        if (Interlocked.CompareExchange(ref s_fastNode, node, null) == null)
             return;
-        }
 
-        if (Volatile.Read(ref s_fastNode) is not null ||
-            Interlocked.CompareExchange(ref s_fastNode, node, null) is not null)
+        lock (s_poolGate)
         {
-            s_nodePool.Enqueue(node);
+            if (s_poolCount >= s_maxRetainedNodes)
+                return;
+
+            node.Next = s_poolHead;
+            s_poolHead = node;
+            s_poolCount++;
         }
+    }
+
+    /// <summary>释放注册：优先非阻塞 Unregister；仅回调已在途时回退到阻塞的 Dispose 保证安全。</summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static void ReleaseRegistration(WaitNode node)
+    {
+        if (!node.HasRegistration)
+            return;
+
+        node.Registration.Release();
+        node.HasRegistration = false;
     }
 
     private static void CancellationCallback(object state)
@@ -105,25 +125,24 @@ internal sealed unsafe class DefaultAsyncWaitQueue<T> : IAsyncWaitQueue<T>
             if (!node.IsQueued)
                 return;
 
-            for (var i = 0; i < _queue.Count; i++)
-            {
-                if (!ReferenceEquals(_queue[i], node))
-                    continue;
+            if (node.Previous == null)
+                _head = node.Next;
+            else
+                node.Previous.Next = node.Next;
 
-                _queue.RemoveAt(i);
-                node.IsQueued = false;
-                break;
-            }
+            if (node.Next == null)
+                _tail = node.Previous;
+            else
+                node.Next.Previous = node.Previous;
 
-            if (node.IsQueued)
-                return;
+            node.Next = node.Previous = null;
+            node.IsQueued = false;
         }
 
         var ptr = node.CorePtr.ToPointer();
         LuminTaskSourceCore<T>.TrySetCanceled(ptr, node.CancellationToken);
 
-        // A callback cannot synchronously Dispose its own registration on every target runtime.
-        // Do not pool this node; clear references so a canceled CTS cannot retain a later waiter.
+        // 回调自身在执行中：不入池，仅清除引用，避免与后续租用者纠缠。
         node.Owner = null;
         node.CorePtr = IntPtr.Zero;
         node.Registration = default;
@@ -133,7 +152,7 @@ internal sealed unsafe class DefaultAsyncWaitQueue<T> : IAsyncWaitQueue<T>
 
     public bool IsEmpty
     {
-        get { lock (_queueLock) return _queue.Count == 0; }
+        get { lock (_queueLock) return _head == null; }
     }
 
     public LuminTask<T> Enqueue()
@@ -142,130 +161,164 @@ internal sealed unsafe class DefaultAsyncWaitQueue<T> : IAsyncWaitQueue<T>
         {
             var core = LuminTaskSourceCore<T>.Create();
             var node = RentNode(this, core);
-            _queue.PushBack(node);
+            AppendLocked(node);
             return new LuminTask<T>(LuminTaskSourceCore<T>.MethodTableAutoDisposePtr, core, core->Id);
         }
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private void AppendLocked(WaitNode node)
+    {
+        if (_tail == null)
+        {
+            _head = _tail = node;
+        }
+        else
+        {
+            node.Previous = _tail;
+            _tail.Next = node;
+            _tail = node;
+        }
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private WaitNode? PopFrontLocked()
+    {
+        var node = _head;
+        if (node == null)
+            return null;
+
+        _head = node.Next;
+        if (_head == null)
+            _tail = null;
+        else
+            _head.Previous = null;
+
+        node.Next = node.Previous = null;
+        node.IsQueued = false;
+        return node;
+    }
+
+    /// <summary>锁内摘下整个队列，返回头节点；调用方在锁外逐个完成。</summary>
+    private WaitNode? DetachAllLocked()
+    {
+        var head = _head;
+        if (head == null)
+            return null;
+
+        for (var node = head; node != null; node = node.Next)
+            node.IsQueued = false;
+
+        _head = _tail = null;
+        return head;
+    }
+
     public void Dequeue(T? result = default)
     {
-        WaitNode node;
+        WaitNode? node;
         lock (_queueLock)
         {
-            if (_queue.Count == 0) return;
-            node = _queue.PopFront();
+            node = PopFrontLocked();
         }
 
-        node.IsQueued = false;
-        if (node.HasRegistration)
-            node.Registration.Dispose();
-
-        var ptr = node.CorePtr.ToPointer();
-        LuminTaskSourceCore<T>.TrySetResult(ptr, result);
-        ReturnNode(node);
+        if (node != null)
+            CompleteNode(node, result);
     }
 
     public bool TryDequeue(T? result = default)
     {
-        WaitNode node;
+        WaitNode? node;
         lock (_queueLock)
         {
-            if (_queue.Count == 0) return false;
-            node = _queue.PopFront();
+            node = PopFrontLocked();
         }
 
-        node.IsQueued = false;
-        if (node.HasRegistration)
-            node.Registration.Dispose();
+        if (node == null)
+            return false;
 
-        var ptr = node.CorePtr.ToPointer();
-        LuminTaskSourceCore<T>.TrySetResult(ptr, result);
-        ReturnNode(node);
+        CompleteNode(node, result);
         return true;
     }
 
     public void DequeueAll(T? result = default)
     {
-        WaitNode[] nodes;
+        WaitNode? head;
         lock (_queueLock)
         {
-            if (_queue.Count == 0) return;
-
-            nodes = new WaitNode[_queue.Count];
-            for (int i = 0; i < nodes.Length; i++)
-            {
-                nodes[i] = _queue.PopFront();
-            }
+            head = DetachAllLocked();
         }
 
-        foreach (var node in nodes)
+        for (var node = head; node != null;)
         {
-            node.IsQueued = false;
-            if (node.HasRegistration)
-                node.Registration.Dispose();
-
-            var ptr = node.CorePtr.ToPointer();
-            LuminTaskSourceCore<T>.TrySetResult(ptr, result);
-            ReturnNode(node);
+            var next = node.Next;
+            CompleteNode(node, result);
+            node = next;
         }
     }
 
     public bool TryCancel(LuminTask task, CancellationToken cancellationToken)
     {
-        WaitNode node = null;
-
+        WaitNode? node = null;
         lock (_queueLock)
         {
-            for (int i = 0; i < _queue.Count; i++)
+            for (var current = _head; current != null; current = current.Next)
             {
-                if (_queue[i].CorePtr.ToPointer() == task._taskSource)
-                {
-                    node = _queue[i];
-                    _queue.RemoveAt(i);
-                    break;
-                }
+                if (current.CorePtr.ToPointer() != task._taskSource)
+                    continue;
+
+                if (current.Previous == null)
+                    _head = current.Next;
+                else
+                    current.Previous.Next = current.Next;
+
+                if (current.Next == null)
+                    _tail = current.Previous;
+                else
+                    current.Next.Previous = current.Previous;
+
+                current.Next = current.Previous = null;
+                current.IsQueued = false;
+                node = current;
+                break;
             }
         }
 
-        if (node != null)
-        {
-            node.IsQueued = false;
-            if (node.HasRegistration)
-                node.Registration.Dispose();
+        if (node == null)
+            return false;
 
-            var ptr = node.CorePtr.ToPointer();
-            LuminTaskSourceCore<T>.TrySetCanceled(ptr, cancellationToken);
-            ReturnNode(node);
-            return true;
-        }
-
-        return false;
+        ReleaseRegistration(node);
+        var ptr = node.CorePtr.ToPointer();
+        LuminTaskSourceCore<T>.TrySetCanceled(ptr, cancellationToken);
+        ReturnNode(node);
+        return true;
     }
 
     public void CancelAll(CancellationToken cancellationToken)
     {
-        WaitNode[] nodes;
+        WaitNode? head;
         lock (_queueLock)
         {
-            if (_queue.Count == 0) return;
-
-            nodes = new WaitNode[_queue.Count];
-            for (int i = 0; i < nodes.Length; i++)
-            {
-                nodes[i] = _queue.PopFront();
-            }
+            head = DetachAllLocked();
         }
 
-        foreach (var node in nodes)
+        for (var node = head; node != null;)
         {
-            node.IsQueued = false;
-            if (node.HasRegistration)
-                node.Registration.Dispose();
-
+            var next = node.Next;
+            ReleaseRegistration(node);
             var ptr = node.CorePtr.ToPointer();
             LuminTaskSourceCore<T>.TrySetCanceled(ptr, cancellationToken);
             ReturnNode(node);
+            node = next;
         }
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static void CompleteNode(WaitNode node, T? result)
+    {
+        ReleaseRegistration(node);
+        var ptr = node.CorePtr.ToPointer();
+        LuminTaskSourceCore<T>.TrySetResult(ptr, result);
+        ReturnNode(node);
     }
 
     public LuminTask<T> EnqueueWithCancellation(CancellationToken cancellationToken)
@@ -282,7 +335,7 @@ internal sealed unsafe class DefaultAsyncWaitQueue<T> : IAsyncWaitQueue<T>
         {
             var core = LuminTaskSourceCore<T>.Create();
             node = RentNode(this, core);
-            _queue.PushBack(node);
+            AppendLocked(node);
             task = new LuminTask<T>(LuminTaskSourceCore<T>.MethodTableAutoDisposePtr, core, core->Id);
 
             if (cancellationToken.CanBeCanceled)
@@ -292,8 +345,6 @@ internal sealed unsafe class DefaultAsyncWaitQueue<T> : IAsyncWaitQueue<T>
                     s_cancellationCallback,
                     node);
 
-                // Register may invoke synchronously. In that case CancelFromCallback already
-                // removed and completed the node while this re-entrant lock was held.
                 if (node.IsQueued)
                 {
                     node.Registration = registration;
@@ -337,7 +388,6 @@ internal static class AsyncWaitQueueExtensions
         return task;
     }
 }
-
 public sealed class LuminDeque<T> : IDisposable, IEnumerable<T>
 {
     #region Nested Types

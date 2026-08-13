@@ -137,3 +137,26 @@ public readonly struct CancellationTokenAwaitable
         }
     }
 }
+
+internal static class CancellationTokenRegistrationReleaseExtensions
+{
+    /// <summary>释放注册：优先非阻塞 Unregister；仅回调已在途时回退到阻塞的 Dispose 保证安全。</summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static void Release(this ref CancellationTokenRegistration registration)
+    {
+        if (!registration.Token.CanBeCanceled)
+        {
+            registration = default;
+            return;
+        }
+
+#if NET5_0_OR_GREATER
+        if (!registration.Unregister())
+            registration.Dispose();
+#else
+        registration.Dispose();
+#endif
+
+        registration = default;
+    }
+}
