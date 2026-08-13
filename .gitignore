@@ -29,3 +29,6 @@ coverage/
 Thumbs.db
 
 
+
+# Local build artifacts and packed packages
+artifacts/

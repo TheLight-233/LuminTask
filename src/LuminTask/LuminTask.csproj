@@ -7,7 +7,7 @@
         <NoWarn>$(NoWarn);CS1591;CA2255;LUM1001;LUM1002;LUM1003;LUM1004;LUM1005;LUM1006</NoWarn>
         <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
         <PackageId>LuminTask</PackageId>
-        <Version>1.0.3</Version>
+        <Version>1.0.4</Version>
         <Authors>TheLight233</Authors>
         <Description>High-performance custom async/await task-like types for .NET.</Description>
         <PackageTags>async;task;awaitable;zero-allocation</PackageTags>

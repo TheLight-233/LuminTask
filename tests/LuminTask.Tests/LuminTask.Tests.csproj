@@ -13,6 +13,9 @@
 
     <ItemGroup>
       <ProjectReference Include="..\..\src\LuminTask\LuminTask.csproj" />
+      <!-- 契约分析器作用于测试工程本身的编译（dogfooding） -->
+      <ProjectReference Include="..\..\analyzer\LuminTask.Analyzer\LuminTask.Analyzer.csproj"
+                        OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
     </ItemGroup>
 
     <ItemGroup>
