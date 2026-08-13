@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <OutputType>Exe</OutputType>
+        <TargetFramework>net10.0</TargetFramework>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="..\..\analyzer\LuminTask.Analyzer\LuminTask.Analyzer.csproj" />
+        <ProjectReference Include="..\..\src\LuminTask\LuminTask.csproj" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <!-- 与 analyzer 项目保持一致，并兼容 Unity 的 Roslyn 4.3.0 -->
+        <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.3.0" />
+    </ItemGroup>
+
+</Project>

@@ -1,0 +1,1186 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
+
+namespace LuminThread.Analyzer
+{
+    /// <summary>
+    /// Walks every method-like body in the compilation and enforces the LuminTask
+    /// single-consumption contract via conservative control-flow analysis:
+    ///
+    ///   * A LuminTask local/parameter must be consumed exactly once (await / Forget /
+    ///     transfer). Aliases (copies of the struct) share one consumption group, so
+    ///     consuming the original and the copy is reported as double consumption.
+    ///   * LuminTaskCompletionSource must be completed (TrySet*) — exactly once per path.
+    ///   * LuminTask&lt;T&gt;.Result may only be read off a LuminTask.FromResult(...) expression.
+    ///   * Discarding a task with '_' is an error (no release logic runs).
+    ///
+    /// The analysis is intentionally conservative: branches clone the flow environment and
+    /// merge with partial-path tracking, and consuming inside a loop is an error unless the
+    /// symbol is reassigned inside the loop body.
+    /// </summary>
+    internal sealed class ContractEngine
+    {
+        private static readonly SymbolEqualityComparer SymEquals = SymbolEqualityComparer.Default;
+
+        private static readonly HashSet<string> s_consumingTaskApis = new(StringComparer.Ordinal)
+        {
+            "Forget", "AsTask", "AsValueTask", "ContinueWith", "Timeout", "WaitAsync",
+            "AttachExternalCancellation", "SuppressCancellationThrow", "ToCoroutine",
+        };
+
+        private static readonly HashSet<string> s_tcsCompleteApis = new(StringComparer.Ordinal)
+        {
+            "TrySetResult", "TrySetException", "TrySetCanceled",
+        };
+
+        private readonly Compilation _compilation;
+        private readonly Action<Diagnostic> _report;
+
+        private readonly INamedTypeSymbol? _taskType;
+        private readonly INamedTypeSymbol? _taskOfTType;
+        private readonly INamedTypeSymbol? _tcsType;
+        private readonly INamedTypeSymbol? _tcsOfTType;
+
+        internal ContractEngine(Compilation compilation, Action<Diagnostic> report)
+        {
+            _compilation = compilation;
+            _report = report;
+            _taskType = compilation.GetTypeByMetadataName("LuminThread.LuminTask");
+            _taskOfTType = compilation.GetTypeByMetadataName("LuminThread.LuminTask`1");
+            _tcsType = compilation.GetTypeByMetadataName("LuminThread.LuminTaskCompletionSource");
+            _tcsOfTType = compilation.GetTypeByMetadataName("LuminThread.LuminTaskCompletionSource`1");
+        }
+
+        internal void Run()
+        {
+            // The analyzer only does something meaningful when the LuminTask library is referenced.
+            if (_taskType == null && _taskOfTType == null) return;
+
+            foreach (var tree in _compilation.SyntaxTrees)
+            {
+                if (tree == null) continue;
+                SyntaxNode root;
+                try { root = tree.GetRoot(); }
+                catch { continue; }
+
+                var model = _compilation.GetSemanticModel(tree);
+
+                foreach (var node in root.DescendantNodes())
+                {
+                    if (!IsMethodLike(node)) continue;
+                    try
+                    {
+                        AnalyzeMethodLike(node, model);
+                    }
+                    catch (Exception ex)
+                    {
+                        // Never let an analyzer crash the compilation; surface the failure as a
+                        // warning instead of silently skipping the contract check.
+                        _report(Diagnostic.Create(
+                            new DiagnosticDescriptor(
+                                "LUM9999",
+                                "LuminTask analyzer internal error",
+                                "LuminTask 契约分析器在处理此方法时遇到内部错误：{0}",
+                                "LuminTask.Contract",
+                                DiagnosticSeverity.Warning,
+                                isEnabledByDefault: true),
+                            node.GetLocation(),
+                            ex.Message));
+                    }
+                }
+            }
+        }
+
+        private static bool IsMethodLike(SyntaxNode node)
+        {
+            return node is MethodDeclarationSyntax
+                or ConstructorDeclarationSyntax
+                or DestructorDeclarationSyntax
+                or OperatorDeclarationSyntax
+                or ConversionOperatorDeclarationSyntax
+                or AccessorDeclarationSyntax
+                or LocalFunctionStatementSyntax
+                or AnonymousFunctionExpressionSyntax;
+        }
+
+        private void AnalyzeMethodLike(SyntaxNode node, SemanticModel model)
+        {
+            SyntaxNode? body;
+            IEnumerable<ParameterSyntax>? parameters = null;
+
+            switch (node)
+            {
+                case MethodDeclarationSyntax m:
+                    body = m.Body ?? (SyntaxNode?)m.ExpressionBody;
+                    parameters = m.ParameterList.Parameters;
+                    break;
+                case ConstructorDeclarationSyntax c:
+                    body = c.Body ?? (SyntaxNode?)c.ExpressionBody;
+                    parameters = c.ParameterList.Parameters;
+                    break;
+                case DestructorDeclarationSyntax d:
+                    body = d.Body ?? (SyntaxNode?)d.ExpressionBody;
+                    parameters = d.ParameterList.Parameters;
+                    break;
+                case OperatorDeclarationSyntax o:
+                    body = o.Body ?? (SyntaxNode?)o.ExpressionBody;
+                    parameters = o.ParameterList.Parameters;
+                    break;
+                case ConversionOperatorDeclarationSyntax co:
+                    body = co.Body ?? (SyntaxNode?)co.ExpressionBody;
+                    parameters = co.ParameterList.Parameters;
+                    break;
+                case AccessorDeclarationSyntax a:
+                    body = a.Body ?? (SyntaxNode?)a.ExpressionBody;
+                    break;
+                case LocalFunctionStatementSyntax lf:
+                    body = lf.Body ?? (SyntaxNode?)lf.ExpressionBody;
+                    parameters = lf.ParameterList.Parameters;
+                    break;
+                case AnonymousFunctionExpressionSyntax anon:
+                    body = anon.Body;
+                    if (anon is AnonymousMethodExpressionSyntax am)
+                        parameters = am.ParameterList?.Parameters;
+                    else if (anon is ParenthesizedLambdaExpressionSyntax pl)
+                        parameters = pl.ParameterList?.Parameters;
+                    else if (anon is SimpleLambdaExpressionSyntax sl)
+                        parameters = new[] { sl.Parameter };
+                    break;
+                default:
+                    return;
+            }
+
+            if (body == null) return;
+
+            var analyzer = new FlowAnalyzer(model, _taskType, _taskOfTType, _tcsType, _tcsOfTType, _report);
+            if (parameters != null) analyzer.RegisterParameters(parameters);
+
+            if (body is BlockSyntax block)
+            {
+                var env = new FlowEnv();
+                analyzer.WalkStatements(block.Statements, env, null);
+                // Must run after the walk: task groups are registered as declarations are visited.
+                analyzer.MarkCapturedAsTrivial(body);
+                analyzer.Finalize(env);
+            }
+            else if (body is ArrowExpressionClauseSyntax arrow)
+            {
+                var env = new FlowEnv();
+                analyzer.AnalyzeExpression(arrow.Expression, env, transfer: true);
+                analyzer.MarkCapturedAsTrivial(body);
+                analyzer.Finalize(env);
+            }
+            else if (body is ExpressionSyntax expr)
+            {
+                var env = new FlowEnv();
+                analyzer.AnalyzeExpression(expr, env, transfer: true);
+                analyzer.MarkCapturedAsTrivial(body);
+                analyzer.Finalize(env);
+            }
+        }
+
+        // ------------------------------------------------------------------------------------
+        // Per-body flow analyzer
+        // ------------------------------------------------------------------------------------
+
+        internal sealed class FlowAnalyzer
+        {
+            private readonly SemanticModel _model;
+            private readonly INamedTypeSymbol? _taskType;
+            private readonly INamedTypeSymbol? _taskOfTType;
+            private readonly INamedTypeSymbol? _tcsType;
+            private readonly INamedTypeSymbol? _tcsOfTType;
+            private readonly Action<Diagnostic> _report;
+
+            private readonly Dictionary<ISymbol, Group> _taskGroups = new(SymEquals);
+            private readonly Dictionary<ISymbol, Group> _tcsGroups = new(SymEquals);
+            private readonly List<Group> _allGroups = new();
+
+            internal FlowAnalyzer(
+                SemanticModel model,
+                INamedTypeSymbol? taskType,
+                INamedTypeSymbol? taskOfTType,
+                INamedTypeSymbol? tcsType,
+                INamedTypeSymbol? tcsOfTType,
+                Action<Diagnostic> report)
+            {
+                _model = model;
+                _taskType = taskType;
+                _taskOfTType = taskOfTType;
+                _tcsType = tcsType;
+                _tcsOfTType = tcsOfTType;
+                _report = report;
+            }
+
+            /// <summary>A consumption group shared by a task and every alias copy of it.</summary>
+            internal sealed class Group
+            {
+                internal readonly string Name;
+                internal readonly Location Declaration;
+                internal Location? Site;
+                internal int Members = 1;
+                internal bool Trivial;      // FromResult / default — nothing to release, never tracked
+                internal bool LoopScoped;   // declared inside a loop body — exempt from scope-final checks
+                internal bool LoopManaged;  // reset & consumed inside a loop — lifecycle ends in the loop
+                internal bool IsTcs;        // completion source (LUM1004/LUM1006) instead of task (LUM1001/LUM1002)
+
+                internal Group(string name, Location declaration)
+                {
+                    Name = name;
+                    Declaration = declaration;
+                }
+            }
+
+            internal enum TaskKind
+            {
+                NotTask,
+                TrivialTask,
+                NewTask,
+                Handle,
+            }
+
+            // ----------------------------------------------------------------------------
+            // Registration
+            // ----------------------------------------------------------------------------
+
+            internal void RegisterParameters(IEnumerable<ParameterSyntax> parameters)
+            {
+                foreach (var p in parameters)
+                {
+                    var symbol = _model.GetDeclaredSymbol(p);
+                    if (symbol == null) continue;
+
+                    if (IsTaskType(symbol.Type))
+                        RegisterTask(symbol, p.Identifier.GetLocation(), symbol.Name);
+                    else if (IsTcsType(symbol.Type))
+                        RegisterTcs(symbol, p.Identifier.GetLocation(), symbol.Name);
+                }
+            }
+
+            /// <summary>
+            /// A task captured by an anonymous function is consumed outside this linear scope.
+            /// Mark its group trivial so the unconsumed-at-end check does not fire here.
+            /// </summary>
+            internal void MarkCapturedAsTrivial(SyntaxNode body)
+            {
+                foreach (var anon in body.DescendantNodes().OfType<AnonymousFunctionExpressionSyntax>())
+                {
+                    foreach (var id in anon.DescendantNodes().OfType<IdentifierNameSyntax>())
+                    {
+                        var symbol = ResolveSymbol(id);
+                        if (symbol != null && _taskGroups.TryGetValue(symbol, out var g))
+                            g.Trivial = true;
+                    }
+                }
+            }
+
+            // ----------------------------------------------------------------------------
+            // Statement walking
+            // ----------------------------------------------------------------------------
+
+            internal void WalkStatements(IEnumerable<StatementSyntax> statements, FlowEnv env, HashSet<Group>? assignedInLoop)
+            {
+                foreach (var s in statements)
+                    WalkStatement(s, env, assignedInLoop);
+            }
+
+            private void WalkStatement(StatementSyntax stmt, FlowEnv env, HashSet<Group>? assignedInLoop)
+            {
+                switch (stmt)
+                {
+                    case BlockSyntax b:
+                        WalkStatements(b.Statements, env, assignedInLoop);
+                        break;
+
+                    case ExpressionStatementSyntax es:
+                        AnalyzeExpression(es.Expression, env, transfer: false, bare: true, assignedInLoop);
+                        break;
+
+                    case LocalDeclarationStatementSyntax d:
+                        HandleDeclaration(d.Declaration, env, assignedInLoop);
+                        break;
+
+                    case IfStatementSyntax i:
+                        AnalyzeExpression(i.Condition, env, transfer: false, assignedInLoop: assignedInLoop);
+                        var thenEnv = env.Clone();
+                        WalkStatement(i.Statement, thenEnv, assignedInLoop);
+                        if (i.Else != null)
+                        {
+                            var elseEnv = env.Clone();
+                            WalkStatement(i.Else.Statement, elseEnv, assignedInLoop);
+                            MergeBranches(env, thenEnv, elseEnv, hasElse: true);
+                        }
+                        else
+                        {
+                            MergeBranches(env, thenEnv, null, hasElse: false);
+                        }
+                        break;
+
+                    case SwitchStatementSyntax sw:
+                        AnalyzeExpression(sw.Expression, env, transfer: false, assignedInLoop: assignedInLoop);
+                        var sectionEnvs = new List<FlowEnv>();
+                        foreach (var section in sw.Sections)
+                        {
+                            var clone = env.Clone();
+                            foreach (var label in section.Labels)
+                            {
+                                switch (label)
+                                {
+                                    case CaseSwitchLabelSyntax cl:
+                                        AnalyzeExpression(cl.Value, clone, transfer: false, assignedInLoop: assignedInLoop);
+                                        break;
+                                    case CasePatternSwitchLabelSyntax cpl when cpl.Pattern is ConstantPatternSyntax cpc:
+                                        AnalyzeExpression(cpc.Expression, clone, transfer: false, assignedInLoop: assignedInLoop);
+                                        break;
+                                }
+                            }
+                            WalkStatements(section.Statements, clone, assignedInLoop);
+                            sectionEnvs.Add(clone);
+                        }
+                        bool hasDefault = sw.Sections.Any(s => s.Labels.Any(l => l is DefaultSwitchLabelSyntax));
+                        MergeMany(env, sectionEnvs, coverCount: hasDefault ? sectionEnvs.Count : 0);
+                        break;
+
+                    case WhileStatementSyntax w:
+                        AnalyzeExpression(w.Condition, env, transfer: false, assignedInLoop: assignedInLoop);
+                        WalkLoop(w.Statement, env);
+                        break;
+
+                    case DoStatementSyntax d:
+                        WalkLoop(d.Statement, env);
+                        AnalyzeExpression(d.Condition, env, transfer: false, assignedInLoop: assignedInLoop);
+                        break;
+
+                    case ForStatementSyntax f:
+                        if (f.Declaration != null) HandleDeclaration(f.Declaration, env, assignedInLoop);
+                        foreach (var init in f.Initializers)
+                            AnalyzeExpression(init, env, transfer: false, assignedInLoop: assignedInLoop);
+                        AnalyzeExpression(f.Condition, env, transfer: false, assignedInLoop: assignedInLoop);
+                        WalkLoop(f.Statement, env);
+                        foreach (var inc in f.Incrementors)
+                            AnalyzeExpression(inc, env, transfer: false, assignedInLoop: assignedInLoop);
+                        break;
+
+                    case ForEachStatementSyntax fe:
+                        AnalyzeExpression(fe.Expression, env, transfer: false, assignedInLoop: assignedInLoop);
+                        // The foreach variable is fresh on every iteration: register it inside
+                        // the loop context so consuming it is not flagged as a double-consume.
+                        WalkLoop(fe.Statement, env, preRegister: fe);
+                        break;
+
+                    case TryStatementSyntax t:
+                        var tryEnv = env.Clone();
+                        WalkStatement(t.Block, tryEnv, assignedInLoop);
+                        var branchEnvs = new List<FlowEnv> { tryEnv };
+                        foreach (var c in t.Catches)
+                        {
+                            var catchEnv = env.Clone();
+                            if (c.Declaration != null)
+                                RegisterCatchVariable(c.Declaration);
+                            if (c.Filter != null)
+                                AnalyzeExpression(c.Filter.FilterExpression, catchEnv, transfer: false, assignedInLoop: assignedInLoop);
+                            WalkStatement(c.Block, catchEnv, assignedInLoop);
+                            branchEnvs.Add(catchEnv);
+                        }
+                        if (t.Finally != null)
+                        {
+                            // The try block is the main path; catches are exceptional branches.
+                            // Finally executes on every path: run it linearly on the merged result.
+                            MergeMany(env, branchEnvs, coverCount: 1);
+                            WalkStatement(t.Finally.Block, env, assignedInLoop);
+                        }
+                        else
+                        {
+                            MergeMany(env, branchEnvs, coverCount: 1);
+                        }
+                        break;
+
+                    case ReturnStatementSyntax r:
+                        if (r.Expression != null)
+                            AnalyzeExpression(r.Expression, env, transfer: true, assignedInLoop: assignedInLoop);
+                        break;
+
+                    case ThrowStatementSyntax th:
+                        if (th.Expression != null)
+                            AnalyzeExpression(th.Expression, env, transfer: false, assignedInLoop: assignedInLoop);
+                        break;
+
+                    case YieldStatementSyntax y:
+                        if (y.Expression != null)
+                            AnalyzeExpression(y.Expression, env, transfer: true, assignedInLoop: assignedInLoop);
+                        break;
+
+                    case LockStatementSyntax l:
+                        AnalyzeExpression(l.Expression, env, transfer: false, assignedInLoop: assignedInLoop);
+                        WalkStatement(l.Statement, env, assignedInLoop);
+                        break;
+
+                    case UsingStatementSyntax u:
+                        if (u.Declaration != null) HandleDeclaration(u.Declaration, env, assignedInLoop);
+                        if (u.Expression != null)
+                            AnalyzeExpression(u.Expression, env, transfer: false, assignedInLoop: assignedInLoop);
+                        WalkStatement(u.Statement, env, assignedInLoop);
+                        break;
+
+                    case FixedStatementSyntax fx:
+                        HandleDeclaration(fx.Declaration, env, assignedInLoop);
+                        WalkStatement(fx.Statement, env, assignedInLoop);
+                        break;
+
+                    case CheckedStatementSyntax ch:
+                        WalkStatement(ch.Block, env, assignedInLoop);
+                        break;
+
+                    case UnsafeStatementSyntax un:
+                        WalkStatement(un.Block, env, assignedInLoop);
+                        break;
+
+                    case LabeledStatementSyntax lb:
+                        WalkStatement(lb.Statement, env, assignedInLoop);
+                        break;
+
+                    case LocalFunctionStatementSyntax:
+                    case GotoStatementSyntax:
+                    case BreakStatementSyntax:
+                    case ContinueStatementSyntax:
+                    case EmptyStatementSyntax:
+                        break;
+                }
+            }
+
+            private void WalkLoop(StatementSyntax body, FlowEnv env, ForEachStatementSyntax? preRegister = null)
+            {
+                var bodyEnv = env.Clone();
+                var assignedInBody = new HashSet<Group>();
+                if (preRegister != null)
+                    HandleForeachVariable(preRegister, assignedInBody);
+                WalkStatement(body, bodyEnv, assignedInBody);
+
+                // Consuming a task inside a loop without reassigning it first = consuming
+                // the same source again on the second iteration.
+                foreach (var g in _allGroups)
+                {
+                    if (bodyEnv.Get(g) > env.Get(g) && !assignedInBody.Contains(g))
+                    {
+                        if (g.IsTcs)
+                        {
+                            Report(ContractDiagnostics.DoubleCompletedSource, g.Site ?? g.Declaration, g.Name,
+                                "（完成发生在循环体内，第二次迭代将重复完成）");
+                        }
+                        else
+                        {
+                            Report(ContractDiagnostics.DoubleConsumedTask, g.Site ?? g.Declaration, g.Name,
+                                "（消费发生在循环体内，第二次迭代将重复消费）");
+                        }
+                    }
+                }
+
+                // A task/completion-source created inside the loop body but never consumed
+                // there leaks once per iteration.
+                foreach (var g in assignedInBody)
+                {
+                    if (g.Trivial) continue;
+                    if (bodyEnv.Get(g) > 0)
+                    {
+                        // Reset and consumed within the loop: its lifecycle ends here.
+                        g.LoopManaged = true;
+                        continue;
+                    }
+
+                    string note = bodyEnv.Partial.Contains(g)
+                        ? "（在循环体内创建后仅在部分路径上被消费/完成）"
+                        : "（在循环体内创建后未消费/完成）";
+                    if (g.IsTcs)
+                        Report(ContractDiagnostics.UncompletedSource, g.Declaration, g.Name, note);
+                    else
+                        Report(ContractDiagnostics.UnconsumedTask, g.Declaration, g.Name, note);
+                }
+            }
+
+            private void MergeBranches(FlowEnv main, FlowEnv thenEnv, FlowEnv? elseEnv, bool hasElse)
+            {
+                // An if/else pair covers all paths; a bare if does not (the condition may be false).
+                MergeMany(main, elseEnv != null
+                        ? new List<FlowEnv> { thenEnv, elseEnv }
+                        : new List<FlowEnv> { thenEnv },
+                    coverCount: hasElse ? 2 : 0);
+            }
+
+            /// <summary>
+            /// Folds branch environments back into the main path.
+            /// <paramref name="coverCount"/> is the number of leading branches that jointly cover
+            /// every path (2 for if/else, 1 for a try block, 0 when the union may leave gaps,
+            /// e.g. a bare if or a switch without a default section).
+            /// </summary>
+            private void MergeMany(FlowEnv main, List<FlowEnv> branchEnvs, int coverCount)
+            {
+                if (branchEnvs.Count == 0) return;
+
+                foreach (var g in _allGroups)
+                {
+                    int baseCount = main.Get(g);
+                    int consumingBranches = 0;
+                    int coveredConsuming = 0;
+                    bool anyPartial = main.Partial.Contains(g);
+
+                    for (int i = 0; i < branchEnvs.Count; i++)
+                    {
+                        var branch = branchEnvs[i];
+                        if (branch.Get(g) > baseCount)
+                        {
+                            consumingBranches++;
+                            if (i < coverCount) coveredConsuming++;
+                        }
+                        if (branch.Partial.Contains(g)) anyPartial = true;
+                    }
+
+                    // Union the initialized sets: a task assigned on any path is "initialized".
+                    for (int i = 0; i < branchEnvs.Count; i++)
+                    {
+                        foreach (var init in branchEnvs[i].Initialized)
+                            main.Initialized.Add(init);
+                    }
+
+                    if (coverCount > 0 && coveredConsuming == coverCount)
+                    {
+                        main.Set(g, baseCount + 1);
+                    }
+                    else
+                    {
+                        main.Set(g, baseCount);
+                        if (consumingBranches > 0) anyPartial = true;
+                    }
+
+                    if (anyPartial) main.Partial.Add(g);
+                }
+            }
+
+            // ----------------------------------------------------------------------------
+            // Expression analysis
+            // ----------------------------------------------------------------------------
+
+            internal TaskKind AnalyzeExpression(
+                ExpressionSyntax? expr,
+                FlowEnv env,
+                bool transfer,
+                bool bare = false,
+                HashSet<Group>? assignedInLoop = null)
+            {
+                if (expr == null) return TaskKind.NotTask;
+
+                switch (expr)
+                {
+                    case ParenthesizedExpressionSyntax p:
+                        return AnalyzeExpression(p.Expression, env, transfer, bare, assignedInLoop);
+
+                    case CheckedExpressionSyntax c:
+                        return AnalyzeExpression(c.Expression, env, transfer, bare, assignedInLoop);
+
+                    case CastExpressionSyntax cast:
+                        return AnalyzeExpression(cast.Expression, env, transfer, bare, assignedInLoop);
+
+                    case PostfixUnaryExpressionSyntax post when post.IsKind(SyntaxKind.SuppressNullableWarningExpression):
+                        return AnalyzeExpression(post.Operand, env, transfer, bare, assignedInLoop);
+
+                    case IdentifierNameSyntax id:
+                        if (TryGetTaskGroup(id, out var g))
+                        {
+                            if (transfer) Consume(g, id.GetLocation(), env);
+                            return TaskKind.Handle;
+                        }
+                        if (TryGetTcsGroup(id, out var tcsG))
+                        {
+                            if (transfer) TransferTcs(tcsG, id.GetLocation(), env);
+                            return TaskKind.NotTask;
+                        }
+                        return TaskKind.NotTask;
+
+                    case DefaultExpressionSyntax:
+                    case LiteralExpressionSyntax when expr.IsKind(SyntaxKind.DefaultLiteralExpression):
+                        return IsTaskType(_model.GetTypeInfo(expr).Type) ? TaskKind.TrivialTask : TaskKind.NotTask;
+
+                    case LiteralExpressionSyntax lit when lit.IsKind(SyntaxKind.NullLiteralExpression):
+                        return IsTaskType(_model.GetTypeInfo(expr).Type) ? TaskKind.TrivialTask : TaskKind.NotTask;
+
+                    case AssignmentExpressionSyntax a:
+                        return AnalyzeAssignment(a, env, bare, assignedInLoop);
+
+                    case AwaitExpressionSyntax aw:
+                        if (TryGetTaskGroup(aw.Expression, out var ag))
+                        {
+                            Consume(ag, aw.GetLocation(), env);
+                        }
+                        else
+                        {
+                            AnalyzeExpression(aw.Expression, env, transfer: false, assignedInLoop: assignedInLoop);
+                        }
+                        return TaskKind.NotTask;
+
+                    case InvocationExpressionSyntax inv:
+                        return AnalyzeInvocation(inv, env, bare, assignedInLoop);
+
+                    case MemberAccessExpressionSyntax ma:
+                        return AnalyzeMemberAccess(ma, env, bare, assignedInLoop);
+
+                    case ObjectCreationExpressionSyntax oc:
+                        if (IsTcsType(_model.GetTypeInfo(oc).Type))
+                        {
+                            if (bare)
+                            {
+                                Report(ContractDiagnostics.UncompletedSource, oc.GetLocation(), "unnamed",
+                                    "（创建后未完成也未转移）");
+                            }
+                            return TaskKind.NotTask;
+                        }
+                        foreach (var arg in oc.ArgumentList?.Arguments ?? Enumerable.Empty<ArgumentSyntax>())
+                            AnalyzeExpression(arg.Expression, env, transfer: false, assignedInLoop: assignedInLoop);
+                        return TaskKind.NotTask;
+
+                    case ConditionalExpressionSyntax cond:
+                        AnalyzeExpression(cond.Condition, env, transfer: false, assignedInLoop: assignedInLoop);
+                        var thenKind = AnalyzeExpression(cond.WhenTrue, env, transfer: true, assignedInLoop: assignedInLoop);
+                        var elseKind = AnalyzeExpression(cond.WhenFalse, env, transfer: true, assignedInLoop: assignedInLoop);
+                        return (thenKind != TaskKind.NotTask || elseKind != TaskKind.NotTask)
+                            ? TaskKind.NewTask
+                            : TaskKind.NotTask;
+
+                    case InterpolatedStringExpressionSyntax interp:
+                        foreach (var content in interp.Contents)
+                        {
+                            if (content is InterpolationSyntax ip)
+                                AnalyzeExpression(ip.Expression, env, transfer: false, assignedInLoop: assignedInLoop);
+                        }
+                        return TaskKind.NotTask;
+
+                    default:
+                        return TaskKind.NotTask;
+                }
+            }
+
+            private TaskKind AnalyzeAssignment(AssignmentExpressionSyntax a, FlowEnv env, bool bare, HashSet<Group>? assignedInLoop)
+            {
+                // ' _ = task; ' does not run any release logic — contract violation.
+                if (a.Left is IdentifierNameSyntax discard && discard.Identifier.ValueText == "_")
+                {
+                    var kind = AnalyzeExpression(a.Right, env, transfer: false, assignedInLoop: assignedInLoop);
+                    if (kind == TaskKind.Handle || kind == TaskKind.NewTask || kind == TaskKind.TrivialTask)
+                        Report(ContractDiagnostics.DiscardedTask, a.GetLocation(), "unnamed");
+                    return kind == TaskKind.Handle ? TaskKind.NotTask : kind;
+                }
+
+                var leftSymbol = ResolveSymbol(a.Left);
+                if (leftSymbol != null && _taskGroups.TryGetValue(leftSymbol, out _))
+                {
+                    var rhsKind = AnalyzeExpression(a.Right, env, transfer: false, assignedInLoop: assignedInLoop);
+                    if (TryGetTaskGroup(a.Right, out var srcGroup))
+                    {
+                        // t2 = t1 → t2 becomes an alias of t1's consumption group.
+                        Remap(leftSymbol, srcGroup);
+                    }
+                    else if (rhsKind == TaskKind.TrivialTask)
+                    {
+                        MakeTrivial(leftSymbol);
+                    }
+                    else if (rhsKind == TaskKind.NewTask)
+                    {
+                        // t = GetTask() → fresh task, fresh consumption accounting.
+                        ResetOrReplace(leftSymbol, env, assignedInLoop);
+                    }
+                    return TaskKind.NotTask;
+                }
+
+                if (leftSymbol != null && _tcsGroups.TryGetValue(leftSymbol, out _))
+                {
+                    AnalyzeExpression(a.Right, env, transfer: false, assignedInLoop: assignedInLoop);
+                    return TaskKind.NotTask;
+                }
+
+                AnalyzeExpression(a.Right, env, transfer: false, assignedInLoop: assignedInLoop);
+                return TaskKind.NotTask;
+            }
+
+            private TaskKind AnalyzeInvocation(
+                InvocationExpressionSyntax inv,
+                FlowEnv env,
+                bool bare,
+                HashSet<Group>? assignedInLoop)
+            {
+                var methodSymbol = _model.GetSymbolInfo(inv).Symbol as IMethodSymbol;
+                var arguments = inv.ArgumentList?.Arguments ?? Enumerable.Empty<ArgumentSyntax>();
+
+                // Chain: receiver.Forget() / task.GetAwaiter().GetResult() / tcs.TrySetResult(...)
+                var receiver = UnwrapReceiver(inv);
+                if (receiver != null && TryGetTaskGroup(receiver, out var rg))
+                {
+                    string name = GetInvokedMemberName(inv);
+
+                    if (name == "GetResult")
+                    {
+                        // t.GetAwaiter().GetResult() → consuming. GetAwaiter() alone is not.
+                        Consume(rg, inv.GetLocation(), env);
+                        AnalyzeInvocationArguments(arguments, methodSymbol, env, assignedInLoop);
+                        return TaskKind.NotTask;
+                    }
+
+                    if (s_consumingTaskApis.Contains(name))
+                    {
+                        Consume(rg, inv.GetLocation(), env);
+                        AnalyzeInvocationArguments(arguments, methodSymbol, env, assignedInLoop);
+                        bool produces = IsTaskType(methodSymbol?.ReturnType);
+                        if (produces && bare)
+                        {
+                            Report(ContractDiagnostics.UnconsumedTask, inv.GetLocation(), name,
+                                "（链式调用产生的新任务在表达式中被丢弃）");
+                        }
+                        return produces ? TaskKind.NewTask : TaskKind.NotTask;
+                    }
+
+                    // Non-consuming member on a tracked task (Status / Id / GetAwaiter / Equals ...).
+                    AnalyzeInvocationArguments(arguments, methodSymbol, env, assignedInLoop);
+                    return TaskKind.NotTask;
+                }
+
+                if (receiver != null && TryGetTcsGroup(receiver, out var tcg))
+                {
+                    string name = GetInvokedMemberName(inv);
+                    if (s_tcsCompleteApis.Contains(name))
+                    {
+                        CompleteTcs(tcg, inv.GetLocation(), env);
+                    }
+                    AnalyzeInvocationArguments(arguments, methodSymbol, env, assignedInLoop);
+                    return TaskKind.NotTask;
+                }
+
+                // Static / free-standing invocation.
+                AnalyzeInvocationArguments(arguments, methodSymbol, env, assignedInLoop);
+
+                if (IsTaskType(methodSymbol?.ReturnType))
+                {
+                    bool trivial = methodSymbol != null &&
+                                   (methodSymbol.Name == "FromResult" || methodSymbol.Name == "CompletedTask");
+                    if (!trivial && bare)
+                    {
+                        Report(ContractDiagnostics.UnconsumedTask, inv.GetLocation(),
+                            GetInvokedMemberName(inv), "（产生的任务在表达式中被丢弃）");
+                    }
+                    return trivial ? TaskKind.TrivialTask : TaskKind.NewTask;
+                }
+
+                return TaskKind.NotTask;
+            }
+
+            private void AnalyzeInvocationArguments(
+                IEnumerable<ArgumentSyntax> arguments,
+                IMethodSymbol? methodSymbol,
+                FlowEnv env,
+                HashSet<Group>? assignedInLoop)
+            {
+                int index = 0;
+                foreach (var arg in arguments)
+                {
+                    bool transfersOwnership = false;
+                    if (methodSymbol != null && index < methodSymbol.Parameters.Length)
+                    {
+                        var paramType = methodSymbol.Parameters[index].Type;
+                        transfersOwnership = IsTaskType(paramType) || IsTcsType(paramType);
+                    }
+                    AnalyzeExpression(arg.Expression, env, transfer: transfersOwnership, assignedInLoop: assignedInLoop);
+                    index++;
+                }
+            }
+
+            private TaskKind AnalyzeMemberAccess(
+                MemberAccessExpressionSyntax ma,
+                FlowEnv env,
+                bool bare,
+                HashSet<Group>? assignedInLoop)
+            {
+                var symbol = _model.GetSymbolInfo(ma).Symbol;
+
+                // LuminTask<T>.Result contract.
+                if (symbol is IPropertySymbol prop &&
+                    prop.Name == "Result" &&
+                    prop.ContainingType?.OriginalDefinition != null &&
+                    _taskOfTType != null &&
+                    SymEquals.Equals(prop.ContainingType.OriginalDefinition, _taskOfTType))
+                {
+                    bool fromResult = ma.Expression is InvocationExpressionSyntax finv &&
+                                      _model.GetSymbolInfo(finv).Symbol is IMethodSymbol fm &&
+                                      fm.Name == "FromResult";
+                    if (!fromResult)
+                        Report(ContractDiagnostics.ResultAccess, ma.GetLocation(), prop.Name);
+                    return TaskKind.NotTask;
+                }
+
+                // tcs.Task → a new LuminTask handle that must itself be consumed.
+                if (ma.Name.Identifier.ValueText == "Task" && TryGetTcsGroup(ma.Expression, out _))
+                {
+                    if (bare)
+                    {
+                        Report(ContractDiagnostics.UnconsumedTask, ma.GetLocation(), "Task",
+                            "（任务在表达式中被丢弃）");
+                    }
+                    return TaskKind.NewTask;
+                }
+
+                AnalyzeExpression(ma.Expression, env, transfer: false, assignedInLoop: assignedInLoop);
+                return TaskKind.NotTask;
+            }
+
+            // ----------------------------------------------------------------------------
+            // Declarations
+            // ----------------------------------------------------------------------------
+
+            private void HandleDeclaration(VariableDeclarationSyntax decl, FlowEnv env, HashSet<Group>? assignedInLoop)
+            {
+                foreach (var v in decl.Variables)
+                {
+                    var symbol = _model.GetDeclaredSymbol(v) as ILocalSymbol;
+                    if (symbol == null) continue;
+                    // GetTypeInfo(v).Type is null for 'var' declarators in Roslyn 4.3.0;
+                    // the symbol always carries the (possibly inferred) type.
+                    var type = symbol.Type;
+
+                    if (IsTaskType(type))
+                    {
+                        var group = RegisterTask(symbol, v.Identifier.GetLocation(), symbol.Name);
+                        if (assignedInLoop != null)
+                        {
+                            group.LoopScoped = true;
+                            assignedInLoop.Add(group);
+                        }
+
+                        var init = v.Initializer;
+                        if (init == null) continue;
+
+                        var kind = AnalyzeExpression(init.Value, env, transfer: false, assignedInLoop: assignedInLoop);
+                        if (TryGetTaskGroup(init.Value, out var srcGroup))
+                        {
+                            Remap(symbol, srcGroup);
+                        }
+                        else if (kind == TaskKind.TrivialTask)
+                        {
+                            MakeTrivial(symbol);
+                        }
+                        else
+                        {
+                            // A real task now lives in this slot on this path.
+                            env.Initialized.Add(group);
+                        }
+                    }
+                    else if (IsTcsType(type))
+                    {
+                        RegisterTcs(symbol, v.Identifier.GetLocation(), symbol.Name);
+                        if (v.Initializer != null)
+                            AnalyzeExpression(v.Initializer.Value, env, transfer: false, assignedInLoop: assignedInLoop);
+                    }
+                    else if (v.Initializer != null)
+                    {
+                        AnalyzeExpression(v.Initializer.Value, env, transfer: false, assignedInLoop: assignedInLoop);
+                    }
+                }
+            }
+
+            private void HandleForeachVariable(ForEachStatementSyntax fe, HashSet<Group>? assignedInLoop)
+            {
+                var symbol = _model.GetDeclaredSymbol(fe);
+                if (symbol == null) return;
+
+                if (IsTaskType(symbol.Type))
+                {
+                    var group = RegisterTask(symbol, fe.Identifier.GetLocation(), symbol.Name);
+                    if (assignedInLoop != null)
+                    {
+                        group.LoopScoped = true;
+                        assignedInLoop.Add(group);
+                    }
+                }
+                else if (IsTcsType(symbol.Type))
+                {
+                    RegisterTcs(symbol, fe.Identifier.GetLocation(), symbol.Name);
+                }
+            }
+
+            private void RegisterCatchVariable(CatchDeclarationSyntax decl)
+            {
+                var symbol = _model.GetDeclaredSymbol(decl);
+                if (symbol == null) return;
+                if (IsTcsType(symbol.Type))
+                    RegisterTcs(symbol, decl.Identifier.GetLocation(), symbol.Name);
+            }
+
+            // ----------------------------------------------------------------------------
+            // Group bookkeeping
+            // ----------------------------------------------------------------------------
+
+            private Group RegisterTask(ISymbol symbol, Location location, string name)
+            {
+                var g = new Group(name, location);
+                _taskGroups[symbol] = g;
+                _allGroups.Add(g);
+                return g;
+            }
+
+            private Group RegisterTcs(ISymbol symbol, Location location, string name)
+            {
+                var g = new Group(name, location) { IsTcs = true };
+                _tcsGroups[symbol] = g;
+                _allGroups.Add(g);
+                return g;
+            }
+
+            /// <summary>t2 = t1: the new holder joins the source task's consumption group.</summary>
+            private void Remap(ISymbol symbol, Group sourceGroup)
+            {
+                if (_taskGroups.TryGetValue(symbol, out var old) && !ReferenceEquals(old, sourceGroup))
+                {
+                    old.Members--;
+                    if (old.Members <= 0) _allGroups.Remove(old);
+                }
+                sourceGroup.Members++;
+                _taskGroups[symbol] = sourceGroup;
+            }
+
+            private void MakeTrivial(ISymbol symbol)
+            {
+                if (_taskGroups.TryGetValue(symbol, out var g) && g.Members == 1)
+                {
+                    g.Trivial = true;
+                    _allGroups.Remove(g);
+                }
+            }
+
+            private void ResetOrReplace(ISymbol symbol, FlowEnv env, HashSet<Group>? assignedInLoop)
+            {
+                if (_taskGroups.TryGetValue(symbol, out var g) && g.Members == 1)
+                {
+                    // If the slot currently holds a live task that was never consumed on this
+                    // path, overwriting it leaks that task's source.
+                    if (!g.Trivial && env.Initialized.Contains(g) && env.Get(g) == 0)
+                    {
+                        Report(ContractDiagnostics.UnconsumedTask, g.Declaration, g.Name,
+                            env.Partial.Contains(g) ? "（部分路径上未消费即被重新赋值丢弃）" : "（未消费即被重新赋值丢弃）");
+                    }
+
+                    // Same slot re-purposed for a fresh task: reset its accounting.
+                    g.Trivial = false;
+                    g.LoopScoped = false;
+                    env.Set(g, 0);
+                    env.Partial.Remove(g);
+                    env.Initialized.Add(g);
+                    assignedInLoop?.Add(g);
+                    return;
+                }
+
+                if (g != null && g.Members > 1)
+                {
+                    g.Members--;
+                }
+
+                var fresh = new Group("reassigned", symbol.Locations.FirstOrDefault() ?? Location.None);
+                _taskGroups[symbol] = fresh;
+                _allGroups.Add(fresh);
+                env.Initialized.Add(fresh);
+                assignedInLoop?.Add(fresh);
+            }
+
+            private void Consume(Group g, Location site, FlowEnv env)
+            {
+                if (g.Trivial) return;
+
+                if (env.Get(g) > 0 || env.Partial.Contains(g))
+                {
+                    Report(ContractDiagnostics.DoubleConsumedTask, site, g.Name,
+                        env.Partial.Contains(g)
+                            ? "（此前在部分路径上已被消费/转移）"
+                            : "（首次消费/转移位于此前的位置）");
+                    return;
+                }
+
+                env.Set(g, 1);
+                g.Site = site;
+            }
+
+            private void TransferTcs(Group g, Location site, FlowEnv env)
+            {
+                if (env.Get(g) > 0)
+                {
+                    Report(ContractDiagnostics.DoubleCompletedSource, site, g.Name,
+                        "（完成后又被转移/使用）");
+                    return;
+                }
+                env.Set(g, 1);
+            }
+
+            private void CompleteTcs(Group g, Location site, FlowEnv env)
+            {
+                if (env.Get(g) > 0)
+                {
+                    Report(ContractDiagnostics.DoubleCompletedSource, site, g.Name);
+                    return;
+                }
+                env.Set(g, 1);
+                g.Site = site;
+            }
+
+            // ----------------------------------------------------------------------------
+            // Finalization
+            // ----------------------------------------------------------------------------
+
+            internal void Finalize(FlowEnv env)
+            {
+                var seen = new HashSet<Group>();
+                foreach (var g in _allGroups)
+                {
+                    if (!seen.Add(g)) continue;
+                    if (g.Trivial) continue;
+                    if (g.LoopScoped) continue;  // handled by WalkLoop's per-iteration check
+                    if (g.LoopManaged) continue; // reset & consumed inside a loop — lifecycle closed there
+
+                    if (env.Get(g) != 0) continue;
+
+                    // A slot that never held a task on this path has nothing to leak.
+                    if (!g.IsTcs && !env.Initialized.Contains(g)) continue;
+
+                    string note = env.Partial.Contains(g)
+                        ? (g.IsTcs ? "（部分路径未完成）" : "（部分路径未消费）")
+                        : string.Empty;
+                    if (g.IsTcs)
+                        Report(ContractDiagnostics.UncompletedSource, g.Declaration, g.Name, note);
+                    else
+                        Report(ContractDiagnostics.UnconsumedTask, g.Declaration, g.Name, note);
+                }
+            }
+
+            // ----------------------------------------------------------------------------
+            // Helpers
+            // ----------------------------------------------------------------------------
+
+            private bool IsTaskType(ITypeSymbol? type)
+            {
+                if (type == null) return false;
+                var def = type.OriginalDefinition;
+                return (_taskType != null && SymEquals.Equals(def, _taskType)) ||
+                       (_taskOfTType != null && SymEquals.Equals(def, _taskOfTType));
+            }
+
+            private bool IsTcsType(ITypeSymbol? type)
+            {
+                if (type == null) return false;
+                var def = type.OriginalDefinition;
+                return (_tcsType != null && SymEquals.Equals(def, _tcsType)) ||
+                       (_tcsOfTType != null && SymEquals.Equals(def, _tcsOfTType));
+            }
+
+            private ISymbol? ResolveSymbol(ExpressionSyntax expr)
+            {
+                if (expr is IdentifierNameSyntax id)
+                    return _model.GetSymbolInfo(id).Symbol;
+
+                if (expr is MemberAccessExpressionSyntax ma)
+                    return _model.GetSymbolInfo(ma).Symbol;
+
+                return null;
+            }
+
+            private bool TryGetTaskGroup(ExpressionSyntax expr, out Group group)
+            {
+                var symbol = ResolveSymbol(expr);
+                if (symbol != null && _taskGroups.TryGetValue(symbol, out var g))
+                {
+                    group = g;
+                    return true;
+                }
+                group = null!;
+                return false;
+            }
+
+            private bool TryGetTcsGroup(ExpressionSyntax expr, out Group group)
+            {
+                var symbol = ResolveSymbol(expr);
+                if (symbol != null && _tcsGroups.TryGetValue(symbol, out var g))
+                {
+                    group = g;
+                    return true;
+                }
+                group = null!;
+                return false;
+            }
+
+            /// <summary>
+            /// Unwraps 'task.Forget' / 'a.GetAwaiter().GetResult' receiver chains down to the
+            /// tracked expression the invocation operates on.
+            /// </summary>
+            private ExpressionSyntax? UnwrapReceiver(InvocationExpressionSyntax inv)
+            {
+                ExpressionSyntax current = inv;
+                while (true)
+                {
+                    if (current is InvocationExpressionSyntax i && i.Expression is MemberAccessExpressionSyntax m)
+                    {
+                        current = m.Expression;
+                        continue;
+                    }
+                    if (current is InvocationExpressionSyntax i2 && i2.Expression is InvocationExpressionSyntax nested)
+                    {
+                        current = nested;
+                        continue;
+                    }
+                    if (current is InvocationExpressionSyntax)
+                        return null; // delegate invocation etc.
+                    return current;  // identifier / member access / this / element access ...
+                }
+            }
+
+            private static string GetInvokedMemberName(InvocationExpressionSyntax inv)
+            {
+                if (inv.Expression is MemberAccessExpressionSyntax m)
+                    return m.Name.Identifier.ValueText;
+
+                if (inv.Expression is IdentifierNameSyntax id)
+                    return id.Identifier.ValueText;
+
+                return string.Empty;
+            }
+
+            private void Report(DiagnosticDescriptor descriptor, Location location, string name, string? note = null)
+            {
+                string formattedNote = string.IsNullOrEmpty(note) ? string.Empty : note;
+                _report(Diagnostic.Create(descriptor, location, new object[] { name, formattedNote }));
+            }
+        }
+    }
+
+    /// <summary>
+    /// Per-path flow environment: consumption counts, partial-path flags, and initialized
+    /// (holds-a-live-task) tracking per group. Branches clone it; merges fold clones back.
+    /// </summary>
+    internal sealed class FlowEnv
+    {
+        internal readonly Dictionary<object, int> Counts = new();
+        internal readonly HashSet<object> Partial = new();
+        internal readonly HashSet<object> Initialized = new();
+
+        internal FlowEnv Clone()
+        {
+            var clone = new FlowEnv();
+            foreach (var kv in Counts) clone.Counts[kv.Key] = kv.Value;
+            foreach (var g in Partial) clone.Partial.Add(g);
+            foreach (var g in Initialized) clone.Initialized.Add(g);
+            return clone;
+        }
+
+        internal int Get(object group)
+            => Counts.TryGetValue(group, out var c) ? c : 0;
+
+        internal void Set(object group, int count)
+        {
+            if (count == 0) Counts.Remove(group);
+            else Counts[group] = count;
+        }
+    }
+}

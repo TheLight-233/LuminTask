@@ -126,9 +126,39 @@ await luminTask.WaitAsync(TimeSpan.FromSeconds(5), cancellationToken);
 
 对于只需要忽略结果的后台任务，可以使用 `Forget()`。如果需要处理后台任务异常，可以传入异常处理回调。
 
-## 🧰 AsyncEx 工具类型
+## 🛡️ 契约分析器（LuminTask.Analyzer）
 
-`LuminThread.AsyncEx` 命名空间提供了一组基于 LuminTask 的异步同步原语：
+仓库包含一个基于 Roslyn 的源生成器分析器（`analyzer/LuminTask.Analyzer/`），在编译期强制 LuminTask 的单次消费契约，违反契约时直接编译报错：
+
+| 诊断 | 严重级别 | 契约 |
+| --- | --- | --- |
+| `LUM1001` | Error | LuminTask 从未被消费（await / Forget / 转移所有权），任务源将泄漏 |
+| `LUM1002` | Error | LuminTask 被多次消费（含副本别名、部分路径、循环内重复消费） |
+| `LUM1003` | Error | 在非 `FromResult` 表达式上访问 `LuminTask<T>.Result` |
+| `LUM1004` | Error | LuminTaskCompletionSource 创建后从未完成 |
+| `LUM1005` | Error | 将 LuminTask 赋给丢弃符 `_`（不会释放任务源） |
+| `LUM1006` | Warning | LuminTaskCompletionSource 在同一路径上被多次完成 |
+
+使用方式：
+
+```xml
+<ItemGroup>
+  <ProjectReference Include="path\to\LuminTask.Analyzer\LuminTask.Analyzer.csproj"
+                    OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+</ItemGroup>
+```
+
+* 分析器基于 `IIncrementalGenerator` 实现，目标框架 `netstandard2.0`，Roslyn 依赖锁定在 `4.3.0`（Unity 支持的最高版本），可直接用于 Unity 2021.2+。
+* 分析器只分析使用方的代码，不会作用于 LuminTask 库自身；未引用 LuminTask 的编译不会产生任何诊断。
+* 分析采用保守的控制流（分支合并、部分路径、循环重赋值）推断，遇到无法静态确认的合法模式可用 `#pragma warning disable LUMxxxx` 局部抑制。
+
+测试项目 `tests/LuminTask.AnalyzerTests/` 通过内存编译运行分析器并断言诊断结果，可使用以下命令运行：
+
+```bash
+dotnet run --project tests/LuminTask.AnalyzerTests/LuminTask.AnalyzerTests.csproj -c Release
+```
+
+## 🧰 AsyncEx 工具类型`LuminThread.AsyncEx` 命名空间提供了一组基于 LuminTask 的异步同步原语：
 
 * `AsyncLock`
 * `AsyncReaderWriterLock`
@@ -189,8 +219,11 @@ dotnet pack src/LuminTask/LuminTask.csproj -c Release
 LuminTask/
 ├── src/
 │   └── LuminTask/             # 核心库与 NuGet 包项目
+├── analyzer/
+│   └── LuminTask.Analyzer/    # Roslyn 契约分析器（源生成器，编译期强制消费契约）
 ├── tests/
-│   └── LuminTask.Tests/       # 单元测试、压力测试和泄漏测试
+│   ├── LuminTask.Tests/       # 单元测试、压力测试和泄漏测试
+│   └── LuminTask.AnalyzerTests/  # 分析器内存编译测试
 ├── benchmarks/
 │   └── LuminTask.Benchmarks/  # BenchmarkDotNet 基准测试
 ├── Unity/                     # 可选 Unity 集成扩展

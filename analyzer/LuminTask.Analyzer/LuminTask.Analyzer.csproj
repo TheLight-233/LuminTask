@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <TargetFramework>netstandard2.0</TargetFramework>
+        <LangVersion>13</LangVersion>
+        <Nullable>enable</Nullable>
+        <ImplicitUsings>disable</ImplicitUsings>
+        <IsRoslynComponent>true</IsRoslynComponent>
+        <EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
+        <IncludeBuildOutput>false</IncludeBuildOutput>
+        <DevelopmentDependency>true</DevelopmentDependency>
+        <NoWarn>$(NoWarn);RS1035;RS2008</NoWarn>
+        <Version>1.0.0</Version>
+        <Description>Roslyn source generator that enforces LuminTask single-consumption contracts at compile time.</Description>
+        <PackageId>LuminTask.Analyzer</PackageId>
+        <PackageTags>analyzer;generator;LuminTask;contract</PackageTags>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <!-- 4.3.0 是 Unity 支持的 Roslyn 最高版本，analyzer 二进制需与其兼容 -->
+        <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.3.0" PrivateAssets="all" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <None Include="$(OutputPath)\$(AssemblyName).dll" Pack="true" PackagePath="analyzers/dotnet/cs" Visible="false" />
+    </ItemGroup>
+
+</Project>
