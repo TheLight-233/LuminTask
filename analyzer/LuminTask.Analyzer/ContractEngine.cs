@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.Immutable;
 using System.Linq;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
@@ -7,92 +8,100 @@ using Microsoft.CodeAnalysis.CSharp.Syntax;
 
 namespace LuminThread.Analyzer
 {
-    /// <summary>
-    /// Walks every method-like body in the compilation and enforces the LuminTask
-    /// single-consumption contract via conservative control-flow analysis:
-    ///
-    ///   * A LuminTask local/parameter must be consumed exactly once (await / Forget /
-    ///     transfer). Aliases (copies of the struct) share one consumption group, so
-    ///     consuming the original and the copy is reported as double consumption.
-    ///   * LuminTaskCompletionSource must be completed (TrySet*) — exactly once per path.
-    ///   * LuminTask&lt;T&gt;.Result may only be read off a LuminTask.FromResult(...) expression.
-    ///   * Discarding a task with '_' is an error (no release logic runs).
-    ///
-    /// The analysis is intentionally conservative: branches clone the flow environment and
-    /// merge with partial-path tracking, and consuming inside a loop is an error unless the
-    /// symbol is reassigned inside the loop body.
-    /// </summary>
-    internal sealed class ContractEngine
+    /// <summary>LuminTask 相关类型符号，一次解析后供方法级分析复用。</summary>
+    internal readonly struct ContractTypes
     {
-        private static readonly SymbolEqualityComparer SymEquals = SymbolEqualityComparer.Default;
+        internal readonly INamedTypeSymbol? TaskType;
+        internal readonly INamedTypeSymbol? TaskOfTType;
+        internal readonly INamedTypeSymbol? TcsType;
+        internal readonly INamedTypeSymbol? TcsOfTType;
 
-        private static readonly HashSet<string> s_consumingTaskApis = new(StringComparer.Ordinal)
+        internal bool HasLuminTask => TaskType != null || TaskOfTType != null;
+
+        internal ContractTypes(Compilation compilation)
         {
-            "Forget", "AsTask", "AsValueTask", "ContinueWith", "Timeout", "WaitAsync",
-            "AttachExternalCancellation", "SuppressCancellationThrow", "ToCoroutine",
-        };
+            TaskType = compilation.GetTypeByMetadataName("LuminThread.LuminTask");
+            TaskOfTType = compilation.GetTypeByMetadataName("LuminThread.LuminTask`1");
+            TcsType = compilation.GetTypeByMetadataName("LuminThread.LuminTaskCompletionSource");
+            TcsOfTType = compilation.GetTypeByMetadataName("LuminThread.LuminTaskCompletionSource`1");
+        }
+    }
 
-        private static readonly HashSet<string> s_tcsCompleteApis = new(StringComparer.Ordinal)
+    /// <summary>
+    /// 契约分析引擎入口：由源生成器的语法管线按单个方法/字段调用，输出诊断。
+    /// </summary>
+    internal static class ContractEngine
+    {
+        /// <summary>分析一个方法体（含局部函数、lambda、访问器等），返回契约诊断。</summary>
+        internal static ImmutableArray<Diagnostic> AnalyzeMethod(SyntaxNode node, SemanticModel model)
         {
-            "TrySetResult", "TrySetException", "TrySetCanceled",
-        };
+            var types = new ContractTypes(model.Compilation);
+            if (!types.HasLuminTask)
+                return ImmutableArray<Diagnostic>.Empty;
 
-        private readonly Compilation _compilation;
-        private readonly Action<Diagnostic> _report;
-
-        private readonly INamedTypeSymbol? _taskType;
-        private readonly INamedTypeSymbol? _taskOfTType;
-        private readonly INamedTypeSymbol? _tcsType;
-        private readonly INamedTypeSymbol? _tcsOfTType;
-
-        internal ContractEngine(Compilation compilation, Action<Diagnostic> report)
-        {
-            _compilation = compilation;
-            _report = report;
-            _taskType = compilation.GetTypeByMetadataName("LuminThread.LuminTask");
-            _taskOfTType = compilation.GetTypeByMetadataName("LuminThread.LuminTask`1");
-            _tcsType = compilation.GetTypeByMetadataName("LuminThread.LuminTaskCompletionSource");
-            _tcsOfTType = compilation.GetTypeByMetadataName("LuminThread.LuminTaskCompletionSource`1");
+            var diagnostics = new List<Diagnostic>();
+            try
+            {
+                new MethodAnalysis(model, types, diagnostics.Add).Run(node);
+            }
+            catch (Exception ex)
+            {
+                // 分析器内部错误以警告形式呈现，而不是让编译崩溃。
+                diagnostics.Add(Diagnostic.Create(
+                    new DiagnosticDescriptor(
+                        "LUM9999",
+                        "LuminTask analyzer internal error",
+                        "LuminTask 契约分析器在处理此方法时遇到内部错误：{0}",
+                        "LuminTask.Contract",
+                        DiagnosticSeverity.Warning,
+                        isEnabledByDefault: true),
+                    node.GetLocation(),
+                    ex.Message));
+            }
+            return diagnostics.ToImmutableArray();
         }
 
-        internal void Run()
+        /// <summary>分析字段声明：LuminTask 字段不受单次消费生命周期跟踪。</summary>
+        internal static ImmutableArray<Diagnostic> AnalyzeField(SyntaxNode node, SemanticModel model)
         {
-            // The analyzer only does something meaningful when the LuminTask library is referenced.
-            if (_taskType == null && _taskOfTType == null) return;
+            var types = new ContractTypes(model.Compilation);
+            if (!types.HasLuminTask)
+                return ImmutableArray<Diagnostic>.Empty;
 
-            foreach (var tree in _compilation.SyntaxTrees)
+            var field = (FieldDeclarationSyntax)node;
+            var diagnostics = ImmutableArray.CreateBuilder<Diagnostic>();
+
+            foreach (var v in field.Declaration.Variables)
             {
-                if (tree == null) continue;
-                SyntaxNode root;
-                try { root = tree.GetRoot(); }
-                catch { continue; }
+                if (model.GetDeclaredSymbol(v) is not IFieldSymbol symbol)
+                    continue;
 
-                var model = _compilation.GetSemanticModel(tree);
+                if (!IsTaskType(types, symbol.Type))
+                    continue;
 
-                foreach (var node in root.DescendantNodes())
-                {
-                    if (!IsMethodLike(node)) continue;
-                    try
-                    {
-                        AnalyzeMethodLike(node, model);
-                    }
-                    catch (Exception ex)
-                    {
-                        // Never let an analyzer crash the compilation; surface the failure as a
-                        // warning instead of silently skipping the contract check.
-                        _report(Diagnostic.Create(
-                            new DiagnosticDescriptor(
-                                "LUM9999",
-                                "LuminTask analyzer internal error",
-                                "LuminTask 契约分析器在处理此方法时遇到内部错误：{0}",
-                                "LuminTask.Contract",
-                                DiagnosticSeverity.Warning,
-                                isEnabledByDefault: true),
-                            node.GetLocation(),
-                            ex.Message));
-                    }
-                }
+                diagnostics.Add(Diagnostic.Create(
+                    ContractDiagnostics.FieldStoredTask,
+                    v.Identifier.GetLocation(),
+                    new object[] { symbol.Name, string.Empty }));
             }
+
+            return diagnostics.ToImmutable();
+        }
+
+        internal static bool IsTaskType(ContractTypes types, ITypeSymbol? type)
+        {
+            if (type == null) return false;
+            var def = type.OriginalDefinition;
+            return (types.TaskType != null && SymbolEqualityComparer.Default.Equals(def, types.TaskType)) ||
+                   (types.TaskOfTType != null && SymbolEqualityComparer.Default.Equals(def, types.TaskOfTType));
+        }
+
+        internal static bool IsTcsType(ContractTypes types, ITypeSymbol? type)
+        {
+            if (type == null) return false;
+            var def = type.OriginalDefinition;
+            return (types.TcsType != null && SymbolEqualityComparer.Default.Equals(def, types.TcsType)) ||
+                   (types.TcsOfTType != null && SymbolEqualityComparer.Default.Equals(def, types.TcsOfTType));
         }
 
         private static bool IsMethodLike(SyntaxNode node)
@@ -107,9 +116,41 @@ namespace LuminThread.Analyzer
                 or AnonymousFunctionExpressionSyntax;
         }
 
-        private void AnalyzeMethodLike(SyntaxNode node, SemanticModel model)
+        /// <summary>单次方法分析上下文。</summary>
+        private sealed class MethodAnalysis
         {
-            SyntaxNode? body;
+            private static readonly SymbolEqualityComparer SymEquals = SymbolEqualityComparer.Default;
+
+            private static readonly HashSet<string> s_consumingTaskApis = new(StringComparer.Ordinal)
+            {
+                "Forget", "AsTask", "AsValueTask", "ContinueWith", "Timeout", "WaitAsync",
+                "AttachExternalCancellation", "SuppressCancellationThrow", "ToCoroutine",
+            };
+
+            private static readonly HashSet<string> s_tcsCompleteApis = new(StringComparer.Ordinal)
+            {
+                "TrySetResult", "TrySetException", "TrySetCanceled",
+            };
+
+            private readonly SemanticModel _model;
+            private readonly ContractTypes _types;
+            private readonly Action<Diagnostic> _report;
+
+            internal MethodAnalysis(SemanticModel model, ContractTypes types, Action<Diagnostic> report)
+            {
+                _model = model;
+                _types = types;
+                _report = report;
+            }
+
+            internal void Run(SyntaxNode node)
+            {
+                if (!IsMethodLike(node)) return;
+                AnalyzeMethodLike(node);
+            }
+            private void AnalyzeMethodLike(SyntaxNode node)
+            {
+                SyntaxNode? body;
             IEnumerable<ParameterSyntax>? parameters = null;
 
             switch (node)
@@ -156,7 +197,7 @@ namespace LuminThread.Analyzer
 
             if (body == null) return;
 
-            var analyzer = new FlowAnalyzer(model, _taskType, _taskOfTType, _tcsType, _tcsOfTType, _report);
+            var analyzer = new FlowAnalyzer(_model, _types, _report);
             if (parameters != null) analyzer.RegisterParameters(parameters);
 
             if (body is BlockSyntax block)
@@ -190,10 +231,7 @@ namespace LuminThread.Analyzer
         internal sealed class FlowAnalyzer
         {
             private readonly SemanticModel _model;
-            private readonly INamedTypeSymbol? _taskType;
-            private readonly INamedTypeSymbol? _taskOfTType;
-            private readonly INamedTypeSymbol? _tcsType;
-            private readonly INamedTypeSymbol? _tcsOfTType;
+            private readonly ContractTypes _types;
             private readonly Action<Diagnostic> _report;
 
             private readonly Dictionary<ISymbol, Group> _taskGroups = new(SymEquals);
@@ -202,17 +240,11 @@ namespace LuminThread.Analyzer
 
             internal FlowAnalyzer(
                 SemanticModel model,
-                INamedTypeSymbol? taskType,
-                INamedTypeSymbol? taskOfTType,
-                INamedTypeSymbol? tcsType,
-                INamedTypeSymbol? tcsOfTType,
+                ContractTypes types,
                 Action<Diagnostic> report)
             {
                 _model = model;
-                _taskType = taskType;
-                _taskOfTType = taskOfTType;
-                _tcsType = tcsType;
-                _tcsOfTType = tcsOfTType;
+                _types = types;
                 _report = report;
             }
 
@@ -845,8 +877,8 @@ namespace LuminThread.Analyzer
                 if (symbol is IPropertySymbol prop &&
                     prop.Name == "Result" &&
                     prop.ContainingType?.OriginalDefinition != null &&
-                    _taskOfTType != null &&
-                    SymEquals.Equals(prop.ContainingType.OriginalDefinition, _taskOfTType))
+                    _types.TaskOfTType != null &&
+                    SymEquals.Equals(prop.ContainingType.OriginalDefinition, _types.TaskOfTType))
                 {
                     bool fromResult = ma.Expression is InvocationExpressionSyntax finv &&
                                       _model.GetSymbolInfo(finv).Symbol is IMethodSymbol fm &&
@@ -1106,20 +1138,10 @@ namespace LuminThread.Analyzer
             // ----------------------------------------------------------------------------
 
             private bool IsTaskType(ITypeSymbol? type)
-            {
-                if (type == null) return false;
-                var def = type.OriginalDefinition;
-                return (_taskType != null && SymEquals.Equals(def, _taskType)) ||
-                       (_taskOfTType != null && SymEquals.Equals(def, _taskOfTType));
-            }
+                => ContractEngine.IsTaskType(_types, type);
 
             private bool IsTcsType(ITypeSymbol? type)
-            {
-                if (type == null) return false;
-                var def = type.OriginalDefinition;
-                return (_tcsType != null && SymEquals.Equals(def, _tcsType)) ||
-                       (_tcsOfTType != null && SymEquals.Equals(def, _tcsOfTType));
-            }
+                => ContractEngine.IsTcsType(_types, type);
 
             private ISymbol? ResolveSymbol(ExpressionSyntax expr)
             {
@@ -1228,4 +1250,5 @@ namespace LuminThread.Analyzer
             else Counts[group] = count;
         }
     }
+}
 }

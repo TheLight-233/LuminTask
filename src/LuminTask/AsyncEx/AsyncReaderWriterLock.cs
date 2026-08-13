@@ -1,73 +1,102 @@
 using System;
-using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Threading;
 
 namespace LuminThread.AsyncEx
 {
-    [DebuggerDisplay("Id = {Id}, State = {GetStateForDebugger}, ReaderCount = {GetReaderCountForDebugger}")]
-    public sealed class AsyncReaderWriterLock : IDisposable
+    /// <summary>异步读写锁。值类型句柄，共享内部状态。</summary>
+    public readonly struct AsyncReaderWriterLock : IDisposable
     {
+        private readonly ReaderWriterLockState? _state;
+
+        public AsyncReaderWriterLock()
+        {
+            _state = new ReaderWriterLockState();
+        }
+
+        public int Id => GetState().Id;
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public LuminTask<ReaderKey> ReaderLockAsync(CancellationToken cancellationToken = default)
+            => GetState().ReaderLockAsync(cancellationToken);
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public LuminTask<WriterKey> WriterLockAsync(CancellationToken cancellationToken = default)
+            => GetState().WriterLockAsync(cancellationToken);
+
+        public void Dispose() => GetState().Dispose();
+
+        private ReaderWriterLockState GetState()
+            => _state ?? throw new InvalidOperationException("AsyncReaderWriterLock 未初始化（default 值）或已释放");
+    }
+
+    /// <summary>读锁句柄。Dispose 即释放。结构体，获取读锁无分配。</summary>
+    public readonly struct ReaderKey : IDisposable
+    {
+        private readonly ReaderWriterLockState? _state;
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal ReaderKey(ReaderWriterLockState state) => _state = state;
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void Dispose() => _state?.ReleaseReaderLock();
+    }
+
+    /// <summary>写锁句柄。Dispose 即释放。结构体，获取写锁无分配。</summary>
+    public readonly struct WriterKey : IDisposable
+    {
+        private readonly ReaderWriterLockState? _state;
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal WriterKey(ReaderWriterLockState state) => _state = state;
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void Dispose() => _state?.ReleaseWriterLock();
+    }
+
+    internal sealed class ReaderWriterLockState : IDisposable
+    {
+        private static int s_nextId = 1;
+
         private readonly object _mutex = new object();
-        private readonly IAsyncWaitQueue<IDisposable> _writerQueue;
-        private readonly IAsyncWaitQueue<IDisposable> _readerQueue;
+        private readonly IAsyncWaitQueue<ReaderKey> _readerQueue;
+        private readonly IAsyncWaitQueue<WriterKey> _writerQueue;
 
         private int _locksHeld;
         private int _id;
         private volatile bool _isDisposed;
 
-        public AsyncReaderWriterLock()
+        public ReaderWriterLockState()
         {
-            _writerQueue = new DefaultAsyncWaitQueue<IDisposable>();
-            _readerQueue = new DefaultAsyncWaitQueue<IDisposable>();
+            _writerQueue = new DefaultAsyncWaitQueue<WriterKey>();
+            _readerQueue = new DefaultAsyncWaitQueue<ReaderKey>();
         }
-
-        ~AsyncReaderWriterLock() => Dispose(false);
 
         public int Id
         {
             get
             {
                 if (_id == 0)
-                    Interlocked.CompareExchange(ref _id, GetNextId(), 0);
+                    Interlocked.CompareExchange(ref _id, Interlocked.Increment(ref s_nextId), 0);
                 return _id;
             }
         }
 
-        private static int _nextId = 1;
-        private static int GetNextId() => Interlocked.Increment(ref _nextId);
-
-        internal enum State { Unlocked, ReadLocked, WriteLocked }
-
-        [DebuggerNonUserCode]
-        internal State GetStateForDebugger
-        {
-            get
-            {
-                if (_locksHeld == 0) return State.Unlocked;
-                if (_locksHeld == -1) return State.WriteLocked;
-                return State.ReadLocked;
-            }
-        }
-
-        [DebuggerNonUserCode]
-        internal int GetReaderCountForDebugger => Math.Max(0, _locksHeld);
-
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public LuminTask<IDisposable> ReaderLockAsync(CancellationToken cancellationToken = default)
+        public LuminTask<ReaderKey> ReaderLockAsync(CancellationToken cancellationToken = default)
         {
             if (_isDisposed)
                 throw new ObjectDisposedException(nameof(AsyncReaderWriterLock));
 
             if (cancellationToken.IsCancellationRequested)
-                return LuminTask.FromCanceled<IDisposable>(cancellationToken);
+                return LuminTask.FromCanceled<ReaderKey>(cancellationToken);
 
             lock (_mutex)
             {
                 if (_locksHeld >= 0 && _writerQueue.IsEmpty)
                 {
                     _locksHeld++;
-                    return LuminTask.FromResult<IDisposable>(new ReaderKey(this));
+                    return LuminTask.FromResult(new ReaderKey(this));
                 }
 
                 return _readerQueue.Enqueue(cancellationToken);
@@ -75,20 +104,20 @@ namespace LuminThread.AsyncEx
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public LuminTask<IDisposable> WriterLockAsync(CancellationToken cancellationToken = default)
+        public LuminTask<WriterKey> WriterLockAsync(CancellationToken cancellationToken = default)
         {
             if (_isDisposed)
                 throw new ObjectDisposedException(nameof(AsyncReaderWriterLock));
 
             if (cancellationToken.IsCancellationRequested)
-                return LuminTask.FromCanceled<IDisposable>(cancellationToken);
+                return LuminTask.FromCanceled<WriterKey>(cancellationToken);
 
             lock (_mutex)
             {
                 if (_locksHeld == 0)
                 {
                     _locksHeld = -1;
-                    return LuminTask.FromResult<IDisposable>(new WriterKey(this));
+                    return LuminTask.FromResult(new WriterKey(this));
                 }
 
                 return _writerQueue.Enqueue(cancellationToken);
@@ -141,52 +170,11 @@ namespace LuminThread.AsyncEx
 
         public void Dispose()
         {
-            Dispose(true);
-            GC.SuppressFinalize(this);
-        }
-
-        private void Dispose(bool disposing)
-        {
             if (!_isDisposed)
             {
                 _isDisposed = true;
-                if (disposing)
-                {
-                    _writerQueue.CancelAll(default);
-                    _readerQueue.CancelAll(default);
-                }
-            }
-        }
-
-        private sealed class ReaderKey : IDisposable
-        {
-            private AsyncReaderWriterLock _asyncReaderWriterLock;
-
-            public ReaderKey(AsyncReaderWriterLock asyncReaderWriterLock)
-            {
-                _asyncReaderWriterLock = asyncReaderWriterLock;
-            }
-
-            public void Dispose()
-            {
-                var rwLock = Interlocked.Exchange(ref _asyncReaderWriterLock, null);
-                rwLock?.ReleaseReaderLock();
-            }
-        }
-
-        private sealed class WriterKey : IDisposable
-        {
-            private AsyncReaderWriterLock _asyncReaderWriterLock;
-
-            public WriterKey(AsyncReaderWriterLock asyncReaderWriterLock)
-            {
-                _asyncReaderWriterLock = asyncReaderWriterLock;
-            }
-
-            public void Dispose()
-            {
-                var rwLock = Interlocked.Exchange(ref _asyncReaderWriterLock, null);
-                rwLock?.ReleaseWriterLock();
+                _writerQueue.CancelAll(default);
+                _readerQueue.CancelAll(default);
             }
         }
     }
@@ -194,14 +182,14 @@ namespace LuminThread.AsyncEx
     public static class AsyncReaderWriterLockExtensions
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static LuminTask<IDisposable> ReaderLockAsync(this AsyncReaderWriterLock rwLock, TimeSpan timeout)
+        public static LuminTask<ReaderKey> ReaderLockAsync(this AsyncReaderWriterLock rwLock, TimeSpan timeout)
         {
             using var cts = new CancellationTokenSource(timeout);
             return rwLock.ReaderLockAsync(cts.Token);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static LuminTask<IDisposable> WriterLockAsync(this AsyncReaderWriterLock rwLock, TimeSpan timeout)
+        public static LuminTask<WriterKey> WriterLockAsync(this AsyncReaderWriterLock rwLock, TimeSpan timeout)
         {
             using var cts = new CancellationTokenSource(timeout);
             return rwLock.WriterLockAsync(cts.Token);

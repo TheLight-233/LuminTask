@@ -4,20 +4,187 @@ using System.Threading;
 
 namespace LuminThread.AsyncEx
 {
-    public sealed class AsyncManualResetEvent : IDisposable
+    /// <summary>异步手动复位事件。值类型句柄，共享池化内部状态。</summary>
+    public readonly struct AsyncManualResetEvent : IDisposable
     {
-        private readonly object _mutex = new object();
+        private readonly ManualResetEventState? _state;
+        private readonly uint _generation;
+
+        public AsyncManualResetEvent() : this(false)
+        {
+        }
+
+        public AsyncManualResetEvent(bool initialState)
+        {
+            var state = EventStatePool<ManualResetEventState>.Rent();
+            state.Initialize(initialState);
+            _state = state;
+            _generation = state.Generation;
+        }
+
+        public bool IsSet => GetState().IsSet;
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public LuminTask WaitAsync(CancellationToken cancellationToken = default)
+            => GetState().WaitAsync(cancellationToken);
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void Set() => GetState().Set();
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void Reset() => GetState().Reset();
+
+        public void Dispose()
+        {
+            var state = _state;
+            if (state == null || state.Generation != _generation) return;
+            state.Dispose();
+        }
+
+        private ManualResetEventState GetState()
+            => _state is { } state && state.Generation == _generation
+                ? state
+                : throw new InvalidOperationException("AsyncManualResetEvent 未初始化（default 值）、已释放或句柄过期");
+    }
+
+    /// <summary>带结果的异步手动复位事件。值类型句柄，共享池化内部状态。</summary>
+    public readonly struct AsyncManualResetEvent<T> : IDisposable
+    {
+        private readonly ManualResetEventState<T>? _state;
+        private readonly uint _generation;
+
+        public AsyncManualResetEvent()
+        {
+            var state = EventStatePool<ManualResetEventState<T>>.Rent();
+            state.Initialize();
+            _state = state;
+            _generation = state.Generation;
+        }
+
+        public bool IsSet => GetState().IsSet;
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public LuminTask<T> WaitAsync(CancellationToken cancellationToken = default)
+            => GetState().WaitAsync(cancellationToken);
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void Set(T result) => GetState().Set(result);
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void Reset() => GetState().Reset();
+
+        public void Dispose()
+        {
+            var state = _state;
+            if (state == null || state.Generation != _generation) return;
+            state.Dispose();
+        }
+
+        private ManualResetEventState<T> GetState()
+            => _state is { } state && state.Generation == _generation
+                ? state
+                : throw new InvalidOperationException("AsyncManualResetEvent<T> 未初始化（default 值）、已释放或句柄过期");
+    }
+
+    /// <summary>异步自动复位事件。值类型句柄，共享池化内部状态。</summary>
+    public readonly struct AsyncAutoResetEvent : IDisposable
+    {
+        private readonly AutoResetEventState? _state;
+        private readonly uint _generation;
+
+        public AsyncAutoResetEvent() : this(false)
+        {
+        }
+
+        public AsyncAutoResetEvent(bool initialState)
+        {
+            var state = EventStatePool<AutoResetEventState>.Rent();
+            state.Initialize(initialState);
+            _state = state;
+            _generation = state.Generation;
+        }
+
+        public bool IsSet => GetState().IsSet;
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public LuminTask WaitAsync(CancellationToken cancellationToken = default)
+            => GetState().WaitAsync(cancellationToken);
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void Set() => GetState().Set();
+
+        public void Dispose()
+        {
+            var state = _state;
+            if (state == null || state.Generation != _generation) return;
+            state.Dispose();
+        }
+
+        private AutoResetEventState GetState()
+            => _state is { } state && state.Generation == _generation
+                ? state
+                : throw new InvalidOperationException("AsyncAutoResetEvent 未初始化（default 值）、已释放或句柄过期");
+    }
+
+    /// <summary>带结果的异步自动复位事件。值类型句柄，共享池化内部状态。</summary>
+    public readonly struct AsyncAutoResetEvent<T> : IDisposable
+    {
+        private readonly AutoResetEventState<T>? _state;
+        private readonly uint _generation;
+
+        public AsyncAutoResetEvent()
+        {
+            var state = EventStatePool<AutoResetEventState<T>>.Rent();
+            state.Initialize();
+            _state = state;
+            _generation = state.Generation;
+        }
+
+        public bool IsSet => GetState().IsSet;
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public LuminTask<T> WaitAsync(CancellationToken cancellationToken = default)
+            => GetState().WaitAsync(cancellationToken);
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void Set(T result) => GetState().Set(result);
+
+        public void Dispose()
+        {
+            var state = _state;
+            if (state == null || state.Generation != _generation) return;
+            state.Dispose();
+        }
+
+        private AutoResetEventState<T> GetState()
+            => _state is { } state && state.Generation == _generation
+                ? state
+                : throw new InvalidOperationException("AsyncAutoResetEvent<T> 未初始化（default 值）、已释放或句柄过期");
+    }
+
+    internal sealed class ManualResetEventState : IEventPoolableState
+    {
+        private readonly object _mutex = new();
         private readonly IAsyncWaitQueue<object> _queue;
         private volatile bool _isSet;
         private volatile bool _isDisposed;
 
-        public AsyncManualResetEvent(bool initialState = false)
+        internal uint Generation { get; private set; }
+
+        public ManualResetEventState()
         {
             _queue = new DefaultAsyncWaitQueue<object>();
-            _isSet = initialState;
         }
 
-        ~AsyncManualResetEvent() => Dispose(false);
+        internal void Initialize(bool initialState) => _isSet = initialState;
+
+        void IEventPoolableState.ResetForReuse()
+        {
+            _isSet = false;
+            _isDisposed = false;
+        }
+
+        void IEventPoolableState.BumpGeneration() => Generation++;
 
         public bool IsSet => _isSet;
 
@@ -66,35 +233,38 @@ namespace LuminThread.AsyncEx
 
         public void Dispose()
         {
-            Dispose(true);
-            GC.SuppressFinalize(this);
-        }
-
-        private void Dispose(bool disposing)
-        {
-            if (!_isDisposed)
-            {
-                _isDisposed = true;
-                if (disposing)
-                    _queue.CancelAll(default);
-            }
+            if (_isDisposed) return;
+            _isDisposed = true;
+            _queue.CancelAll(default);
+            EventStatePool<ManualResetEventState>.Return(this);
         }
     }
 
-    public sealed class AsyncManualResetEvent<T> : IDisposable
+    internal sealed class ManualResetEventState<T> : IEventPoolableState
     {
-        private readonly object _mutex = new object();
+        private readonly object _mutex = new();
         private readonly IAsyncWaitQueue<T> _queue;
         private volatile bool _isSet;
         private T _result;
         private volatile bool _isDisposed;
 
-        public AsyncManualResetEvent()
+        internal uint Generation { get; private set; }
+
+        public ManualResetEventState()
         {
             _queue = new DefaultAsyncWaitQueue<T>();
         }
 
-        ~AsyncManualResetEvent() => Dispose(false);
+        internal void Initialize() { }
+
+        void IEventPoolableState.ResetForReuse()
+        {
+            _isSet = false;
+            _result = default;
+            _isDisposed = false;
+        }
+
+        void IEventPoolableState.BumpGeneration() => Generation++;
 
         public bool IsSet => _isSet;
 
@@ -145,35 +315,36 @@ namespace LuminThread.AsyncEx
 
         public void Dispose()
         {
-            Dispose(true);
-            GC.SuppressFinalize(this);
-        }
-
-        private void Dispose(bool disposing)
-        {
-            if (!_isDisposed)
-            {
-                _isDisposed = true;
-                if (disposing)
-                    _queue.CancelAll(default);
-            }
+            if (_isDisposed) return;
+            _isDisposed = true;
+            _queue.CancelAll(default);
+            EventStatePool<ManualResetEventState<T>>.Return(this);
         }
     }
 
-    public sealed class AsyncAutoResetEvent : IDisposable
+    internal sealed class AutoResetEventState : IEventPoolableState
     {
-        private readonly object _mutex = new object();
+        private readonly object _mutex = new();
         private readonly IAsyncWaitQueue<object> _queue;
         private volatile bool _isSet;
         private volatile bool _isDisposed;
 
-        public AsyncAutoResetEvent(bool initialState = false)
+        internal uint Generation { get; private set; }
+
+        public AutoResetEventState()
         {
             _queue = new DefaultAsyncWaitQueue<object>();
-            _isSet = initialState;
         }
 
-        ~AsyncAutoResetEvent() => Dispose(false);
+        internal void Initialize(bool initialState) => _isSet = initialState;
+
+        void IEventPoolableState.ResetForReuse()
+        {
+            _isSet = false;
+            _isDisposed = false;
+        }
+
+        void IEventPoolableState.BumpGeneration() => Generation++;
 
         public bool IsSet => _isSet;
 
@@ -212,35 +383,38 @@ namespace LuminThread.AsyncEx
 
         public void Dispose()
         {
-            Dispose(true);
-            GC.SuppressFinalize(this);
-        }
-
-        private void Dispose(bool disposing)
-        {
-            if (!_isDisposed)
-            {
-                _isDisposed = true;
-                if (disposing)
-                    _queue.CancelAll(default);
-            }
+            if (_isDisposed) return;
+            _isDisposed = true;
+            _queue.CancelAll(default);
+            EventStatePool<AutoResetEventState>.Return(this);
         }
     }
 
-    public sealed class AsyncAutoResetEvent<T> : IDisposable
+    internal sealed class AutoResetEventState<T> : IEventPoolableState
     {
-        private readonly object _mutex = new object();
+        private readonly object _mutex = new();
         private readonly IAsyncWaitQueue<T> _queue;
         private volatile bool _isSet;
         private T _result;
         private volatile bool _isDisposed;
 
-        public AsyncAutoResetEvent()
+        internal uint Generation { get; private set; }
+
+        public AutoResetEventState()
         {
             _queue = new DefaultAsyncWaitQueue<T>();
         }
 
-        ~AsyncAutoResetEvent() => Dispose(false);
+        internal void Initialize() { }
+
+        void IEventPoolableState.ResetForReuse()
+        {
+            _isSet = false;
+            _result = default;
+            _isDisposed = false;
+        }
+
+        void IEventPoolableState.BumpGeneration() => Generation++;
 
         public bool IsSet => _isSet;
 
@@ -286,18 +460,10 @@ namespace LuminThread.AsyncEx
 
         public void Dispose()
         {
-            Dispose(true);
-            GC.SuppressFinalize(this);
-        }
-
-        private void Dispose(bool disposing)
-        {
-            if (!_isDisposed)
-            {
-                _isDisposed = true;
-                if (disposing)
-                    _queue.CancelAll(default);
-            }
+            if (_isDisposed) return;
+            _isDisposed = true;
+            _queue.CancelAll(default);
+            EventStatePool<AutoResetEventState<T>>.Return(this);
         }
     }
 

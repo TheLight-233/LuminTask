@@ -81,5 +81,16 @@ namespace LuminThread.Analyzer
             isEnabledByDefault: true,
             description:
                 "完成源只应完成一次。同一路径上的第二次 TrySet* 调用永远返回 false，通常意味着状态管理错误。");
+
+        /// <summary>LUM1007: a LuminTask stored in a field escapes single-consumption lifecycle tracking.</summary>
+        internal static readonly DiagnosticDescriptor FieldStoredTask = new(
+            id: "LUM1007",
+            title: "LuminTask 存储在字段中",
+            messageFormat: "字段 '{0}' 持有 LuminTask：字段不受单次消费生命周期跟踪，容易泄漏或重复消费。建议改用局部变量并及时 await/Forget{1}",
+            category: Category,
+            defaultSeverity: DiagnosticSeverity.Warning,
+            isEnabledByDefault: true,
+            description:
+                "分析器只跟踪方法内的局部变量与参数。存放在字段中的 LuminTask 的所有权与消费时机无法静态确认，是泄漏与重复消费的高发来源。");
     }
 }

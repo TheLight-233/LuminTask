@@ -52,6 +52,7 @@ public static class Program
         Run("提前 return 转移后再 await → 干净", "if (c) return t; await t;", Array.Empty<string>(), asyncReturnsTask: true);
         Run("分支消费后 return，另一分支 await → 干净", "if (c) { await t; return default!; } await t;", Array.Empty<string>(), asyncReturnsTask: true);
         Run("if/else return 后继续路径双消费 → LUM1002", "if (a) { await t; } else { return default!; } await t;", new[] { "LUM1002" }, asyncReturnsTask: true);
+        Run("字段存储 LuminTask → LUM1007", "var t = GetTask(); await t;", new[] { "LUM1007" }, hasTaskField: true);
         Run("未引用 LuminTask → 不报任何诊断", "int x = 1;", Array.Empty<string>(), noReference: true);
 
         // --- violations -------------------------------------------------------------
@@ -184,6 +185,25 @@ public static class Program
         }
         """;
 
+    private const string FieldTemplate = """
+        using System;
+        using System.Threading;
+        using System.Threading.Tasks;
+        using LuminThread;
+
+        class Test
+        {
+            LuminTask<int> _stored;
+
+            async Task M()
+            {
+        {BODY}
+            }
+
+            static LuminTask<int> GetTask() => LuminTask.FromResult(1);
+        }
+        """;
+
     private static readonly MetadataReference[] s_luminTaskRefs = new[]
     {
         MetadataReference.CreateFromFile(typeof(LuminThread.LuminTask).Assembly.Location),
@@ -253,12 +273,14 @@ public static class Program
         bool iterator = false,
         bool asyncBody = false,
         bool returnsTask = false,
-        bool asyncReturnsTask = false)
+        bool asyncReturnsTask = false,
+        bool hasTaskField = false)
     {
         string template = iterator ? IteratorTemplate
             : asyncBody ? AsyncTemplate
             : returnsTask ? ReturnTaskTemplate
             : asyncReturnsTask ? AsyncReturnTaskTemplate
+            : hasTaskField ? FieldTemplate
             : Template;
 
         string code = template.Replace("{BODY}", body);

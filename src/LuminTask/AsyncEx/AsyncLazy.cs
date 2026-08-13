@@ -13,26 +13,50 @@ namespace LuminThread.AsyncEx
         RetryOnFailure = 0x2,
     }
 
-    public sealed class AsyncLazy<T> : IDisposable
+    /// <summary>延迟异步初始化。值类型句柄，共享内部状态。</summary>
+    public readonly struct AsyncLazy<T> : IDisposable
+    {
+        private readonly AsyncLazyState<T>? _state;
+
+        public AsyncLazy(Func<T> factory, AsyncLazyFlags flags = AsyncLazyFlags.None)
+        {
+            _state = new AsyncLazyState<T>(WrapFactory(factory), flags);
+        }
+
+        public AsyncLazy(Func<LuminTask<T>> factory, AsyncLazyFlags flags = AsyncLazyFlags.None)
+        {
+            _state = new AsyncLazyState<T>(factory, flags);
+        }
+
+        public bool IsStarted => GetState().IsStarted;
+
+        public LuminTask<T> Task => GetState().Task;
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public LuminTaskAwaiter<T> GetAwaiter() => Task.GetAwaiter();
+
+        public void Dispose() => GetState().Dispose();
+
+        private AsyncLazyState<T> GetState()
+            => _state ?? throw new InvalidOperationException("AsyncLazy<T> 未初始化（default 值）或已释放");
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static Func<LuminTask<T>> WrapFactory(Func<T> factory)
+            => () => LuminTask.FromResult(factory());
+    }
+
+    internal sealed class AsyncLazyState<T> : IDisposable
     {
         private readonly object _mutex = new object();
         private readonly Func<LuminTask<T>> _factory;
         private readonly bool _retryOnFailure;
 
-        // The factory runs at most once; its outcome is parked in a System Task<T>.
-        // Unlike LuminTask (which, like ValueTask, may only be awaited once), a Task<T>
-        // is safe to await any number of times, so every caller can observe the result
-        // without re-awaiting a single LuminTask source (which would double-free it).
+        // 工厂至多执行一次；结果停在 Task<T> 上供任意次数 await（LuminTask 只能消费一次）。
         private Task<T>? _resolution;
         private bool _isStarted;
         private volatile bool _isDisposed;
 
-        public AsyncLazy(Func<T> factory, AsyncLazyFlags flags = AsyncLazyFlags.None)
-            : this(WrapFactory(factory), flags)
-        {
-        }
-
-        public AsyncLazy(Func<LuminTask<T>> factory, AsyncLazyFlags flags = AsyncLazyFlags.None)
+        public AsyncLazyState(Func<LuminTask<T>> factory, AsyncLazyFlags flags)
         {
             if (factory == null)
                 throw new ArgumentNullException(nameof(factory));
@@ -44,8 +68,6 @@ namespace LuminThread.AsyncEx
             else
                 _factory = () => LuminTask.Run(factory);
         }
-
-        ~AsyncLazy() => Dispose(false);
 
         public bool IsStarted
         {
@@ -74,12 +96,10 @@ namespace LuminThread.AsyncEx
                     resolution = _resolution!;
                 }
 
-                // Fresh single-await LuminTask per access, wrapping the shared resolution.
                 return AwaitResolution(resolution);
             }
         }
 
-        // Invokes the factory exactly once and stores its outcome in the returned Task<T>.
         private async Task<T> ResolveAsync()
         {
             try
@@ -100,27 +120,9 @@ namespace LuminThread.AsyncEx
         private static async LuminTask<T> AwaitResolution(Task<T> resolution)
             => await resolution;
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public LuminTaskAwaiter<T> GetAwaiter() => Task.GetAwaiter();
-
         public void Dispose()
         {
-            Dispose(true);
-            GC.SuppressFinalize(this);
-        }
-
-        private void Dispose(bool disposing)
-        {
-            if (!_isDisposed)
-            {
-                _isDisposed = true;
-            }
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private static Func<LuminTask<T>> WrapFactory(Func<T> factory)
-        {
-            return () => LuminTask.FromResult(factory());
+            _isDisposed = true;
         }
     }
 

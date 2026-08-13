@@ -7,7 +7,122 @@ using LuminThread.TaskSource;
 
 namespace LuminThread.AsyncEx;
 
-public sealed unsafe class AsyncReactiveProperty<T> : IDisposable
+/// <summary>异步响应式属性。值类型句柄，共享内部状态。</summary>
+public readonly struct AsyncReactiveProperty<T> : IDisposable
+{
+    internal readonly ReactivePropertyState<T>? State;
+
+    public AsyncReactiveProperty(T initialValue, IEqualityComparer<T>? equalityComparer = null)
+    {
+        State = new ReactivePropertyState<T>(initialValue, equalityComparer);
+    }
+
+    internal AsyncReactiveProperty(ReactivePropertyState<T> state)
+    {
+        State = state;
+    }
+
+    public T Value
+    {
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        get => GetState().Value;
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        set => GetState().Value = value;
+    }
+
+    public event Action<T>? OnValueChanged
+    {
+        add => GetState().OnValueChanged += value;
+        remove => GetState().OnValueChanged -= value;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public IDisposable Subscribe(Action<T> onValueChanged) => GetState().Subscribe(onValueChanged);
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public LuminTask<T> WaitAsync(CancellationToken cancellationToken = default)
+        => GetState().WaitAsync(cancellationToken);
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public ILuminTaskAsyncEnumerable<T> WithoutCurrent()
+        => new AsyncReactivePropertyEnumerable<T>(GetState(), emitCurrent: false);
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public ILuminTaskAsyncEnumerable<T> ToAsyncEnumerable()
+        => new AsyncReactivePropertyEnumerable<T>(GetState(), emitCurrent: true);
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public ReadonlyAsyncReactiveProperty<T> ToReadOnly() => new(GetState());
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public void Dispose() => GetState().Dispose();
+
+    private ReactivePropertyState<T> GetState()
+        => State ?? throw new InvalidOperationException("AsyncReactiveProperty<T> 未初始化（default 值）或已释放");
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static implicit operator T(AsyncReactiveProperty<T> property) => property.GetState().Value;
+}
+
+/// <summary>只读异步响应式属性。值类型句柄，共享内部状态。</summary>
+public readonly struct ReadonlyAsyncReactiveProperty<T> : IDisposable
+{
+    private readonly ReactivePropertyState<T>? _state;
+    private readonly bool _ownsSource;
+
+    public ReadonlyAsyncReactiveProperty(T initialValue, IEqualityComparer<T>? equalityComparer = null)
+    {
+        _state = new ReactivePropertyState<T>(initialValue, equalityComparer);
+        _ownsSource = true;
+    }
+
+    public ReadonlyAsyncReactiveProperty(AsyncReactiveProperty<T> source)
+    {
+        _state = source.State ?? throw new InvalidOperationException("AsyncReactiveProperty<T> 未初始化（default 值）或已释放");
+        _ownsSource = false;
+    }
+
+    internal ReadonlyAsyncReactiveProperty(ReactivePropertyState<T> source)
+    {
+        _state = source;
+        _ownsSource = false;
+    }
+
+    public T Value => GetState().Value;
+
+    public event Action<T>? OnValueChanged
+    {
+        add => GetState().OnValueChanged += value;
+        remove => GetState().OnValueChanged -= value;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public IDisposable Subscribe(Action<T> onValueChanged) => GetState().Subscribe(onValueChanged);
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public LuminTask<T> WaitAsync(CancellationToken cancellationToken = default)
+        => GetState().WaitAsync(cancellationToken);
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public ILuminTaskAsyncEnumerable<T> WithoutCurrent() => GetState().WithoutCurrent();
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public ILuminTaskAsyncEnumerable<T> ToAsyncEnumerable() => GetState().ToAsyncEnumerable();
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public void Dispose()
+    {
+        if (_ownsSource) GetState().Dispose();
+    }
+
+    private ReactivePropertyState<T> GetState()
+        => _state ?? throw new InvalidOperationException("ReadonlyAsyncReactiveProperty<T> 未初始化（default 值）或已释放");
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static implicit operator T(ReadonlyAsyncReactiveProperty<T> property) => property.Value;
+}
+
+internal sealed unsafe class ReactivePropertyState<T> : IDisposable
 {
     private T _value;
     private readonly IEqualityComparer<T> _equalityComparer;
@@ -17,7 +132,7 @@ public sealed unsafe class AsyncReactiveProperty<T> : IDisposable
 
     public event Action<T>? OnValueChanged;
 
-    public AsyncReactiveProperty(T initialValue, IEqualityComparer<T>? equalityComparer = null)
+    public ReactivePropertyState(T initialValue, IEqualityComparer<T>? equalityComparer)
     {
         _value = initialValue;
         _equalityComparer = equalityComparer ?? EqualityComparer<T>.Default;
@@ -35,11 +150,20 @@ public sealed unsafe class AsyncReactiveProperty<T> : IDisposable
         }
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public IDisposable Subscribe(Action<T> onValueChanged)
     {
         OnValueChanged += onValueChanged;
         return new Subscription(this, onValueChanged);
     }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public ILuminTaskAsyncEnumerable<T> WithoutCurrent()
+        => new AsyncReactivePropertyEnumerable<T>(this, emitCurrent: false);
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public ILuminTaskAsyncEnumerable<T> ToAsyncEnumerable()
+        => new AsyncReactivePropertyEnumerable<T>(this, emitCurrent: true);
 
     private void RaiseAll(T value)
     {
@@ -64,10 +188,10 @@ public sealed unsafe class AsyncReactiveProperty<T> : IDisposable
 
     private sealed class Subscription : IDisposable
     {
-        private AsyncReactiveProperty<T>? _parent;
+        private ReactivePropertyState<T>? _parent;
         private Action<T> _handler;
 
-        public Subscription(AsyncReactiveProperty<T> parent, Action<T> handler)
+        public Subscription(ReactivePropertyState<T> parent, Action<T> handler)
         {
             _parent = parent;
             _handler = handler;
@@ -106,17 +230,6 @@ public sealed unsafe class AsyncReactiveProperty<T> : IDisposable
 
         return task;
     }
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public ILuminTaskAsyncEnumerable<T> WithoutCurrent()
-        => new AsyncReactivePropertyEnumerable<T>(this, emitCurrent: false);
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public ILuminTaskAsyncEnumerable<T> ToAsyncEnumerable()
-        => new AsyncReactivePropertyEnumerable<T>(this, emitCurrent: true);
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public ReadonlyAsyncReactiveProperty<T> ToReadOnly() => new(this);
 
     internal void TryRemoveAwaiter(AsyncReactivePropertyAwaiter<T> awaiter)
     {
@@ -161,56 +274,6 @@ public sealed unsafe class AsyncReactiveProperty<T> : IDisposable
             node = next;
         }
     }
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static implicit operator T(AsyncReactiveProperty<T> property) => property._value;
-}
-
-public sealed class ReadonlyAsyncReactiveProperty<T> : IDisposable
-{
-    private readonly AsyncReactiveProperty<T> _source;
-    private readonly bool _ownsSource;
-
-    public ReadonlyAsyncReactiveProperty(T initialValue, IEqualityComparer<T>? equalityComparer = null)
-    {
-        _source = new AsyncReactiveProperty<T>(initialValue, equalityComparer);
-        _ownsSource = true;
-    }
-
-    public ReadonlyAsyncReactiveProperty(AsyncReactiveProperty<T> source)
-    {
-        _source = source ?? throw new ArgumentNullException(nameof(source));
-        _ownsSource = false;
-    }
-
-    public T Value => _source.Value;
-
-    public event Action<T>? OnValueChanged
-    {
-        add    => _source.OnValueChanged += value;
-        remove => _source.OnValueChanged -= value;
-    }
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public IDisposable Subscribe(Action<T> onValueChanged) => _source.Subscribe(onValueChanged);
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public LuminTask<T> WaitAsync(CancellationToken cancellationToken = default)
-        => _source.WaitAsync(cancellationToken);
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public ILuminTaskAsyncEnumerable<T> WithoutCurrent() => _source.WithoutCurrent();
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public ILuminTaskAsyncEnumerable<T> ToAsyncEnumerable() => _source.ToAsyncEnumerable();
-
-    public void Dispose()
-    {
-        if (_ownsSource) _source.Dispose();
-    }
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static implicit operator T(ReadonlyAsyncReactiveProperty<T> property) => property.Value;
 }
 
 internal sealed unsafe class AsyncReactivePropertyAwaiter<T>
@@ -247,12 +310,12 @@ internal sealed unsafe class AsyncReactivePropertyAwaiter<T>
         LuminTaskSourceCore<T>.Dispose(core);
     }
 
-    public void RegisterCancellation(CancellationToken cancellationToken, AsyncReactiveProperty<T> parent)
+    public void RegisterCancellation(CancellationToken cancellationToken, ReactivePropertyState<T> parent)
     {
         _registration = cancellationToken.Register(
             static state =>
             {
-                var (awaiter, p) = ((AsyncReactivePropertyAwaiter<T>, AsyncReactiveProperty<T>))state!;
+                var (awaiter, p) = ((AsyncReactivePropertyAwaiter<T>, ReactivePropertyState<T>))state!;
                 p.TryRemoveAwaiter(awaiter);
                 awaiter.TrySetCanceled();
             },
@@ -262,21 +325,21 @@ internal sealed unsafe class AsyncReactivePropertyAwaiter<T>
 
 internal sealed class AsyncReactivePropertyEnumerable<T> : ILuminTaskAsyncEnumerable<T>
 {
-    private readonly AsyncReactiveProperty<T> _property;
+    private readonly ReactivePropertyState<T> _state;
     private readonly bool _emitCurrent;
 
-    public AsyncReactivePropertyEnumerable(AsyncReactiveProperty<T> property, bool emitCurrent)
+    public AsyncReactivePropertyEnumerable(ReactivePropertyState<T> state, bool emitCurrent)
     {
-        _property = property;
+        _state = state;
         _emitCurrent = emitCurrent;
     }
 
     public ILuminTaskAsyncEnumerator<T> GetAsyncEnumerator(CancellationToken cancellationToken = default)
-        => new Enumerator(_property, _emitCurrent, cancellationToken);
+        => new Enumerator(_state, _emitCurrent, cancellationToken);
 
     private sealed class Enumerator : ILuminTaskAsyncEnumerator<T>
     {
-        private readonly AsyncReactiveProperty<T> _property;
+        private readonly ReactivePropertyState<T> _state;
         private readonly CancellationToken _ct;
         private bool _firstMove;
         private readonly bool _emitCurrent;
@@ -284,9 +347,9 @@ internal sealed class AsyncReactivePropertyEnumerable<T> : ILuminTaskAsyncEnumer
 
         public T Current => _current;
 
-        public Enumerator(AsyncReactiveProperty<T> property, bool emitCurrent, CancellationToken ct)
+        public Enumerator(ReactivePropertyState<T> state, bool emitCurrent, CancellationToken ct)
         {
-            _property = property;
+            _state = state;
             _emitCurrent = emitCurrent;
             _firstMove = true;
             _current = default!;
@@ -295,13 +358,13 @@ internal sealed class AsyncReactivePropertyEnumerable<T> : ILuminTaskAsyncEnumer
 
         public LuminTask<bool> MoveNextAsync()
         {
-            if (_ct.IsCancellationRequested || _property.IsDisposed)
+            if (_ct.IsCancellationRequested || _state.IsDisposed)
                 return LuminTask.FromResult(false);
 
             if (_firstMove && _emitCurrent)
             {
                 _firstMove = false;
-                _current = _property.Value;
+                _current = _state.Value;
                 return LuminTask.FromResult(true);
             }
             _firstMove = false;
@@ -313,7 +376,7 @@ internal sealed class AsyncReactivePropertyEnumerable<T> : ILuminTaskAsyncEnumer
         {
             try
             {
-                _current = await _property.WaitAsync(_ct);
+                _current = await _state.WaitAsync(_ct);
                 return true;
             }
             catch (OperationCanceledException)

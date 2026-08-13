@@ -4,19 +4,43 @@ using System.Threading;
 
 namespace LuminThread.AsyncEx
 {
-    public sealed class AsyncConditionVariable : IDisposable
+    /// <summary>异步条件变量。值类型句柄，共享内部状态。</summary>
+    public readonly struct AsyncConditionVariable : IDisposable
+    {
+        private readonly ConditionVariableState? _state;
+
+        public AsyncConditionVariable(AsyncLock asyncLock)
+        {
+            _state = new ConditionVariableState(asyncLock);
+        }
+
+        public async LuminTask<AsyncLock.ReleaseScope> WaitAsync(
+            CancellationToken cancellationToken = default)
+            => await GetState().WaitAsync(cancellationToken);
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void Notify() => GetState().Notify();
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void NotifyAll() => GetState().NotifyAll();
+
+        public void Dispose() => GetState().Dispose();
+
+        private ConditionVariableState GetState()
+            => _state ?? throw new InvalidOperationException("AsyncConditionVariable 未初始化（default 值）或已释放");
+    }
+
+    internal sealed class ConditionVariableState : IDisposable
     {
         private readonly AsyncLock _asyncLock;
         private readonly IAsyncWaitQueue<bool> _waitQueue;
         private volatile bool _isDisposed;
 
-        public AsyncConditionVariable(AsyncLock asyncLock)
+        public ConditionVariableState(AsyncLock asyncLock)
         {
-            _asyncLock = asyncLock ?? throw new ArgumentNullException(nameof(asyncLock));
+            _asyncLock = asyncLock;
             _waitQueue = new DefaultAsyncWaitQueue<bool>();
         }
-
-        ~AsyncConditionVariable() => Dispose(false);
 
         public async LuminTask<AsyncLock.ReleaseScope> WaitAsync(
             CancellationToken cancellationToken = default)
@@ -28,7 +52,7 @@ namespace LuminThread.AsyncEx
 
             var waitTask = _waitQueue.Enqueue(cancellationToken);
 
-            _asyncLock.Release();
+            _asyncLock.ReleaseLock();
 
             await waitTask;
 
@@ -51,17 +75,10 @@ namespace LuminThread.AsyncEx
 
         public void Dispose()
         {
-            Dispose(true);
-            GC.SuppressFinalize(this);
-        }
-
-        private void Dispose(bool disposing)
-        {
             if (!_isDisposed)
             {
                 _isDisposed = true;
-                if (disposing)
-                    _waitQueue.CancelAll(default);
+                _waitQueue.CancelAll(default);
             }
         }
     }
@@ -74,29 +91,80 @@ namespace LuminThread.AsyncEx
             AsyncLock.ReleaseScope currentLock,
             CancellationToken cancellationToken = default)
         {
-            if (conditionVariable == null)
-                throw new ArgumentNullException(nameof(conditionVariable));
-
             return conditionVariable.WaitAsync(cancellationToken);
         }
     }
 
-    public sealed class AsyncMonitor : IDisposable
+    /// <summary>异步监视器（互斥锁 + 条件变量）。值类型句柄，共享内部状态。</summary>
+    public readonly struct AsyncMonitor : IDisposable
+    {
+        private readonly MonitorState? _state;
+
+        public AsyncMonitor()
+        {
+            _state = new MonitorState();
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public LuminTask<MonitorScope> EnterAsync(CancellationToken cancellationToken = default)
+            => GetState().EnterAsync(cancellationToken);
+
+        public void Dispose() => GetState().Dispose();
+
+        private MonitorState GetState()
+            => _state ?? throw new InvalidOperationException("AsyncMonitor 未初始化（default 值）或已释放");
+
+        /// <summary>监视器临界区句柄。Dispose 即退出。结构体，无分配。</summary>
+        public struct MonitorScope : IDisposable
+        {
+            private readonly MonitorState? _monitor;
+            private AsyncLock.ReleaseScope _lockScope;
+
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            internal MonitorScope(MonitorState monitor, AsyncLock.ReleaseScope lockScope)
+            {
+                _monitor = monitor;
+                _lockScope = lockScope;
+            }
+
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            public LuminTask<MonitorScope> WaitAsync(CancellationToken cancellationToken = default)
+            {
+                return WaitInternalAsync(cancellationToken);
+            }
+
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            private async LuminTask<MonitorScope> WaitInternalAsync(CancellationToken cancellationToken)
+            {
+                var newLockScope = await _monitor!.WaitInternalAsync(_lockScope, cancellationToken);
+                return new MonitorScope(_monitor, newLockScope);
+            }
+
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            public void Pulse() => _monitor?.PulseInternal();
+
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            public void PulseAll() => _monitor?.PulseAllInternal();
+
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            public void Dispose() => _lockScope.Dispose();
+        }
+    }
+
+    internal sealed class MonitorState : IDisposable
     {
         private readonly AsyncLock _asyncLock;
         private readonly AsyncConditionVariable _conditionVariable;
         private volatile bool _isDisposed;
 
-        public AsyncMonitor()
+        public MonitorState()
         {
             _asyncLock = new AsyncLock();
             _conditionVariable = new AsyncConditionVariable(_asyncLock);
         }
 
-        ~AsyncMonitor() => Dispose(false);
-
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public LuminTask<MonitorScope> EnterAsync(CancellationToken cancellationToken = default)
+        public LuminTask<AsyncMonitor.MonitorScope> EnterAsync(CancellationToken cancellationToken = default)
         {
             if (_isDisposed)
                 throw new ObjectDisposedException(nameof(AsyncMonitor));
@@ -105,10 +173,10 @@ namespace LuminThread.AsyncEx
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private async LuminTask<MonitorScope> EnterInternalAsync(CancellationToken cancellationToken)
+        private async LuminTask<AsyncMonitor.MonitorScope> EnterInternalAsync(CancellationToken cancellationToken)
         {
             var lockScope = await _asyncLock.LockAsync(cancellationToken);
-            return new MonitorScope(this, lockScope);
+            return new AsyncMonitor.MonitorScope(this, lockScope);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -127,56 +195,12 @@ namespace LuminThread.AsyncEx
 
         public void Dispose()
         {
-            Dispose(true);
-            GC.SuppressFinalize(this);
-        }
-
-        private void Dispose(bool disposing)
-        {
             if (!_isDisposed)
             {
                 _isDisposed = true;
-                if (disposing)
-                {
-                    _conditionVariable.Dispose();
-                    _asyncLock.Dispose();
-                }
+                _conditionVariable.Dispose();
+                _asyncLock.Dispose();
             }
-        }
-
-        public struct MonitorScope : IDisposable
-        {
-            private readonly AsyncMonitor _monitor;
-            private AsyncLock.ReleaseScope _lockScope;
-
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            internal MonitorScope(AsyncMonitor monitor, AsyncLock.ReleaseScope lockScope)
-            {
-                _monitor = monitor;
-                _lockScope = lockScope;
-            }
-
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public LuminTask<MonitorScope> WaitAsync(CancellationToken cancellationToken = default)
-            {
-                return WaitInternalAsync(cancellationToken);
-            }
-
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            private async LuminTask<MonitorScope> WaitInternalAsync(CancellationToken cancellationToken)
-            {
-                var newLockScope = await _monitor.WaitInternalAsync(_lockScope, cancellationToken);
-                return new MonitorScope(_monitor, newLockScope);
-            }
-
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public void Pulse() => _monitor?.PulseInternal();
-
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public void PulseAll() => _monitor?.PulseAllInternal();
-
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public void Dispose() => _lockScope.Dispose();
         }
     }
 

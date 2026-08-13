@@ -6,6 +6,11 @@ namespace LuminTaskUnitTest;
 
 public static class Program
 {
+    public static async LuminTask<int> Add(int a, int b)
+    {
+        return await LuminTask.Run(() => a + b);
+    }
+    
     public static async Task<int> Main()
     {
         Console.WriteLine("==================== LuminTask Unit Tests ====================");
@@ -20,7 +25,7 @@ public static class Program
         Console.WriteLine();
 
         var r = new TestRunner();
-
+        
         Console.WriteLine("[Basic]");
         await BasicTests.RunAll(r);
         Console.WriteLine();

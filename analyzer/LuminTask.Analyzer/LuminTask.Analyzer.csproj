@@ -9,7 +9,8 @@
         <EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
         <IncludeBuildOutput>false</IncludeBuildOutput>
         <!-- 纯分析器包：developmentDependency 使 NuGet 还原时始终携带 analyzers 资产，
-             不会向消费方传递任何运行时依赖。 -->
+             不会向消费方传递任何运行时依赖。
+             RS2008：发布跟踪仅适用于 DiagnosticAnalyzer，源生成器无 SupportedDiagnostics。 -->
         <DevelopmentDependency>true</DevelopmentDependency>
         <NoWarn>$(NoWarn);RS1035;RS2008</NoWarn>
         <Version>1.0.0</Version>
