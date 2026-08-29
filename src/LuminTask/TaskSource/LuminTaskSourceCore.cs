@@ -55,6 +55,16 @@ public unsafe struct LuminTaskSourceCore<T>
     public short Id;
     private static readonly bool ShouldClearResult = TypeMeta<T>.Size > 64;
 
+#if NET8_0_OR_GREATER
+    // Decides whether a value-type result is stored inline in ResultValue or boxed in a
+    // StateTuple. Snapshotted once per closed T so the GET/SET/RELEASE hot paths read a
+    // plain static field (inlinable constant) instead of a volatile global on every call.
+    // This matches LuminTask.Model's startup-only intent: the model must be fixed before the
+    // first use of a given T, after which it is treated as immutable for that type.
+    private static readonly bool UseInlineResultBits =
+        LuminTask.Model is LuminTaskModel.Unsafe || !TypeMeta<T>.IsReferenceOrContainsReferences;
+#endif
+
     public LuminTaskSourceCore(short id)
     {
         Id = id;
@@ -196,7 +206,7 @@ public unsafe struct LuminTaskSourceCore<T>
                 if (TypeMeta<T>.IsValueType)
                 {
 #if NET8_0_OR_GREATER
-                    if (LuminTask.Model is LuminTaskModel.Unsafe || !TypeMeta<T>.IsReferenceOrContainsReferences)
+                    if (UseInlineResultBits)
                     {
                         if (TypeMeta<T>.Size > 64)
                         {
@@ -266,7 +276,7 @@ public unsafe struct LuminTaskSourceCore<T>
                 if (TypeMeta<T>.IsValueType)
                 {
 #if NET8_0_OR_GREATER
-                    if (LuminTask.Model is LuminTaskModel.Unsafe || !TypeMeta<T>.IsReferenceOrContainsReferences)
+                    if (UseInlineResultBits)
                     {
                         if (TypeMeta<T>.Size > 64)
                         {
@@ -403,7 +413,7 @@ public unsafe struct LuminTaskSourceCore<T>
         if (TypeMeta<T>.IsValueType)
         {
 #if NET8_0_OR_GREATER
-            if (LuminTask.Model is LuminTaskModel.Unsafe || !TypeMeta<T>.IsReferenceOrContainsReferences)
+            if (UseInlineResultBits)
             {
                 if (TypeMeta<T>.Size > 64)
                 {
@@ -542,9 +552,7 @@ public unsafe struct LuminTaskSourceCore<T>
         ref var item = ref LuminTaskMarshal.GetTaskItem(source.Id);
 
 #if NET8_0_OR_GREATER
-        if (LuminTask.Model != LuminTaskModel.Unsafe &&
-            TypeMeta<T>.IsValueType && TypeMeta<T>.IsReferenceOrContainsReferences &&
-            item.ResultRef is StateTuple<T> stateTuple)
+        if (!UseInlineResultBits && item.ResultRef is StateTuple<T> stateTuple)
         {
             item.ResultRef = null;
             stateTuple.Dispose();
@@ -562,8 +570,7 @@ public unsafe struct LuminTaskSourceCore<T>
         }
 
         // Drop managed roots at consumption time instead of retaining them until this slot is
-        // rented again. This mirrors DotNext's AfterConsumed cleanup and materially lowers
-        // retention when the task pool is mostly idle after a burst.
+        // rented again. This lowers retention when the task pool is mostly idle after a burst.
         item.ResultRef = null;
         item.ResultRefDispose = null;
         item.Exception = null;
@@ -591,9 +598,7 @@ public unsafe struct LuminTaskSourceCore<T>
         ref var item = ref LuminTaskMarshal.GetTaskItem(source.Id);
 
 #if NET8_0_OR_GREATER
-        if (LuminTask.Model != LuminTaskModel.Unsafe &&
-            TypeMeta<T>.IsValueType && TypeMeta<T>.IsReferenceOrContainsReferences &&
-            item.ResultRef is StateTuple<T> stateTuple)
+        if (!UseInlineResultBits && item.ResultRef is StateTuple<T> stateTuple)
         {
             item.ResultRef = null;
             stateTuple.Dispose();

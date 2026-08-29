@@ -12,7 +12,7 @@ using LuminThread.Interface;
 
 namespace LuminThread.Unity
 {
-    public static class AddressablesAsyncExtensions
+    public static class AddressablesAsyncLuminTask
     {
         #region AsyncOperationHandle
 
@@ -45,15 +45,15 @@ namespace LuminThread.Unity
                 return LuminTask.CompletedTask();
             }
 
-            return AsyncOperationHandleConfiguredSource.Create(handle, timing, progress, cancellationToken, cancelImmediately, autoReleaseWhenCanceled);
+            return AsyncOperationHandleLuminTaskConfiguredSource.Create(handle, timing, progress, cancellationToken, cancelImmediately, autoReleaseWhenCanceled);
         }
 
-        public struct AsyncOperationHandleAwaiter : ICriticalNotifyCompletion
+        public struct AsyncOperationHandleLuminTaskAwaiter : ICriticalNotifyCompletion
         {
             AsyncOperationHandle handle;
             Action<AsyncOperationHandle> continuationAction;
 
-            public AsyncOperationHandleAwaiter(AsyncOperationHandle handle)
+            public AsyncOperationHandleLuminTaskAwaiter(AsyncOperationHandle handle)
             {
                 this.handle = handle;
                 this.continuationAction = null;
@@ -95,13 +95,14 @@ namespace LuminThread.Unity
             }
         }
 
-        public unsafe struct AsyncOperationHandleConfiguredSource
+        public unsafe struct AsyncOperationHandleLuminTaskConfiguredSource
         {
-            struct PromiseState
+struct PromiseState
             {
                 public bool Completed;
                 public bool CancelImmediately;
                 public bool AutoReleaseWhenCanceled;
+                public CancellationTokenRegistration Registration;
             }
 
             public static LuminTask Create(AsyncOperationHandle handle, PlayerLoopTiming timing, IProgress<float> progress, CancellationToken cancellationToken, bool cancelImmediately, bool autoReleaseWhenCanceled)
@@ -126,7 +127,7 @@ namespace LuminThread.Unity
                 // Register cancellation if needed
                 if (cancelImmediately && cancellationToken.CanBeCanceled)
                 {
-                    cancellationToken.Register(static s =>
+                    stateTuple.Item1.Registration = cancellationToken.Register(static s =>
                     {
                         var taskState = (LuminTaskState)s;
                         var tuple = Unsafe.As<StateTuple<PromiseState, AsyncOperationHandle, IProgress<float>>>(taskState.StateTuple);
@@ -136,6 +137,8 @@ namespace LuminThread.Unity
                             Addressables.Release(tuple.Item2);
                         }
                         LuminTaskSourceCore<AsyncUnit>.TrySetCanceled(taskState.Source);
+                        // 回调自身在途：仅清引用，释放交给 OnCompleted / MoveNext。
+                        tuple.Item1.Registration = default;
                     }, state);
                 }
 
@@ -146,7 +149,7 @@ namespace LuminThread.Unity
                 // Add to player loop for progress tracking
                 PlayerLoopHelper.AddAction(timing, state, &MoveNext);
 
-                return new LuminTask(LuminTaskSourceCore<AsyncUnit>.MethodTable, core, core->Id);
+                return new LuminTask(LuminTaskSourceCore<AsyncUnit>.MethodTablePtr, core, core->Id);
             }
 
             static bool MoveNext(in LuminTaskState state)
@@ -167,6 +170,7 @@ namespace LuminThread.Unity
                         Addressables.Release(tuple.Item2);
                     }
                     LuminTaskSourceCore<AsyncUnit>.TrySetCanceled(state.Source);
+                    tuple.Item1.Registration.Dispose();
                     tuple.Dispose();
                     return false;
                 }
@@ -208,6 +212,7 @@ namespace LuminThread.Unity
                     LuminTaskSourceCore<AsyncUnit>.TrySetResult(state.Source);
                 }
                 
+                tuple.Item1.Registration.Dispose();
                 tuple.Dispose();
                 LuminTaskSourceCore<AsyncUnit>.Dispose(state.Source);
             }
@@ -245,16 +250,17 @@ namespace LuminThread.Unity
                 return LuminTask.FromResult(handle.Result);
             }
 
-            return AsyncOperationHandleConfiguredSource<T>.Create(handle, timing, progress, cancellationToken, cancelImmediately, autoReleaseWhenCanceled);
+            return AsyncOperationHandleLuminTaskConfiguredSource<T>.Create(handle, timing, progress, cancellationToken, cancelImmediately, autoReleaseWhenCanceled);
         }
 
-        public unsafe struct AsyncOperationHandleConfiguredSource<T>
+public unsafe struct AsyncOperationHandleLuminTaskConfiguredSource<T>
         {
             struct PromiseState
             {
                 public bool Completed;
                 public bool CancelImmediately;
                 public bool AutoReleaseWhenCanceled;
+                public CancellationTokenRegistration Registration;
             }
 
             public static LuminTask<T> Create(AsyncOperationHandle<T> handle, PlayerLoopTiming timing, IProgress<float> progress, CancellationToken cancellationToken, bool cancelImmediately, bool autoReleaseWhenCanceled)
@@ -279,7 +285,7 @@ namespace LuminThread.Unity
                 // Register cancellation if needed
                 if (cancelImmediately && cancellationToken.CanBeCanceled)
                 {
-                    cancellationToken.Register(static s =>
+                    stateTuple.Item1.Registration = cancellationToken.Register(static s =>
                     {
                         var taskState = (LuminTaskState)s;
                         var tuple = Unsafe.As<StateTuple<PromiseState, AsyncOperationHandle<T>, IProgress<float>>>(taskState.StateTuple);
@@ -289,6 +295,8 @@ namespace LuminThread.Unity
                             Addressables.Release(tuple.Item2);
                         }
                         LuminTaskSourceCore<T>.TrySetCanceled(taskState.Source);
+                        // 回调自身在途：仅清引用，释放交给 OnCompleted / MoveNext。
+                        tuple.Item1.Registration = default;
                     }, state);
                 }
 
@@ -299,7 +307,7 @@ namespace LuminThread.Unity
                 // Add to player loop for progress tracking
                 PlayerLoopHelper.AddAction(timing, state, &MoveNext);
 
-                return new LuminTask<T>(LuminTaskSourceCore<T>.MethodTable, core, core->Id);
+                return new LuminTask<T>(LuminTaskSourceCore<T>.MethodTablePtr, core, core->Id);
             }
 
             static bool MoveNext(in LuminTaskState state)
@@ -320,6 +328,7 @@ namespace LuminThread.Unity
                         Addressables.Release(tuple.Item2);
                     }
                     LuminTaskSourceCore<T>.TrySetCanceled(state.Source);
+                    tuple.Item1.Registration.Dispose();
                     tuple.Dispose();
                     return false;
                 }
@@ -361,6 +370,7 @@ namespace LuminThread.Unity
                     LuminTaskSourceCore<T>.TrySetResult(state.Source, tuple.Item2.Result);
                 }
                 
+                tuple.Item1.Registration.Dispose();
                 tuple.Dispose();
                 LuminTaskSourceCore<T>.Dispose(state.Source);
             }

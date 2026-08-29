@@ -8,12 +8,12 @@ using LuminThread.Interface;
 
 namespace LuminThread.Unity
 {
-    public static class TextMeshProAsyncExtensions
+    public static class TextMeshProAsyncLuminTask
     {
         // <string> -> Text
         public static void BindTo(this ILuminTaskAsyncEnumerable<string> source, TMP_Text text, bool rebindOnError = true)
         {
-            BindToCore(source, text, text.GetCancellationTokenOnDestroy(), rebindOnError).Forget();
+            BindToCore(source, text, text.GetOnDestroyCancellationToken(), rebindOnError).Forget();
         }
 
         public static void BindTo(this ILuminTaskAsyncEnumerable<string> source, TMP_Text text, CancellationToken cancellationToken, bool rebindOnError = true)
@@ -69,7 +69,7 @@ namespace LuminThread.Unity
 
         public static void BindTo<T>(this ILuminTaskAsyncEnumerable<T> source, TMP_Text text, bool rebindOnError = true)
         {
-            BindToCore(source, text, text.GetCancellationTokenOnDestroy(), rebindOnError).Forget();
+            BindToCore(source, text, text.GetOnDestroyCancellationToken(), rebindOnError).Forget();
         }
 
         public static void BindTo<T>(this ILuminTaskAsyncEnumerable<T> source, TMP_Text text, CancellationToken cancellationToken, bool rebindOnError = true)
@@ -122,219 +122,204 @@ namespace LuminThread.Unity
             }
         }
         
-        public interface IAsyncClickEventHandler : IDisposable
-        {
-            LuminTask OnClickAsync();
-        }
-
-        public interface IAsyncValueChangedEventHandler<T> : IDisposable
-        {
-            LuminTask<T> OnValueChangedAsync();
-        }
-
-        public interface IAsyncEndEditEventHandler<T> : IDisposable
-        {
-            LuminTask<T> OnEndEditAsync();
-        }
-
-        public interface IAsyncEndTextSelectionEventHandler<T> : IDisposable
+        public interface IAsyncEndTextSelectionLuminTaskEventHandler<T> : IDisposable
         {
             LuminTask<T> OnEndTextSelectionAsync();
         }
 
-        public interface IAsyncTextSelectionEventHandler<T> : IDisposable
+        public interface IAsyncTextSelectionLuminTaskEventHandler<T> : IDisposable
         {
             LuminTask<T> OnTextSelectionAsync();
         }
 
-        public interface IAsyncDeselectEventHandler<T> : IDisposable
+        public interface IAsyncDeselectLuminTaskEventHandler<T> : IDisposable
         {
             LuminTask<T> OnDeselectAsync();
         }
 
-        public interface IAsyncSelectEventHandler<T> : IDisposable
+        public interface IAsyncSelectLuminTaskEventHandler<T> : IDisposable
         {
             LuminTask<T> OnSelectAsync();
         }
 
-        public interface IAsyncSubmitEventHandler<T> : IDisposable
+        public interface IAsyncSubmitLuminTaskEventHandler<T> : IDisposable
         {
             LuminTask<T> OnSubmitAsync();
         }
         
         #region TMP_InputField ValueChanged 扩展
 
-        public static UnityAsyncExtensions.IAsyncValueChangedEventHandler<string> GetAsyncValueChangedEventHandler(this TMP_InputField inputField)
+        public static UnityAsyncLuminTask.IAsyncValueChangedLuminTaskEventHandler<string> GetAsyncValueChangedEventHandler(this TMP_InputField inputField)
         {
-            return new UnityAsyncExtensions.AsyncUnityEventHandler<string>(inputField.onValueChanged, inputField.GetCancellationTokenOnDestroy(), false);
+            return new UnityAsyncLuminTask.AsyncUnityLuminTaskEventHandler<string>(inputField.onValueChanged, inputField.GetOnDestroyCancellationToken(), false);
         }
 
-        public static UnityAsyncExtensions.IAsyncValueChangedEventHandler<string> GetAsyncValueChangedEventHandler(this TMP_InputField inputField, CancellationToken cancellationToken)
+        public static UnityAsyncLuminTask.IAsyncValueChangedLuminTaskEventHandler<string> GetAsyncValueChangedEventHandler(this TMP_InputField inputField, CancellationToken cancellationToken)
         {
-            return new UnityAsyncExtensions.AsyncUnityEventHandler<string>(inputField.onValueChanged, cancellationToken, false);
+            return new UnityAsyncLuminTask.AsyncUnityLuminTaskEventHandler<string>(inputField.onValueChanged, cancellationToken, false);
         }
 
         public static LuminTask<string> OnValueChangedAsync(this TMP_InputField inputField)
         {
-            return new UnityAsyncExtensions.AsyncUnityEventHandler<string>(inputField.onValueChanged, inputField.GetCancellationTokenOnDestroy(), true).OnValueChangedAsync();
+            return new UnityAsyncLuminTask.AsyncUnityLuminTaskEventHandler<string>(inputField.onValueChanged, inputField.GetOnDestroyCancellationToken(), true).OnValueChangedAsync();
         }
 
         public static LuminTask<string> OnValueChangedAsync(this TMP_InputField inputField, CancellationToken cancellationToken)
         {
-            return new UnityAsyncExtensions.AsyncUnityEventHandler<string>(inputField.onValueChanged, cancellationToken, true).OnValueChangedAsync();
+            return new UnityAsyncLuminTask.AsyncUnityLuminTaskEventHandler<string>(inputField.onValueChanged, cancellationToken, true).OnValueChangedAsync();
         }
 
         #endregion
 
         #region TMP_InputField EndEdit 扩展
 
-        public static UnityAsyncExtensions.IAsyncEndEditEventHandler<string> GetAsyncEndEditEventHandler(this TMP_InputField inputField)
+        public static UnityAsyncLuminTask.IAsyncEndEditLuminTaskEventHandler<string> GetAsyncEndEditEventHandler(this TMP_InputField inputField)
         {
-            return new UnityAsyncExtensions.AsyncUnityEventHandler<string>(inputField.onEndEdit, inputField.GetCancellationTokenOnDestroy(), false);
+            return new UnityAsyncLuminTask.AsyncUnityLuminTaskEventHandler<string>(inputField.onEndEdit, inputField.GetOnDestroyCancellationToken(), false);
         }
 
-        public static UnityAsyncExtensions.IAsyncEndEditEventHandler<string> GetAsyncEndEditEventHandler(this TMP_InputField inputField, CancellationToken cancellationToken)
+        public static UnityAsyncLuminTask.IAsyncEndEditLuminTaskEventHandler<string> GetAsyncEndEditEventHandler(this TMP_InputField inputField, CancellationToken cancellationToken)
         {
-            return new UnityAsyncExtensions.AsyncUnityEventHandler<string>(inputField.onEndEdit, cancellationToken, false);
+            return new UnityAsyncLuminTask.AsyncUnityLuminTaskEventHandler<string>(inputField.onEndEdit, cancellationToken, false);
         }
 
         public static LuminTask<string> OnEndEditAsync(this TMP_InputField inputField)
         {
-            return new UnityAsyncExtensions.AsyncUnityEventHandler<string>(inputField.onEndEdit, inputField.GetCancellationTokenOnDestroy(), true).OnEndEditAsync();
+            return new UnityAsyncLuminTask.AsyncUnityLuminTaskEventHandler<string>(inputField.onEndEdit, inputField.GetOnDestroyCancellationToken(), true).OnEndEditAsync();
         }
 
         public static LuminTask<string> OnEndEditAsync(this TMP_InputField inputField, CancellationToken cancellationToken)
         {
-            return new UnityAsyncExtensions.AsyncUnityEventHandler<string>(inputField.onEndEdit, cancellationToken, true).OnEndEditAsync();
+            return new UnityAsyncLuminTask.AsyncUnityLuminTaskEventHandler<string>(inputField.onEndEdit, cancellationToken, true).OnEndEditAsync();
         }
 
         #endregion
 
         #region TMP_InputField EndTextSelection 扩展
 
-        public static IAsyncEndTextSelectionEventHandler<(string, int, int)> GetAsyncEndTextSelectionEventHandler(this TMP_InputField inputField)
+        public static IAsyncEndTextSelectionLuminTaskEventHandler<(string, int, int)> GetAsyncEndTextSelectionEventHandler(this TMP_InputField inputField)
         {
-            return new AsyncTMPTextSelectionEventHandler(inputField.onEndTextSelection, inputField.GetCancellationTokenOnDestroy(), false);
+            return new AsyncTmpTextSelectionLuminTaskEventHandler(inputField.onEndTextSelection, inputField.GetOnDestroyCancellationToken(), false);
         }
 
-        public static IAsyncEndTextSelectionEventHandler<(string, int, int)> GetAsyncEndTextSelectionEventHandler(this TMP_InputField inputField, CancellationToken cancellationToken)
+        public static IAsyncEndTextSelectionLuminTaskEventHandler<(string, int, int)> GetAsyncEndTextSelectionEventHandler(this TMP_InputField inputField, CancellationToken cancellationToken)
         {
-            return new AsyncTMPTextSelectionEventHandler(inputField.onEndTextSelection, cancellationToken, false);
+            return new AsyncTmpTextSelectionLuminTaskEventHandler(inputField.onEndTextSelection, cancellationToken, false);
         }
 
         public static LuminTask<(string, int, int)> OnEndTextSelectionAsync(this TMP_InputField inputField)
         {
-            return new AsyncTMPTextSelectionEventHandler(inputField.onEndTextSelection, inputField.GetCancellationTokenOnDestroy(), true).ToLuminTask();
+            return new AsyncTmpTextSelectionLuminTaskEventHandler(inputField.onEndTextSelection, inputField.GetOnDestroyCancellationToken(), true).ToLuminTask();
         }
 
         public static LuminTask<(string, int, int)> OnEndTextSelectionAsync(this TMP_InputField inputField, CancellationToken cancellationToken)
         {
-            return new AsyncTMPTextSelectionEventHandler(inputField.onEndTextSelection, cancellationToken, true).ToLuminTask();
+            return new AsyncTmpTextSelectionLuminTaskEventHandler(inputField.onEndTextSelection, cancellationToken, true).ToLuminTask();
         }
 
         #endregion
 
         #region TMP_InputField TextSelection 扩展
 
-        public static IAsyncTextSelectionEventHandler<(string, int, int)> GetAsyncTextSelectionEventHandler(this TMP_InputField inputField)
+        public static IAsyncTextSelectionLuminTaskEventHandler<(string, int, int)> GetAsyncTextSelectionEventHandler(this TMP_InputField inputField)
         {
-            return new AsyncTMPTextSelectionEventHandler(inputField.onTextSelection, inputField.GetCancellationTokenOnDestroy(), false);
+            return new AsyncTmpTextSelectionLuminTaskEventHandler(inputField.onTextSelection, inputField.GetOnDestroyCancellationToken(), false);
         }
 
-        public static IAsyncTextSelectionEventHandler<(string, int, int)> GetAsyncTextSelectionEventHandler(this TMP_InputField inputField, CancellationToken cancellationToken)
+        public static IAsyncTextSelectionLuminTaskEventHandler<(string, int, int)> GetAsyncTextSelectionEventHandler(this TMP_InputField inputField, CancellationToken cancellationToken)
         {
-            return new AsyncTMPTextSelectionEventHandler(inputField.onTextSelection, cancellationToken, false);
+            return new AsyncTmpTextSelectionLuminTaskEventHandler(inputField.onTextSelection, cancellationToken, false);
         }
 
         public static LuminTask<(string, int, int)> OnTextSelectionAsync(this TMP_InputField inputField)
         {
-            return new AsyncTMPTextSelectionEventHandler(inputField.onTextSelection, inputField.GetCancellationTokenOnDestroy(), true).ToLuminTask();
+            return new AsyncTmpTextSelectionLuminTaskEventHandler(inputField.onTextSelection, inputField.GetOnDestroyCancellationToken(), true).ToLuminTask();
         }
 
         public static LuminTask<(string, int, int)> OnTextSelectionAsync(this TMP_InputField inputField, CancellationToken cancellationToken)
         {
-            return new AsyncTMPTextSelectionEventHandler(inputField.onTextSelection, cancellationToken, true).ToLuminTask();
+            return new AsyncTmpTextSelectionLuminTaskEventHandler(inputField.onTextSelection, cancellationToken, true).ToLuminTask();
         }
 
         #endregion
 
         #region TMP_InputField Deselect 扩展
 
-        public static IAsyncDeselectEventHandler<string> GetAsyncDeselectEventHandler(this TMP_InputField inputField)
+        public static IAsyncDeselectLuminTaskEventHandler<string> GetAsyncDeselectEventHandler(this TMP_InputField inputField)
         {
-            return new UnityAsyncExtensions.AsyncUnityEventHandler<string>(inputField.onDeselect, inputField.GetCancellationTokenOnDestroy(), false);
+            return new UnityAsyncLuminTask.AsyncUnityLuminTaskEventHandler<string>(inputField.onDeselect, inputField.GetOnDestroyCancellationToken(), false);
         }
 
-        public static IAsyncDeselectEventHandler<string> GetAsyncDeselectEventHandler(this TMP_InputField inputField, CancellationToken cancellationToken)
+        public static IAsyncDeselectLuminTaskEventHandler<string> GetAsyncDeselectEventHandler(this TMP_InputField inputField, CancellationToken cancellationToken)
         {
-            return new UnityAsyncExtensions.AsyncUnityEventHandler<string>(inputField.onDeselect, cancellationToken, false);
+            return new UnityAsyncLuminTask.AsyncUnityLuminTaskEventHandler<string>(inputField.onDeselect, cancellationToken, false);
         }
 
         public static LuminTask<string> OnDeselectAsync(this TMP_InputField inputField)
         {
-            return new UnityAsyncExtensions.AsyncUnityEventHandler<string>(inputField.onDeselect, inputField.GetCancellationTokenOnDestroy(), true).OnDeselectAsync();
+            return new UnityAsyncLuminTask.AsyncUnityLuminTaskEventHandler<string>(inputField.onDeselect, inputField.GetOnDestroyCancellationToken(), true).OnDeselectAsync();
         }
 
         public static LuminTask<string> OnDeselectAsync(this TMP_InputField inputField, CancellationToken cancellationToken)
         {
-            return new UnityAsyncExtensions.AsyncUnityEventHandler<string>(inputField.onDeselect, cancellationToken, true).OnDeselectAsync();
+            return new UnityAsyncLuminTask.AsyncUnityLuminTaskEventHandler<string>(inputField.onDeselect, cancellationToken, true).OnDeselectAsync();
         }
 
         #endregion
 
         #region TMP_InputField Select 扩展
 
-        public static IAsyncSelectEventHandler<string> GetAsyncSelectEventHandler(this TMP_InputField inputField)
+        public static IAsyncSelectLuminTaskEventHandler<string> GetAsyncSelectEventHandler(this TMP_InputField inputField)
         {
-            return new UnityAsyncExtensions.AsyncUnityEventHandler<string>(inputField.onSelect, inputField.GetCancellationTokenOnDestroy(), false);
+            return new UnityAsyncLuminTask.AsyncUnityLuminTaskEventHandler<string>(inputField.onSelect, inputField.GetOnDestroyCancellationToken(), false);
         }
 
-        public static IAsyncSelectEventHandler<string> GetAsyncSelectEventHandler(this TMP_InputField inputField, CancellationToken cancellationToken)
+        public static IAsyncSelectLuminTaskEventHandler<string> GetAsyncSelectEventHandler(this TMP_InputField inputField, CancellationToken cancellationToken)
         {
-            return new UnityAsyncExtensions.AsyncUnityEventHandler<string>(inputField.onSelect, cancellationToken, false);
+            return new UnityAsyncLuminTask.AsyncUnityLuminTaskEventHandler<string>(inputField.onSelect, cancellationToken, false);
         }
 
         public static LuminTask<string> OnSelectAsync(this TMP_InputField inputField)
         {
-            return new UnityAsyncExtensions.AsyncUnityEventHandler<string>(inputField.onSelect, inputField.GetCancellationTokenOnDestroy(), true).OnSelectAsync();
+            return new UnityAsyncLuminTask.AsyncUnityLuminTaskEventHandler<string>(inputField.onSelect, inputField.GetOnDestroyCancellationToken(), true).OnSelectAsync();
         }
 
         public static LuminTask<string> OnSelectAsync(this TMP_InputField inputField, CancellationToken cancellationToken)
         {
-            return new UnityAsyncExtensions.AsyncUnityEventHandler<string>(inputField.onSelect, cancellationToken, true).OnSelectAsync();
+            return new UnityAsyncLuminTask.AsyncUnityLuminTaskEventHandler<string>(inputField.onSelect, cancellationToken, true).OnSelectAsync();
         }
 
         #endregion
 
         #region TMP_InputField Submit 扩展
 
-        public static IAsyncSubmitEventHandler<string> GetAsyncSubmitEventHandler(this TMP_InputField inputField)
+        public static IAsyncSubmitLuminTaskEventHandler<string> GetAsyncSubmitEventHandler(this TMP_InputField inputField)
         {
-            return new UnityAsyncExtensions.AsyncUnityEventHandler<string>(inputField.onSubmit, inputField.GetCancellationTokenOnDestroy(), false);
+            return new UnityAsyncLuminTask.AsyncUnityLuminTaskEventHandler<string>(inputField.onSubmit, inputField.GetOnDestroyCancellationToken(), false);
         }
 
-        public static IAsyncSubmitEventHandler<string> GetAsyncSubmitEventHandler(this TMP_InputField inputField, CancellationToken cancellationToken)
+        public static IAsyncSubmitLuminTaskEventHandler<string> GetAsyncSubmitEventHandler(this TMP_InputField inputField, CancellationToken cancellationToken)
         {
-            return new UnityAsyncExtensions.AsyncUnityEventHandler<string>(inputField.onSubmit, cancellationToken, false);
+            return new UnityAsyncLuminTask.AsyncUnityLuminTaskEventHandler<string>(inputField.onSubmit, cancellationToken, false);
         }
 
         public static LuminTask<string> OnSubmitAsync(this TMP_InputField inputField)
         {
-            return new UnityAsyncExtensions.AsyncUnityEventHandler<string>(inputField.onSubmit, inputField.GetCancellationTokenOnDestroy(), true).OnSubmitAsync();
+            return new UnityAsyncLuminTask.AsyncUnityLuminTaskEventHandler<string>(inputField.onSubmit, inputField.GetOnDestroyCancellationToken(), true).OnSubmitAsync();
         }
 
         public static LuminTask<string> OnSubmitAsync(this TMP_InputField inputField, CancellationToken cancellationToken)
         {
-            return new UnityAsyncExtensions.AsyncUnityEventHandler<string>(inputField.onSubmit, cancellationToken, true).OnSubmitAsync();
+            return new UnityAsyncLuminTask.AsyncUnityLuminTaskEventHandler<string>(inputField.onSubmit, cancellationToken, true).OnSubmitAsync();
         }
 
         #endregion
 
-        #region AsyncTMPTextSelectionEventHandler（文本选择事件处理器）
+        #region AsyncTmpTextSelectionLuminTaskEventHandler（文本选择事件处理器）
 
-        public unsafe sealed class AsyncTMPTextSelectionEventHandler : 
-            IAsyncTextSelectionEventHandler<(string, int, int)>, 
-            IAsyncEndTextSelectionEventHandler<(string, int, int)>
+        public unsafe sealed class AsyncTmpTextSelectionLuminTaskEventHandler : 
+            IAsyncTextSelectionLuminTaskEventHandler<(string, int, int)>, 
+            IAsyncEndTextSelectionLuminTaskEventHandler<(string, int, int)>
         {
             private readonly TMP_InputField.TextSelectionEvent _selectionEvent;
             private readonly CancellationToken _cancellationToken;
@@ -345,7 +330,7 @@ namespace LuminThread.Unity
             private CancellationTokenRegistration _registration;
             private bool _disposed;
 
-            public AsyncTMPTextSelectionEventHandler(
+            public AsyncTmpTextSelectionLuminTaskEventHandler(
                 TMP_InputField.TextSelectionEvent selectionEvent,
                 CancellationToken cancellationToken,
                 bool callOnce)
@@ -371,7 +356,7 @@ namespace LuminThread.Unity
                 {
                     var registration = _cancellationToken.Register(static state =>
                     {
-                        var self = (AsyncTMPTextSelectionEventHandler)state;
+                        var self = (AsyncTmpTextSelectionLuminTaskEventHandler)state;
                         self.DisposeFromCancellation();
                     }, this);
                     if (_disposed)

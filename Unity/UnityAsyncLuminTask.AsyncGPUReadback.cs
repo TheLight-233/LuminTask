@@ -11,7 +11,7 @@ using LuminThread.Utility;
 
 namespace LuminThread.Unity
 {
-    public static partial class UnityAsyncExtensions
+    public static partial class UnityAsyncLuminTask
     {
         #region AsyncGPUReadbackRequest
 
@@ -45,6 +45,7 @@ namespace LuminThread.Unity
                 public bool Completed;
                 public bool IsCancellationRequested;
                 public bool HasError;
+                public CancellationTokenRegistration Registration;
             }
 
             public static unsafe LuminTask<AsyncGPUReadbackRequest> Create(AsyncGPUReadbackRequest asyncOperation, PlayerLoopTiming timing, CancellationToken cancellationToken, bool cancelImmediately)
@@ -62,7 +63,7 @@ namespace LuminThread.Unity
 
                 if (cancelImmediately && cancellationToken.CanBeCanceled)
                 {
-                    var registration = cancellationToken.Register(() =>
+                    stateTuple.Item1.Registration = cancellationToken.Register(() =>
                     {
                         stateData.Completed = true;
                         stateData.IsCancellationRequested = true;
@@ -93,6 +94,7 @@ namespace LuminThread.Unity
                     stateTuple.Item1.Completed = true;
                     stateTuple.Item1.IsCancellationRequested = true;
                     LuminTaskSourceCore<AsyncGPUReadbackRequest>.TrySetCanceled(state.Source);
+                    stateTuple.Item1.Registration.Dispose();
                     stateTuple.Dispose();
                     return false;
                 }
@@ -102,6 +104,7 @@ namespace LuminThread.Unity
                     stateTuple.Item1.Completed = true;
                     stateTuple.Item1.HasError = true;
                     LuminTaskSourceCore<AsyncGPUReadbackRequest>.TrySetException(state.Source, new Exception("AsyncGPUReadbackRequest.hasError = true"));
+                    stateTuple.Item1.Registration.Dispose();
                     stateTuple.Dispose();
                     return false;
                 }
@@ -110,6 +113,7 @@ namespace LuminThread.Unity
                 {
                     stateTuple.Item1.Completed = true;
                     LuminTaskSourceCore<AsyncGPUReadbackRequest>.TrySetResult(state.Source, asyncOperation.Value);
+                    stateTuple.Item1.Registration.Dispose();
                     stateTuple.Dispose();
                     return false;
                 }

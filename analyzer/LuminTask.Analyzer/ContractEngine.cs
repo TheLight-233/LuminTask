@@ -47,16 +47,7 @@ namespace LuminThread.Analyzer
             catch (Exception ex)
             {
                 // 分析器内部错误以警告形式呈现，而不是让编译崩溃。
-                diagnostics.Add(Diagnostic.Create(
-                    new DiagnosticDescriptor(
-                        "LUM9999",
-                        "LuminTask analyzer internal error",
-                        "LuminTask 契约分析器在处理此方法时遇到内部错误：{0}",
-                        "LuminTask.Contract",
-                        DiagnosticSeverity.Warning,
-                        isEnabledByDefault: true),
-                    node.GetLocation(),
-                    ex.Message));
+                diagnostics.Add(Diagnostic.Create(ContractDiagnostics.InternalError, node.GetLocation(), ex.Message));
             }
             return diagnostics.ToImmutableArray();
         }
@@ -259,6 +250,7 @@ namespace LuminThread.Analyzer
                 internal bool LoopScoped;   // declared inside a loop body — exempt from scope-final checks
                 internal bool LoopManaged;  // reset & consumed inside a loop — lifecycle ends in the loop
                 internal bool IsTcs;        // completion source (LUM1004/LUM1006) instead of task (LUM1001/LUM1002)
+                internal bool CapturedConsumed; // consumed by a lambda/local function
 
                 internal Group(string name, Location declaration)
                 {
@@ -293,11 +285,7 @@ namespace LuminThread.Analyzer
                 }
             }
 
-            /// <summary>
-            /// A task/completion-source captured by an anonymous function is consumed outside
-            /// this linear scope. Mark its group trivial so the unconsumed-at-end check does
-            /// not fire here.
-            /// </summary>
+            /// <summary>Accounts for captured tasks only when the lambda actually consumes them.</summary>
             internal void MarkCapturedAsTrivial(SyntaxNode body)
             {
                 foreach (var anon in body.DescendantNodes().OfType<AnonymousFunctionExpressionSyntax>())
@@ -307,12 +295,39 @@ namespace LuminThread.Analyzer
                         var symbol = ResolveSymbol(id);
                         if (symbol == null) continue;
 
+                        if (!IsConsumedInLambda(anon, id))
+                            continue;
+
                         if (_taskGroups.TryGetValue(symbol, out var g))
-                            g.Trivial = true;
+                            g.CapturedConsumed = true;
                         else if (_tcsGroups.TryGetValue(symbol, out var tcsG))
-                            tcsG.Trivial = true;
+                            tcsG.CapturedConsumed = true;
                     }
                 }
+            }
+
+            private bool IsConsumedInLambda(AnonymousFunctionExpressionSyntax lambda, IdentifierNameSyntax id)
+            {
+                for (SyntaxNode? current = id.Parent; current != null && current != lambda; current = current.Parent)
+                {
+                    if (current is AwaitExpressionSyntax)
+                        return true;
+                    if (current is InvocationExpressionSyntax invocation)
+                    {
+                        var name = GetInvokedMemberName(invocation);
+                        if (s_consumingTaskApis.Contains(name) || name == "GetResult" || s_tcsCompleteApis.Contains(name))
+                            return true;
+                    }
+                    if (current is ArgumentSyntax argument && argument.Parent?.Parent is InvocationExpressionSyntax call)
+                    {
+                        var method = _model.GetSymbolInfo(call).Symbol as IMethodSymbol;
+                        var index = call.ArgumentList.Arguments.IndexOf(argument);
+                        if (method != null && index >= 0 && index < method.Parameters.Length &&
+                            (IsTaskType(method.Parameters[index].Type) || IsTcsType(method.Parameters[index].Type)))
+                            return true;
+                    }
+                }
+                return false;
             }
 
             // ----------------------------------------------------------------------------
@@ -396,8 +411,10 @@ namespace LuminThread.Analyzer
                                     case CaseSwitchLabelSyntax cl:
                                         AnalyzeExpression(cl.Value, clone, transfer: false, assignedInLoop: assignedInLoop);
                                         break;
-                                    case CasePatternSwitchLabelSyntax cpl when cpl.Pattern is ConstantPatternSyntax cpc:
-                                        AnalyzeExpression(cpc.Expression, clone, transfer: false, assignedInLoop: assignedInLoop);
+                                    case CasePatternSwitchLabelSyntax cpl:
+                                        AnalyzePattern(cpl.Pattern, clone, assignedInLoop);
+                                        if (cpl.WhenClause != null)
+                                            AnalyzeExpression(cpl.WhenClause.Condition, clone, transfer: false, assignedInLoop: assignedInLoop);
                                         break;
                                 }
                             }
@@ -858,11 +875,76 @@ namespace LuminThread.Analyzer
                     if (methodSymbol != null && index < methodSymbol.Parameters.Length)
                     {
                         var paramType = methodSymbol.Parameters[index].Type;
-                        transfersOwnership = IsTaskType(paramType) || IsTcsType(paramType);
+                        transfersOwnership = (IsTaskType(paramType) || IsTcsType(paramType)) &&
+                                             GetParameterContract(methodSymbol, methodSymbol.Parameters[index].Name) != ParameterContract.Drops;
                     }
                     AnalyzeExpression(arg.Expression, env, transfer: transfersOwnership, assignedInLoop: assignedInLoop);
                     index++;
                 }
+            }
+
+            private void AnalyzePattern(PatternSyntax pattern, FlowEnv env, HashSet<Group>? assignedInLoop)
+            {
+                switch (pattern)
+                {
+                    case ConstantPatternSyntax constant:
+                        AnalyzeExpression(constant.Expression, env, transfer: false, assignedInLoop: assignedInLoop);
+                        break;
+                    case RelationalPatternSyntax relational:
+                        AnalyzeExpression(relational.Expression, env, transfer: false, assignedInLoop: assignedInLoop);
+                        break;
+                    case ParenthesizedPatternSyntax parenthesized:
+                        AnalyzePattern(parenthesized.Pattern, env, assignedInLoop);
+                        break;
+                    case BinaryPatternSyntax binary:
+                        AnalyzePattern(binary.Left, env, assignedInLoop);
+                        AnalyzePattern(binary.Right, env, assignedInLoop);
+                        break;
+                    case UnaryPatternSyntax unary:
+                        AnalyzePattern(unary.Pattern, env, assignedInLoop);
+                        break;
+                    case RecursivePatternSyntax recursive when recursive.PositionalPatternClause != null:
+                        foreach (var subpattern in recursive.PositionalPatternClause.Subpatterns)
+                            AnalyzePattern(subpattern.Pattern, env, assignedInLoop);
+                        break;
+                }
+            }
+
+            private enum ParameterContract { Unknown, Consumes, Forwards, Drops }
+
+            private ParameterContract GetParameterContract(IMethodSymbol method, string parameterName)
+            {
+                var syntax = method.DeclaringSyntaxReferences.FirstOrDefault()?.GetSyntax();
+                if (syntax == null)
+                    return ParameterContract.Unknown;
+
+                var identifierUses = syntax.DescendantNodes().OfType<IdentifierNameSyntax>()
+                    .Where(id => id.Identifier.ValueText == parameterName).ToArray();
+                foreach (var id in identifierUses)
+                {
+                    for (SyntaxNode? current = id.Parent; current != null && current != syntax; current = current.Parent)
+                    {
+                        if (current is AwaitExpressionSyntax)
+                            return ParameterContract.Consumes;
+                        if (current is InvocationExpressionSyntax invocation)
+                        {
+                            var name = GetInvokedMemberName(invocation);
+                            if (s_consumingTaskApis.Contains(name) || name == "GetResult" || s_tcsCompleteApis.Contains(name))
+                                return ParameterContract.Consumes;
+                        }
+                    }
+                }
+
+                if (syntax.DescendantNodes().OfType<ReturnStatementSyntax>().Any(r =>
+                    r.Expression is IdentifierNameSyntax returned && returned.Identifier.ValueText == parameterName))
+                    return ParameterContract.Forwards;
+
+                if (syntax is MethodDeclarationSyntax methodDeclaration &&
+                    methodDeclaration.ExpressionBody?.Expression is IdentifierNameSyntax expressionBody &&
+                    expressionBody.Identifier.ValueText == parameterName)
+                    return ParameterContract.Forwards;
+
+                return ParameterContract.Drops;
             }
 
             private TaskKind AnalyzeMemberAccess(
@@ -1045,6 +1127,7 @@ namespace LuminThread.Analyzer
 
                     // Same slot re-purposed for a fresh task: reset its accounting.
                     g.Trivial = false;
+                    g.CapturedConsumed = false;
                     g.LoopScoped = false;
                     env.Set(g, 0);
                     env.Partial.Remove(g);
@@ -1069,7 +1152,7 @@ namespace LuminThread.Analyzer
             {
                 if (g.Trivial) return;
 
-                if (env.Get(g) > 0 || env.Partial.Contains(g))
+                if (g.CapturedConsumed || env.Get(g) > 0 || env.Partial.Contains(g))
                 {
                     Report(ContractDiagnostics.DoubleConsumedTask, site, g.Name,
                         env.Partial.Contains(g)
@@ -1115,6 +1198,7 @@ namespace LuminThread.Analyzer
                 {
                     if (!seen.Add(g)) continue;
                     if (g.Trivial) continue;
+                    if (g.CapturedConsumed && env.Get(g) == 0) continue;
                     if (g.LoopScoped) continue;  // handled by WalkLoop's per-iteration check
                     if (g.LoopManaged) continue; // reset & consumed inside a loop — lifecycle closed there
 

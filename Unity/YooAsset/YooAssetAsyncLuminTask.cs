@@ -9,7 +9,7 @@ using LuminThread.Interface;
 
 namespace LuminThread.Unity
 {
-    public static class YooAssetAsyncExtensions
+    public static class YooAssetAsyncLuminTask
     {
         #region HandleBase (基类，无返回值)
 
@@ -47,15 +47,16 @@ namespace LuminThread.Unity
                 return LuminTask.CompletedTask();
             }
 
-            return HandleBaseConfiguredSource.Create(handle, timing, progress, cancellationToken, autoReleaseWhenCanceled);
+            return HandleBaseLuminTaskConfiguredSource.Create(handle, timing, progress, cancellationToken, autoReleaseWhenCanceled);
         }
 
-        public unsafe struct HandleBaseConfiguredSource
+        public unsafe struct HandleBaseLuminTaskConfiguredSource
         {
-            struct PromiseState
+struct PromiseState
             {
                 public bool Completed;
                 public bool AutoReleaseWhenCanceled;
+                public CancellationTokenRegistration Registration;
             }
 
             public static LuminTask Create(
@@ -84,7 +85,7 @@ namespace LuminThread.Unity
                 // 添加取消注册
                 if (cancellationToken.CanBeCanceled)
                 {
-                    cancellationToken.Register(static s =>
+                    stateTuple.Item1.Registration = cancellationToken.Register(static s =>
                     {
                         var taskState = (LuminTaskState)s;
                         var tuple = Unsafe.As<StateTuple<PromiseState, HandleBase, IProgress<float>>>(taskState.StateTuple);
@@ -95,6 +96,8 @@ namespace LuminThread.Unity
                         }
                         LuminTaskSourceCore<AsyncUnit>.TrySetCanceled(taskState.Source);
                         
+                        // 回调自身在途：仅清引用，避免 Dispose 自己造成死锁；释放交给 MoveNext 完成路径。
+                        tuple.Item1.Registration = default;
                         tuple.Dispose();
                         LuminTaskSourceCore<AsyncUnit>.Dispose(taskState.Source);
                     }, state);
@@ -102,7 +105,7 @@ namespace LuminThread.Unity
 
                 PlayerLoopHelper.AddAction(timing, state, &MoveNext);
 
-                return new LuminTask(LuminTaskSourceCore<AsyncUnit>.MethodTable, core, core->Id);
+                return new LuminTask(LuminTaskSourceCore<AsyncUnit>.MethodTablePtr, core, core->Id);
             }
 
             public static bool MoveNext(in LuminTaskState state)
@@ -123,6 +126,7 @@ namespace LuminThread.Unity
                         tuple.Item2.Release();
                     }
                     LuminTaskSourceCore<AsyncUnit>.TrySetCanceled(state.Source);
+                    tuple.Item1.Registration.Dispose();
                     tuple.Dispose();
                     LuminTaskSourceCore<AsyncUnit>.Dispose(state.Source);
                     return false;
@@ -142,6 +146,7 @@ namespace LuminThread.Unity
                         LuminTaskSourceCore<AsyncUnit>.TrySetResult(state.Source);
                     }
                     
+                    tuple.Item1.Registration.Dispose();
                     tuple.Dispose();
                     LuminTaskSourceCore<AsyncUnit>.Dispose(state.Source);
                     return false;
@@ -195,15 +200,16 @@ namespace LuminThread.Unity
                 return LuminTask.FromResult(handle);
             }
 
-            return AssetHandleConfiguredSource.Create(handle, timing, progress, cancellationToken, autoReleaseWhenCanceled);
+            return AssetHandleLuminTaskConfiguredSource.Create(handle, timing, progress, cancellationToken, autoReleaseWhenCanceled);
         }
 
-        public unsafe struct AssetHandleConfiguredSource
+public unsafe struct AssetHandleLuminTaskConfiguredSource
         {
             struct PromiseState
             {
                 public bool Completed;
                 public bool AutoReleaseWhenCanceled;
+                public CancellationTokenRegistration Registration;
             }
 
             public static LuminTask<AssetHandle> Create(
@@ -232,7 +238,7 @@ namespace LuminThread.Unity
                 // 添加取消注册
                 if (cancellationToken.CanBeCanceled)
                 {
-                    cancellationToken.Register(static s =>
+                    stateTuple.Item1.Registration = cancellationToken.Register(static s =>
                     {
                         var taskState = (LuminTaskState)s;
                         var tuple = Unsafe.As<StateTuple<PromiseState, AssetHandle, IProgress<float>>>(taskState.StateTuple);
@@ -243,6 +249,8 @@ namespace LuminThread.Unity
                         }
                         LuminTaskSourceCore<AssetHandle>.TrySetCanceled(taskState.Source);
                         
+                        // 回调自身在途：仅清引用，避免 Dispose 自己造成死锁；释放交给 MoveNext 完成路径。
+                        tuple.Item1.Registration = default;
                         tuple.Dispose();
                         LuminTaskSourceCore<AssetHandle>.Dispose(taskState.Source);
                     }, state);
@@ -250,7 +258,7 @@ namespace LuminThread.Unity
 
                 PlayerLoopHelper.AddAction(timing, state, &MoveNext);
 
-                return new LuminTask<AssetHandle>(LuminTaskSourceCore<AssetHandle>.MethodTable, core, core->Id);
+                return new LuminTask<AssetHandle>(LuminTaskSourceCore<AssetHandle>.MethodTablePtr, core, core->Id);
             }
 
             public static bool MoveNext(in LuminTaskState state)
@@ -271,6 +279,7 @@ namespace LuminThread.Unity
                         tuple.Item2.Release();
                     }
                     LuminTaskSourceCore<AssetHandle>.TrySetCanceled(state.Source);
+                    tuple.Item1.Registration.Dispose();
                     tuple.Dispose();
                     LuminTaskSourceCore<AssetHandle>.Dispose(state.Source);
                     return false;
@@ -290,6 +299,7 @@ namespace LuminThread.Unity
                         LuminTaskSourceCore<AssetHandle>.TrySetResult(state.Source, tuple.Item2);
                     }
                     
+                    tuple.Item1.Registration.Dispose();
                     tuple.Dispose();
                     LuminTaskSourceCore<AssetHandle>.Dispose(state.Source);
                     return false;
@@ -343,15 +353,16 @@ namespace LuminThread.Unity
                 return LuminTask.FromResult(handle);
             }
 
-            return SceneHandleConfiguredSource.Create(handle, timing, progress, cancellationToken, autoReleaseWhenCanceled);
+            return SceneHandleLuminTaskConfiguredSource.Create(handle, timing, progress, cancellationToken, autoReleaseWhenCanceled);
         }
 
-        public unsafe struct SceneHandleConfiguredSource
+public unsafe struct SceneHandleLuminTaskConfiguredSource
         {
             struct PromiseState
             {
                 public bool Completed;
                 public bool AutoReleaseWhenCanceled;
+                public CancellationTokenRegistration Registration;
             }
 
             public static LuminTask<SceneHandle> Create(
@@ -380,7 +391,7 @@ namespace LuminThread.Unity
                 // 添加取消注册
                 if (cancellationToken.CanBeCanceled)
                 {
-                    cancellationToken.Register(static s =>
+                    stateTuple.Item1.Registration = cancellationToken.Register(static s =>
                     {
                         var taskState = (LuminTaskState)s;
                         var tuple = Unsafe.As<StateTuple<PromiseState, SceneHandle, IProgress<float>>>(taskState.StateTuple);
@@ -391,6 +402,8 @@ namespace LuminThread.Unity
                         }
                         LuminTaskSourceCore<SceneHandle>.TrySetCanceled(taskState.Source);
                         
+                        // 回调自身在途：仅清引用，避免 Dispose 自己造成死锁；释放交给 MoveNext 完成路径。
+                        tuple.Item1.Registration = default;
                         tuple.Dispose();
                         LuminTaskSourceCore<SceneHandle>.Dispose(taskState.Source);
                     }, state);
@@ -398,7 +411,7 @@ namespace LuminThread.Unity
 
                 PlayerLoopHelper.AddAction(timing, state, &MoveNext);
 
-                return new LuminTask<SceneHandle>(LuminTaskSourceCore<SceneHandle>.MethodTable, core, core->Id);
+                return new LuminTask<SceneHandle>(LuminTaskSourceCore<SceneHandle>.MethodTablePtr, core, core->Id);
             }
 
             public static bool MoveNext(in LuminTaskState state)
@@ -419,6 +432,7 @@ namespace LuminThread.Unity
                         tuple.Item2.Release();
                     }
                     LuminTaskSourceCore<SceneHandle>.TrySetCanceled(state.Source);
+                    tuple.Item1.Registration.Dispose();
                     tuple.Dispose();
                     LuminTaskSourceCore<SceneHandle>.Dispose(state.Source);
                     return false;
@@ -438,6 +452,7 @@ namespace LuminThread.Unity
                         LuminTaskSourceCore<SceneHandle>.TrySetResult(state.Source, tuple.Item2);
                     }
                     
+                    tuple.Item1.Registration.Dispose();
                     tuple.Dispose();
                     LuminTaskSourceCore<SceneHandle>.Dispose(state.Source);
                     return false;
@@ -491,15 +506,16 @@ namespace LuminThread.Unity
                 return LuminTask.FromResult(handle);
             }
 
-            return RawFileHandleConfiguredSource.Create(handle, timing, progress, cancellationToken, autoReleaseWhenCanceled);
+            return RawFileHandleLuminTaskConfiguredSource.Create(handle, timing, progress, cancellationToken, autoReleaseWhenCanceled);
         }
 
-        public unsafe struct RawFileHandleConfiguredSource
+public unsafe struct RawFileHandleLuminTaskConfiguredSource
         {
             struct PromiseState
             {
                 public bool Completed;
                 public bool AutoReleaseWhenCanceled;
+                public CancellationTokenRegistration Registration;
             }
 
             public static LuminTask<RawFileHandle> Create(
@@ -528,7 +544,7 @@ namespace LuminThread.Unity
                 // 添加取消注册
                 if (cancellationToken.CanBeCanceled)
                 {
-                    cancellationToken.Register(static s =>
+                    stateTuple.Item1.Registration = cancellationToken.Register(static s =>
                     {
                         var taskState = (LuminTaskState)s;
                         var tuple = Unsafe.As<StateTuple<PromiseState, RawFileHandle, IProgress<float>>>(taskState.StateTuple);
@@ -539,6 +555,8 @@ namespace LuminThread.Unity
                         }
                         LuminTaskSourceCore<RawFileHandle>.TrySetCanceled(taskState.Source);
                         
+                        // 回调自身在途：仅清引用，避免 Dispose 自己造成死锁；释放交给 MoveNext 完成路径。
+                        tuple.Item1.Registration = default;
                         tuple.Dispose();
                         LuminTaskSourceCore<RawFileHandle>.Dispose(taskState.Source);
                     }, state);
@@ -546,7 +564,7 @@ namespace LuminThread.Unity
 
                 PlayerLoopHelper.AddAction(timing, state, &MoveNext);
 
-                return new LuminTask<RawFileHandle>(LuminTaskSourceCore<RawFileHandle>.MethodTable, core, core->Id);
+                return new LuminTask<RawFileHandle>(LuminTaskSourceCore<RawFileHandle>.MethodTablePtr, core, core->Id);
             }
 
             public static bool MoveNext(in LuminTaskState state)
@@ -567,6 +585,7 @@ namespace LuminThread.Unity
                         tuple.Item2.Release();
                     }
                     LuminTaskSourceCore<RawFileHandle>.TrySetCanceled(state.Source);
+                    tuple.Item1.Registration.Dispose();
                     tuple.Dispose();
                     LuminTaskSourceCore<RawFileHandle>.Dispose(state.Source);
                     return false;
@@ -586,6 +605,7 @@ namespace LuminThread.Unity
                         LuminTaskSourceCore<RawFileHandle>.TrySetResult(state.Source, tuple.Item2);
                     }
                     
+                    tuple.Item1.Registration.Dispose();
                     tuple.Dispose();
                     LuminTaskSourceCore<RawFileHandle>.Dispose(state.Source);
                     return false;
@@ -639,15 +659,16 @@ namespace LuminThread.Unity
                 return LuminTask.FromResult(handle);
             }
 
-            return SubAssetsHandleConfiguredSource.Create(handle, timing, progress, cancellationToken, autoReleaseWhenCanceled);
+            return SubAssetsHandleLuminTaskConfiguredSource.Create(handle, timing, progress, cancellationToken, autoReleaseWhenCanceled);
         }
 
-        public unsafe struct SubAssetsHandleConfiguredSource
+public unsafe struct SubAssetsHandleLuminTaskConfiguredSource
         {
             struct PromiseState
             {
                 public bool Completed;
                 public bool AutoReleaseWhenCanceled;
+                public CancellationTokenRegistration Registration;
             }
 
             public static LuminTask<SubAssetsHandle> Create(
@@ -676,7 +697,7 @@ namespace LuminThread.Unity
                 // 添加取消注册
                 if (cancellationToken.CanBeCanceled)
                 {
-                    cancellationToken.Register(static s =>
+                    stateTuple.Item1.Registration = cancellationToken.Register(static s =>
                     {
                         var taskState = (LuminTaskState)s;
                         var tuple = Unsafe.As<StateTuple<PromiseState, SubAssetsHandle, IProgress<float>>>(taskState.StateTuple);
@@ -687,6 +708,8 @@ namespace LuminThread.Unity
                         }
                         LuminTaskSourceCore<SubAssetsHandle>.TrySetCanceled(taskState.Source);
                         
+                        // 回调自身在途：仅清引用，避免 Dispose 自己造成死锁；释放交给 MoveNext 完成路径。
+                        tuple.Item1.Registration = default;
                         tuple.Dispose();
                         LuminTaskSourceCore<SubAssetsHandle>.Dispose(taskState.Source);
                     }, state);
@@ -694,7 +717,7 @@ namespace LuminThread.Unity
 
                 PlayerLoopHelper.AddAction(timing, state, &MoveNext);
 
-                return new LuminTask<SubAssetsHandle>(LuminTaskSourceCore<SubAssetsHandle>.MethodTable, core, core->Id);
+                return new LuminTask<SubAssetsHandle>(LuminTaskSourceCore<SubAssetsHandle>.MethodTablePtr, core, core->Id);
             }
 
             public static bool MoveNext(in LuminTaskState state)
@@ -715,6 +738,7 @@ namespace LuminThread.Unity
                         tuple.Item2.Release();
                     }
                     LuminTaskSourceCore<SubAssetsHandle>.TrySetCanceled(state.Source);
+                    tuple.Item1.Registration.Dispose();
                     tuple.Dispose();
                     LuminTaskSourceCore<SubAssetsHandle>.Dispose(state.Source);
                     return false;
@@ -734,6 +758,7 @@ namespace LuminThread.Unity
                         LuminTaskSourceCore<SubAssetsHandle>.TrySetResult(state.Source, tuple.Item2);
                     }
                     
+                    tuple.Item1.Registration.Dispose();
                     tuple.Dispose();
                     LuminTaskSourceCore<SubAssetsHandle>.Dispose(state.Source);
                     return false;

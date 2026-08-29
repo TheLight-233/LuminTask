@@ -11,47 +11,47 @@ using LuminThread.Interface;
 
 namespace LuminThread.Unity
 {
-    public static partial class UnityAsyncExtensions
+    public static partial class UnityAsyncLuminTask
     {
         #region UnityEvent 扩展
 
-        public static AsyncUnityEventHandler GetAsyncEventHandler(this UnityEvent unityEvent, CancellationToken cancellationToken)
+        public static AsyncUnityLuminTaskEventHandler GetAsyncEventHandler(this UnityEvent unityEvent, CancellationToken cancellationToken)
         {
-            return new AsyncUnityEventHandler(unityEvent, cancellationToken, false);
+            return new AsyncUnityLuminTaskEventHandler(unityEvent, cancellationToken, false);
         }
 
         public static LuminTask OnInvokeAsync(this UnityEvent unityEvent, CancellationToken cancellationToken)
         {
-            return AsyncUnityEventPromise.Create(unityEvent, PlayerLoopTiming.Update, cancellationToken, true);
+            return AsyncUnityLuminTaskEventPromise.Create(unityEvent, PlayerLoopTiming.Update, cancellationToken, true);
         }
 
-        public static AsyncUnityEventHandler<T> GetAsyncEventHandler<T>(this UnityEvent<T> unityEvent, CancellationToken cancellationToken)
+        public static AsyncUnityLuminTaskEventHandler<T> GetAsyncEventHandler<T>(this UnityEvent<T> unityEvent, CancellationToken cancellationToken)
         {
-            return new AsyncUnityEventHandler<T>(unityEvent, cancellationToken, false);
+            return new AsyncUnityLuminTaskEventHandler<T>(unityEvent, cancellationToken, false);
         }
 
         public static LuminTask<T> OnInvokeAsync<T>(this UnityEvent<T> unityEvent, CancellationToken cancellationToken)
         {
-            return AsyncUnityEventPromise<T>.Create(unityEvent, PlayerLoopTiming.Update, cancellationToken, true);
+            return AsyncUnityLuminTaskEventPromise<T>.Create(unityEvent, PlayerLoopTiming.Update, cancellationToken, true);
         }
 
         #endregion
 
         #region Button 扩展
 
-        public static IAsyncClickEventHandler GetAsyncClickEventHandler(this Button button)
+        public static IAsyncClickLuminTaskEventHandler GetAsyncClickEventHandler(this Button button)
         {
-            return new AsyncUnityEventHandler(button.onClick, button.GetCancellationTokenOnDestroy(), false);
+            return new AsyncUnityLuminTaskEventHandler(button.onClick, button.GetOnDestroyCancellationToken(), false);
         }
 
-        public static IAsyncClickEventHandler GetAsyncClickEventHandler(this Button button, CancellationToken cancellationToken)
+        public static IAsyncClickLuminTaskEventHandler GetAsyncClickEventHandler(this Button button, CancellationToken cancellationToken)
         {
-            return new AsyncUnityEventHandler(button.onClick, cancellationToken, false);
+            return new AsyncUnityLuminTaskEventHandler(button.onClick, cancellationToken, false);
         }
 
         public static LuminTask OnClickAsync(this Button button)
         {
-            return button.onClick.OnInvokeAsync(button.GetCancellationTokenOnDestroy());
+            return button.onClick.OnInvokeAsync(button.GetOnDestroyCancellationToken());
         }
 
         public static LuminTask OnClickAsync(this Button button, CancellationToken cancellationToken)
@@ -63,19 +63,19 @@ namespace LuminThread.Unity
 
         #region Toggle 扩展
 
-        public static IAsyncValueChangedEventHandler<bool> GetAsyncValueChangedEventHandler(this Toggle toggle)
+        public static IAsyncValueChangedLuminTaskEventHandler<bool> GetAsyncValueChangedEventHandler(this Toggle toggle)
         {
-            return new AsyncUnityEventHandler<bool>(toggle.onValueChanged, toggle.GetCancellationTokenOnDestroy(), false);
+            return new AsyncUnityLuminTaskEventHandler<bool>(toggle.onValueChanged, toggle.GetOnDestroyCancellationToken(), false);
         }
 
-        public static IAsyncValueChangedEventHandler<bool> GetAsyncValueChangedEventHandler(this Toggle toggle, CancellationToken cancellationToken)
+        public static IAsyncValueChangedLuminTaskEventHandler<bool> GetAsyncValueChangedEventHandler(this Toggle toggle, CancellationToken cancellationToken)
         {
-            return new AsyncUnityEventHandler<bool>(toggle.onValueChanged, cancellationToken, false);
+            return new AsyncUnityLuminTaskEventHandler<bool>(toggle.onValueChanged, cancellationToken, false);
         }
 
         public static LuminTask<bool> OnValueChangedAsync(this Toggle toggle)
         {
-            return toggle.onValueChanged.OnInvokeAsync(toggle.GetCancellationTokenOnDestroy());
+            return toggle.onValueChanged.OnInvokeAsync(toggle.GetOnDestroyCancellationToken());
         }
 
         public static LuminTask<bool> OnValueChangedAsync(this Toggle toggle, CancellationToken cancellationToken)
@@ -87,19 +87,19 @@ namespace LuminThread.Unity
 
         #region Scrollbar 扩展
 
-        public static IAsyncValueChangedEventHandler<float> GetAsyncValueChangedEventHandler(this Scrollbar scrollbar)
+        public static IAsyncValueChangedLuminTaskEventHandler<float> GetAsyncValueChangedEventHandler(this Scrollbar scrollbar)
         {
-            return new AsyncUnityEventHandler<float>(scrollbar.onValueChanged, scrollbar.GetCancellationTokenOnDestroy(), false);
+            return new AsyncUnityLuminTaskEventHandler<float>(scrollbar.onValueChanged, scrollbar.GetOnDestroyCancellationToken(), false);
         }
 
-        public static IAsyncValueChangedEventHandler<float> GetAsyncValueChangedEventHandler(this Scrollbar scrollbar, CancellationToken cancellationToken)
+        public static IAsyncValueChangedLuminTaskEventHandler<float> GetAsyncValueChangedEventHandler(this Scrollbar scrollbar, CancellationToken cancellationToken)
         {
-            return new AsyncUnityEventHandler<float>(scrollbar.onValueChanged, cancellationToken, false);
+            return new AsyncUnityLuminTaskEventHandler<float>(scrollbar.onValueChanged, cancellationToken, false);
         }
 
         public static LuminTask<float> OnValueChangedAsync(this Scrollbar scrollbar)
         {
-            return scrollbar.onValueChanged.OnInvokeAsync(scrollbar.GetCancellationTokenOnDestroy());
+            return scrollbar.onValueChanged.OnInvokeAsync(scrollbar.GetOnDestroyCancellationToken());
         }
 
         public static LuminTask<float> OnValueChangedAsync(this Scrollbar scrollbar, CancellationToken cancellationToken)
@@ -111,19 +111,19 @@ namespace LuminThread.Unity
 
         #region ScrollRect 扩展
 
-        public static IAsyncValueChangedEventHandler<Vector2> GetAsyncValueChangedEventHandler(this ScrollRect scrollRect)
+        public static IAsyncValueChangedLuminTaskEventHandler<Vector2> GetAsyncValueChangedEventHandler(this ScrollRect scrollRect)
         {
-            return new AsyncUnityEventHandler<Vector2>(scrollRect.onValueChanged, scrollRect.GetCancellationTokenOnDestroy(), false);
+            return new AsyncUnityLuminTaskEventHandler<Vector2>(scrollRect.onValueChanged, scrollRect.GetOnDestroyCancellationToken(), false);
         }
 
-        public static IAsyncValueChangedEventHandler<Vector2> GetAsyncValueChangedEventHandler(this ScrollRect scrollRect, CancellationToken cancellationToken)
+        public static IAsyncValueChangedLuminTaskEventHandler<Vector2> GetAsyncValueChangedEventHandler(this ScrollRect scrollRect, CancellationToken cancellationToken)
         {
-            return new AsyncUnityEventHandler<Vector2>(scrollRect.onValueChanged, cancellationToken, false);
+            return new AsyncUnityLuminTaskEventHandler<Vector2>(scrollRect.onValueChanged, cancellationToken, false);
         }
 
         public static LuminTask<Vector2> OnValueChangedAsync(this ScrollRect scrollRect)
         {
-            return scrollRect.onValueChanged.OnInvokeAsync(scrollRect.GetCancellationTokenOnDestroy());
+            return scrollRect.onValueChanged.OnInvokeAsync(scrollRect.GetOnDestroyCancellationToken());
         }
 
         public static LuminTask<Vector2> OnValueChangedAsync(this ScrollRect scrollRect, CancellationToken cancellationToken)
@@ -135,19 +135,19 @@ namespace LuminThread.Unity
 
         #region Slider 扩展
 
-        public static IAsyncValueChangedEventHandler<float> GetAsyncValueChangedEventHandler(this Slider slider)
+        public static IAsyncValueChangedLuminTaskEventHandler<float> GetAsyncValueChangedEventHandler(this Slider slider)
         {
-            return new AsyncUnityEventHandler<float>(slider.onValueChanged, slider.GetCancellationTokenOnDestroy(), false);
+            return new AsyncUnityLuminTaskEventHandler<float>(slider.onValueChanged, slider.GetOnDestroyCancellationToken(), false);
         }
 
-        public static IAsyncValueChangedEventHandler<float> GetAsyncValueChangedEventHandler(this Slider slider, CancellationToken cancellationToken)
+        public static IAsyncValueChangedLuminTaskEventHandler<float> GetAsyncValueChangedEventHandler(this Slider slider, CancellationToken cancellationToken)
         {
-            return new AsyncUnityEventHandler<float>(slider.onValueChanged, cancellationToken, false);
+            return new AsyncUnityLuminTaskEventHandler<float>(slider.onValueChanged, cancellationToken, false);
         }
 
         public static LuminTask<float> OnValueChangedAsync(this Slider slider)
         {
-            return slider.onValueChanged.OnInvokeAsync(slider.GetCancellationTokenOnDestroy());
+            return slider.onValueChanged.OnInvokeAsync(slider.GetOnDestroyCancellationToken());
         }
 
         public static LuminTask<float> OnValueChangedAsync(this Slider slider, CancellationToken cancellationToken)
@@ -159,19 +159,19 @@ namespace LuminThread.Unity
 
         #region InputField 扩展
 
-        public static IAsyncEndEditEventHandler<string> GetAsyncEndEditEventHandler(this InputField inputField)
+        public static IAsyncEndEditLuminTaskEventHandler<string> GetAsyncEndEditEventHandler(this InputField inputField)
         {
-            return new AsyncUnityEventHandler<string>(inputField.onEndEdit, inputField.GetCancellationTokenOnDestroy(), false);
+            return new AsyncUnityLuminTaskEventHandler<string>(inputField.onEndEdit, inputField.GetOnDestroyCancellationToken(), false);
         }
 
-        public static IAsyncEndEditEventHandler<string> GetAsyncEndEditEventHandler(this InputField inputField, CancellationToken cancellationToken)
+        public static IAsyncEndEditLuminTaskEventHandler<string> GetAsyncEndEditEventHandler(this InputField inputField, CancellationToken cancellationToken)
         {
-            return new AsyncUnityEventHandler<string>(inputField.onEndEdit, cancellationToken, false);
+            return new AsyncUnityLuminTaskEventHandler<string>(inputField.onEndEdit, cancellationToken, false);
         }
 
         public static LuminTask<string> OnEndEditAsync(this InputField inputField)
         {
-            return inputField.onEndEdit.OnInvokeAsync(inputField.GetCancellationTokenOnDestroy());
+            return inputField.onEndEdit.OnInvokeAsync(inputField.GetOnDestroyCancellationToken());
         }
 
         public static LuminTask<string> OnEndEditAsync(this InputField inputField, CancellationToken cancellationToken)
@@ -179,19 +179,19 @@ namespace LuminThread.Unity
             return inputField.onEndEdit.OnInvokeAsync(cancellationToken);
         }
 
-        public static IAsyncValueChangedEventHandler<string> GetAsyncValueChangedEventHandler(this InputField inputField)
+        public static IAsyncValueChangedLuminTaskEventHandler<string> GetAsyncValueChangedEventHandler(this InputField inputField)
         {
-            return new AsyncUnityEventHandler<string>(inputField.onValueChanged, inputField.GetCancellationTokenOnDestroy(), false);
+            return new AsyncUnityLuminTaskEventHandler<string>(inputField.onValueChanged, inputField.GetOnDestroyCancellationToken(), false);
         }
 
-        public static IAsyncValueChangedEventHandler<string> GetAsyncValueChangedEventHandler(this InputField inputField, CancellationToken cancellationToken)
+        public static IAsyncValueChangedLuminTaskEventHandler<string> GetAsyncValueChangedEventHandler(this InputField inputField, CancellationToken cancellationToken)
         {
-            return new AsyncUnityEventHandler<string>(inputField.onValueChanged, cancellationToken, false);
+            return new AsyncUnityLuminTaskEventHandler<string>(inputField.onValueChanged, cancellationToken, false);
         }
 
         public static LuminTask<string> OnValueChangedAsync(this InputField inputField)
         {
-            return inputField.onValueChanged.OnInvokeAsync(inputField.GetCancellationTokenOnDestroy());
+            return inputField.onValueChanged.OnInvokeAsync(inputField.GetOnDestroyCancellationToken());
         }
 
         public static LuminTask<string> OnValueChangedAsync(this InputField inputField, CancellationToken cancellationToken)
@@ -203,19 +203,19 @@ namespace LuminThread.Unity
 
         #region Dropdown 扩展
 
-        public static IAsyncValueChangedEventHandler<int> GetAsyncValueChangedEventHandler(this Dropdown dropdown)
+        public static IAsyncValueChangedLuminTaskEventHandler<int> GetAsyncValueChangedEventHandler(this Dropdown dropdown)
         {
-            return new AsyncUnityEventHandler<int>(dropdown.onValueChanged, dropdown.GetCancellationTokenOnDestroy(), false);
+            return new AsyncUnityLuminTaskEventHandler<int>(dropdown.onValueChanged, dropdown.GetOnDestroyCancellationToken(), false);
         }
 
-        public static IAsyncValueChangedEventHandler<int> GetAsyncValueChangedEventHandler(this Dropdown dropdown, CancellationToken cancellationToken)
+        public static IAsyncValueChangedLuminTaskEventHandler<int> GetAsyncValueChangedEventHandler(this Dropdown dropdown, CancellationToken cancellationToken)
         {
-            return new AsyncUnityEventHandler<int>(dropdown.onValueChanged, cancellationToken, false);
+            return new AsyncUnityLuminTaskEventHandler<int>(dropdown.onValueChanged, cancellationToken, false);
         }
 
         public static LuminTask<int> OnValueChangedAsync(this Dropdown dropdown)
         {
-            return dropdown.onValueChanged.OnInvokeAsync(dropdown.GetCancellationTokenOnDestroy());
+            return dropdown.onValueChanged.OnInvokeAsync(dropdown.GetOnDestroyCancellationToken());
         }
 
         public static LuminTask<int> OnValueChangedAsync(this Dropdown dropdown, CancellationToken cancellationToken)
@@ -227,26 +227,26 @@ namespace LuminThread.Unity
 
         #region 接口定义
 
-        public interface IAsyncClickEventHandler : IDisposable
+        public interface IAsyncClickLuminTaskEventHandler : IDisposable
         {
             LuminTask OnClickAsync();
         }
 
-        public interface IAsyncValueChangedEventHandler<T> : IDisposable
+        public interface IAsyncValueChangedLuminTaskEventHandler<T> : IDisposable
         {
             LuminTask<T> OnValueChangedAsync();
         }
 
-        public interface IAsyncEndEditEventHandler<T> : IDisposable
+        public interface IAsyncEndEditLuminTaskEventHandler<T> : IDisposable
         {
             LuminTask<T> OnEndEditAsync();
         }
 
         #endregion
 
-        #region AsyncUnityEventPromise（无返回值）
+        #region AsyncUnityLuminTaskEventPromise（无返回值）
 
-        private static unsafe class AsyncUnityEventPromise
+        private static unsafe class AsyncUnityLuminTaskEventPromise
         {
             [StructLayout(LayoutKind.Sequential)]
             private struct StateData
@@ -338,9 +338,9 @@ namespace LuminThread.Unity
 
         #endregion
 
-        #region AsyncUnityEventPromise<T>（有返回值）
+        #region AsyncUnityLuminTaskEventPromise<T>（有返回值）
 
-        private static unsafe class AsyncUnityEventPromise<T>
+        private static unsafe class AsyncUnityLuminTaskEventPromise<T>
         {
             [StructLayout(LayoutKind.Sequential)]
             private struct StateData
@@ -432,9 +432,9 @@ namespace LuminThread.Unity
 
         #endregion
 
-        #region AsyncUnityEventHandler（无返回值）
+        #region AsyncUnityLuminTaskEventHandler（无返回值）
 
-        public unsafe sealed class AsyncUnityEventHandler : IAsyncClickEventHandler, IDisposable
+        public unsafe sealed class AsyncUnityLuminTaskEventHandler : IAsyncClickLuminTaskEventHandler, IDisposable
         {
             private readonly UnityEvent _unityEvent;
             private readonly CancellationToken _cancellationToken;
@@ -446,12 +446,12 @@ namespace LuminThread.Unity
             private bool _disposed;
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public static AsyncUnityEventHandler Create(UnityEvent unityEvent, CancellationToken cancellationToken, bool callOnce)
+            public static AsyncUnityLuminTaskEventHandler Create(UnityEvent unityEvent, CancellationToken cancellationToken, bool callOnce)
             {
-                return new AsyncUnityEventHandler(unityEvent, cancellationToken, callOnce);
+                return new AsyncUnityLuminTaskEventHandler(unityEvent, cancellationToken, callOnce);
             }
             
-            public AsyncUnityEventHandler(UnityEvent unityEvent, CancellationToken cancellationToken, bool callOnce)
+            public AsyncUnityLuminTaskEventHandler(UnityEvent unityEvent, CancellationToken cancellationToken, bool callOnce)
             {
                 _unityEvent = unityEvent ?? throw new ArgumentNullException(nameof(unityEvent));
                 _cancellationToken = cancellationToken;
@@ -474,7 +474,7 @@ namespace LuminThread.Unity
                 {
                     var registration = _cancellationToken.Register(static state =>
                     {
-                        var self = (AsyncUnityEventHandler)state;
+                        var self = (AsyncUnityLuminTaskEventHandler)state;
                         self.DisposeFromCancellation();
                     }, this);
                     if (_disposed)
@@ -567,10 +567,10 @@ namespace LuminThread.Unity
 
         #endregion
 
-        #region AsyncUnityEventHandler<T>（有返回值）
+        #region AsyncUnityLuminTaskEventHandler<T>（有返回值）
 
-        public unsafe sealed class AsyncUnityEventHandler<T> : IDisposable, IAsyncValueChangedEventHandler<T>, IAsyncEndEditEventHandler<T>
-        , TextMeshProAsyncExtensions.IAsyncEndTextSelectionEventHandler<T>, TextMeshProAsyncExtensions.IAsyncTextSelectionEventHandler<T>, TextMeshProAsyncExtensions.IAsyncDeselectEventHandler<T>, TextMeshProAsyncExtensions.IAsyncSelectEventHandler<T>, TextMeshProAsyncExtensions.IAsyncSubmitEventHandler<T>
+        public unsafe sealed class AsyncUnityLuminTaskEventHandler<T> : IDisposable, IAsyncValueChangedLuminTaskEventHandler<T>, IAsyncEndEditLuminTaskEventHandler<T>
+        , TextMeshProAsyncLuminTask.IAsyncEndTextSelectionLuminTaskEventHandler<T>, TextMeshProAsyncLuminTask.IAsyncTextSelectionLuminTaskEventHandler<T>, TextMeshProAsyncLuminTask.IAsyncDeselectLuminTaskEventHandler<T>, TextMeshProAsyncLuminTask.IAsyncSelectLuminTaskEventHandler<T>, TextMeshProAsyncLuminTask.IAsyncSubmitLuminTaskEventHandler<T>
         {
             private readonly UnityEvent<T> _unityEvent;
             private readonly CancellationToken _cancellationToken;
@@ -582,12 +582,12 @@ namespace LuminThread.Unity
             private bool _disposed;
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public static AsyncUnityEventHandler<T> Create(UnityEvent<T> unityEvent, CancellationToken cancellationToken, bool callOnce)
+            public static AsyncUnityLuminTaskEventHandler<T> Create(UnityEvent<T> unityEvent, CancellationToken cancellationToken, bool callOnce)
             {
-                return new AsyncUnityEventHandler<T>(unityEvent, cancellationToken, callOnce);
+                return new AsyncUnityLuminTaskEventHandler<T>(unityEvent, cancellationToken, callOnce);
             }
             
-            public AsyncUnityEventHandler(UnityEvent<T> unityEvent, CancellationToken cancellationToken, bool callOnce)
+            public AsyncUnityLuminTaskEventHandler(UnityEvent<T> unityEvent, CancellationToken cancellationToken, bool callOnce)
             {
                 _unityEvent = unityEvent ?? throw new ArgumentNullException(nameof(unityEvent));
                 _cancellationToken = cancellationToken;
@@ -610,7 +610,7 @@ namespace LuminThread.Unity
                 {
                     var registration = _cancellationToken.Register(static state =>
                     {
-                        var self = (AsyncUnityEventHandler<T>)state;
+                        var self = (AsyncUnityLuminTaskEventHandler<T>)state;
                         self.DisposeFromCancellation();
                     }, this);
                     if (_disposed)

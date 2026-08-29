@@ -5,6 +5,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Runtime.CompilerServices;
 using System.Threading;
 using LuminThread;
 using LuminThread.Interface;
@@ -30,8 +31,7 @@ namespace LuminThread.Unity
     /// LuminTask core assembly; Unity uses the managed MoveNext fallback so UnityLinker
     /// never has to analyze a calli site in this extension assembly.
     /// </summary>
-    [Preserve]
-    internal sealed class UnityMainThreadPlayLoopStrategy : IPlayLoopStrategy
+    internal sealed unsafe class UnityMainThreadPlayLoopStrategy : IPlayLoopStrategy, IFunctionPointerPlayLoopStrategy
     {
         private readonly struct ScheduledAction
         {
@@ -45,15 +45,30 @@ namespace LuminThread.Unity
             }
         }
 
+        private readonly struct ScheduledPointerAction
+        {
+            internal readonly LuminTaskState State;
+            internal readonly IntPtr FunctionPointer;
+
+            internal ScheduledPointerAction(in LuminTaskState state, IntPtr functionPointer)
+            {
+                State = state;
+                FunctionPointer = functionPointer;
+            }
+        }
+
         private readonly ConcurrentQueue<IPlayLoopItem> _incomingItems =
             new ConcurrentQueue<IPlayLoopItem>();
         private readonly ConcurrentQueue<ScheduledAction> _incomingActions =
             new ConcurrentQueue<ScheduledAction>();
+        private readonly ConcurrentQueue<ScheduledPointerAction> _incomingPointerActions =
+            new ConcurrentQueue<ScheduledPointerAction>();
         private readonly ConcurrentQueue<Action> _continuations =
             new ConcurrentQueue<Action>();
 
         private readonly List<IPlayLoopItem> _activeItems = new List<IPlayLoopItem>();
         private readonly List<ScheduledAction> _activeActions = new List<ScheduledAction>();
+        private readonly List<ScheduledPointerAction> _activePointerActions = new List<ScheduledPointerAction>();
         private int _disposed;
 
         internal readonly PlayerLoopSystem.UpdateFunction UpdateDelegate;
@@ -75,6 +90,13 @@ namespace LuminThread.Unity
             if (moveNext == null) throw new ArgumentNullException(nameof(moveNext));
             ThrowIfDisposed();
             _incomingActions.Enqueue(new ScheduledAction(state, moveNext));
+        }
+
+        public void AddAction(LuminTaskState state, IntPtr functionPointer)
+        {
+            if (functionPointer == IntPtr.Zero) throw new ArgumentNullException(nameof(functionPointer));
+            ThrowIfDisposed();
+            _incomingPointerActions.Enqueue(new ScheduledPointerAction(state, functionPointer));
         }
 
         public void AddContinuation(Action continuation)
@@ -117,6 +139,9 @@ namespace LuminThread.Unity
 
             while (_incomingActions.TryDequeue(out var action))
                 _activeActions.Add(action);
+
+            while (_incomingPointerActions.TryDequeue(out var action))
+                _activePointerActions.Add(action);
         }
 
         private void ProcessActiveItems()
@@ -175,6 +200,36 @@ namespace LuminThread.Unity
 
             if (writeIndex < count)
                 _activeActions.RemoveRange(writeIndex, count - writeIndex);
+
+            ProcessActivePointerActions();
+        }
+
+        private void ProcessActivePointerActions()
+        {
+            var count = _activePointerActions.Count;
+            if (count == 0)
+                return;
+
+            var writeIndex = 0;
+            for (var readIndex = 0; readIndex < count; readIndex++)
+            {
+                var action = _activePointerActions[readIndex];
+                var keep = false;
+                try
+                {
+                    keep = ((delegate*<in LuminTaskState, bool>)action.FunctionPointer)(action.State);
+                }
+                catch (Exception exception)
+                {
+                    Debug.LogException(exception);
+                }
+
+                if (keep)
+                    _activePointerActions[writeIndex++] = action;
+            }
+
+            if (writeIndex < count)
+                _activePointerActions.RemoveRange(writeIndex, count - writeIndex);
         }
 
         private void ThrowIfDisposed()
@@ -191,6 +246,7 @@ namespace LuminThread.Unity
             while (_incomingItems.TryDequeue(out var item))
                 (item as IDisposable)?.Dispose();
             while (_incomingActions.TryDequeue(out _)) { }
+            while (_incomingPointerActions.TryDequeue(out _)) { }
             while (_continuations.TryDequeue(out _)) { }
 
             for (var i = 0; i < _activeItems.Count; i++)
@@ -198,10 +254,10 @@ namespace LuminThread.Unity
 
             _activeItems.Clear();
             _activeActions.Clear();
+            _activePointerActions.Clear();
         }
     }
 
-    [Preserve]
     internal static class UnityPlayerLoopInjector
     {
         private const int UnityTimingCount = (int)PlayerLoopTiming.LastTimeUpdate + 1;

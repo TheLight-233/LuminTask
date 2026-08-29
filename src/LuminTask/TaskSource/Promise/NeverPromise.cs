@@ -31,6 +31,7 @@ public unsafe struct NeverPromise<T>
     }
 
     static readonly Action<object> _cancellationCallback = CancellationCallback;
+    static readonly Action<object> _completedCallback = static _ => { };
 
     public short Id;
 
@@ -41,7 +42,7 @@ public unsafe struct NeverPromise<T>
     public static NeverPromise<T>* Create(CancellationToken cancellationToken = default)
     {
         NeverPromise<T>* ptr = (NeverPromise<T>*)MemoryHelper.Alloc((nuint)sizeof(NeverPromise<T>));
-        ptr->Id = 0;
+        ptr->Id = LuminTaskBag.GetId();
 
         ref var item = ref LuminTaskMarshal.GetTaskItem(ptr->Id);
         
@@ -49,7 +50,14 @@ public unsafe struct NeverPromise<T>
         
         item.CancellationToken = cancellationToken;
 
-        if (cancellationToken.CanBeCanceled)
+        if (cancellationToken.IsCancellationRequested)
+        {
+            // Avoid registering a callback that can run synchronously and free the source before
+            // Create returns. Keep the source alive until the awaiter consumes the cancellation.
+            item.Error = new OperationCanceledException(cancellationToken);
+            item.Continuation = _completedCallback;
+        }
+        else if (cancellationToken.CanBeCanceled)
         {
             cancellationToken.RegisterWithoutCaptureExecutionContext(_cancellationCallback, new IntPtr(ptr));
         }
@@ -65,9 +73,12 @@ public unsafe struct NeverPromise<T>
         ref var item = ref LuminTaskMarshal.GetTaskItem(self.Id);
         item.Error = new OperationCanceledException(item.CancellationToken);
 
-        item.Continuation?.Invoke(item.State!);
-
-        Dispose(ptr);
+        var continuation = item.Continuation;
+        if (continuation != null)
+        {
+            continuation(item.State!);
+            Dispose(ptr);
+        }
     }
 
     [DebuggerHidden]
@@ -139,13 +150,24 @@ public unsafe struct NeverPromise<T>
         if (oldContinuation != null)
         {
             continuation(state);
+            // A token that was already canceled is represented by a completed sentinel rather
+            // than a registration callback; release its source after the awaiter observes it.
+            if (ReferenceEquals(oldContinuation, _completedCallback))
+                Dispose(ptr);
+        }
+        else if (item.Error is OperationCanceledException)
+        {
+            // Cancellation won the race before continuation registration. The source is now
+            // complete and can be released after notifying this awaiter.
+            continuation(state);
+            Dispose(ptr);
         }
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static void Dispose(void* ptr)
     {
-        ref var source = ref Unsafe.AsRef<ExceptionResultSource<T>>(ptr);
+        ref var source = ref Unsafe.AsRef<NeverPromise<T>>(ptr);
         ref var item = ref LuminTaskMarshal.GetTaskItem(source.Id);
 
         LuminTaskBag.ResetId(item.Id);

@@ -29,6 +29,7 @@ public unsafe struct YieldPromise
     }
 
     bool cancelImmediately;
+    CancellationTokenRegistration _registration;
     short Id;
 
     public static YieldPromise* Create(PlayerLoopTiming timing, CancellationToken cancellationToken, bool cancelImmediately, out short token)
@@ -51,7 +52,9 @@ public unsafe struct YieldPromise
 
         if (cancelImmediately && cancellationToken.CanBeCanceled)
         {
-            cancellationToken.RegisterWithoutCaptureExecutionContext(static state =>
+            // Keep the registration so Dispose can unregister it, avoiding both a leaked
+            // registration and a late cancellation callback touching the freed source pointer.
+            ptr->_registration = cancellationToken.RegisterWithoutCaptureExecutionContext(static state =>
             {
                 ref var promise = ref Unsafe.AsRef<YieldPromise>(((IntPtr)state).ToPointer());
                 ref var item = ref LuminTaskMarshal.GetTaskItem(promise.Id);
@@ -156,6 +159,9 @@ public unsafe struct YieldPromise
     {
         ref var source = ref Unsafe.AsRef<YieldPromise>(ptr);
         ref var item = ref LuminTaskMarshal.GetTaskItem(source.Id);
+
+        // Unregister before freeing so a late cancellation can no longer dereference the pointer.
+        source._registration.Dispose();
 
         LuminTaskBag.ResetId(item.Id);
         

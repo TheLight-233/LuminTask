@@ -10,15 +10,15 @@ using LuminThread.TaskSource;
 
 namespace LuminThread.Unity
 {
-    public static partial class UnityAsyncExtensions
+    public static partial class UnityAsyncLuminTask
     {
         #region AsyncOperation
 
-        public static AsyncOperationAwaiter GetAwaiter(this AsyncOperation asyncOperation)
+        public static AsyncOperationLuminTaskAwaiter GetAwaiter(this AsyncOperation asyncOperation)
         {
             if (asyncOperation == null)
                 throw new ArgumentNullException(nameof(asyncOperation));
-            return new AsyncOperationAwaiter(asyncOperation);
+            return new AsyncOperationLuminTaskAwaiter(asyncOperation);
         }
 
         public static LuminTask WithCancellation(this AsyncOperation asyncOperation, CancellationToken cancellationToken)
@@ -42,12 +42,12 @@ namespace LuminThread.Unity
             return AsyncOperationPromise.Create(asyncOperation, timing, progress, cancellationToken, cancelImmediately);
         }
 
-        public struct AsyncOperationAwaiter : ICriticalNotifyCompletion
+        public struct AsyncOperationLuminTaskAwaiter : ICriticalNotifyCompletion
         {
             private AsyncOperation _asyncOperation;
             private Action<AsyncOperation> _continuationAction;
 
-            public AsyncOperationAwaiter(AsyncOperation asyncOperation)
+            public AsyncOperationLuminTaskAwaiter(AsyncOperation asyncOperation)
             {
                 _asyncOperation = asyncOperation;
                 _continuationAction = null;
@@ -88,6 +88,7 @@ namespace LuminThread.Unity
             {
                 public bool Completed;
                 public bool IsCancellationRequested;
+                public CancellationTokenRegistration Registration;
             }
 
             public static unsafe LuminTask Create(AsyncOperation asyncOperation, PlayerLoopTiming timing, IProgress<float> progress, CancellationToken cancellationToken, bool cancelImmediately)
@@ -110,6 +111,8 @@ namespace LuminThread.Unity
                         
                     stateData.Completed = true;
                     stateData.IsCancellationRequested = cancellationToken.IsCancellationRequested;
+                    stateTuple.Item1.Completed = true;
+                    stateTuple.Item1.IsCancellationRequested = stateData.IsCancellationRequested;
                     
                     if (cancellationToken.IsCancellationRequested)
                     {
@@ -125,13 +128,16 @@ namespace LuminThread.Unity
                         asyncOperation.completed -= continuation;
                         continuation = null;
                     }
+
+                    stateTuple.Item1.Registration.Dispose();
+                    stateTuple.Dispose();
                 };
 
                 asyncOperation.completed += continuation;
 
                 if (cancelImmediately && cancellationToken.CanBeCanceled)
                 {
-                    var registration = cancellationToken.Register(() =>
+                    stateTuple.Item1.Registration = cancellationToken.Register(() =>
                     {
                         stateData.Completed = true;
                         stateData.IsCancellationRequested = true;
@@ -162,6 +168,7 @@ namespace LuminThread.Unity
                     stateTuple.Item1.Completed = true;
                     stateTuple.Item1.IsCancellationRequested = true;
                     LuminTaskSourceCore<AsyncUnit>.TrySetCanceled(state.Source);
+                    stateTuple.Item1.Registration.Dispose();
                     stateTuple.Dispose();
                     return false;
                 }
@@ -173,6 +180,7 @@ namespace LuminThread.Unity
                 {
                     stateTuple.Item1.Completed = true;
                     LuminTaskSourceCore<AsyncUnit>.TrySetResult(state.Source);
+                    stateTuple.Item1.Registration.Dispose();
                     stateTuple.Dispose();
                     return false;
                 }
@@ -185,11 +193,11 @@ namespace LuminThread.Unity
 
         #region ResourceRequest
 
-        public static ResourceRequestAwaiter GetAwaiter(this ResourceRequest asyncOperation)
+        public static ResourceRequestLuminTaskAwaiter GetAwaiter(this ResourceRequest asyncOperation)
         {
             if (asyncOperation == null)
                 throw new ArgumentNullException(nameof(asyncOperation));
-            return new ResourceRequestAwaiter(asyncOperation);
+            return new ResourceRequestLuminTaskAwaiter(asyncOperation);
         }
 
         public static LuminTask<UnityEngine.Object> WithCancellation(this ResourceRequest asyncOperation, CancellationToken cancellationToken)
@@ -213,12 +221,12 @@ namespace LuminThread.Unity
             return ResourceRequestPromise.Create(asyncOperation, timing, progress, cancellationToken, cancelImmediately);
         }
 
-        public struct ResourceRequestAwaiter : ICriticalNotifyCompletion
+        public struct ResourceRequestLuminTaskAwaiter : ICriticalNotifyCompletion
         {
             private ResourceRequest _asyncOperation;
             private Action<AsyncOperation> _continuationAction;
 
-            public ResourceRequestAwaiter(ResourceRequest asyncOperation)
+            public ResourceRequestLuminTaskAwaiter(ResourceRequest asyncOperation)
             {
                 _asyncOperation = asyncOperation;
                 _continuationAction = null;
@@ -260,6 +268,7 @@ namespace LuminThread.Unity
             {
                 public bool Completed;
                 public bool IsCancellationRequested;
+                public CancellationTokenRegistration Registration;
             }
 
             public static unsafe LuminTask<UnityEngine.Object> Create(ResourceRequest asyncOperation, PlayerLoopTiming timing, IProgress<float> progress, CancellationToken cancellationToken, bool cancelImmediately)
@@ -282,6 +291,8 @@ namespace LuminThread.Unity
                         
                     stateData.Completed = true;
                     stateData.IsCancellationRequested = cancellationToken.IsCancellationRequested;
+                    stateTuple.Item1.Completed = true;
+                    stateTuple.Item1.IsCancellationRequested = stateData.IsCancellationRequested;
                     
                     if (cancellationToken.IsCancellationRequested)
                     {
@@ -297,13 +308,16 @@ namespace LuminThread.Unity
                         asyncOperation.completed -= continuation;
                         continuation = null;
                     }
+
+                    stateTuple.Item1.Registration.Dispose();
+                    stateTuple.Dispose();
                 };
 
                 asyncOperation.completed += continuation;
 
                 if (cancelImmediately && cancellationToken.CanBeCanceled)
                 {
-                    var registration = cancellationToken.Register(() =>
+                    stateTuple.Item1.Registration = cancellationToken.Register(() =>
                     {
                         stateData.Completed = true;
                         stateData.IsCancellationRequested = true;
@@ -334,6 +348,7 @@ namespace LuminThread.Unity
                     stateTuple.Item1.Completed = true;
                     stateTuple.Item1.IsCancellationRequested = true;
                     LuminTaskSourceCore<UnityEngine.Object>.TrySetCanceled(state.Source);
+                    stateTuple.Item1.Registration.Dispose();
                     stateTuple.Dispose();
                     return false;
                 }
@@ -345,6 +360,7 @@ namespace LuminThread.Unity
                 {
                     stateTuple.Item1.Completed = true;
                     LuminTaskSourceCore<UnityEngine.Object>.TrySetResult(state.Source, asyncOperation.asset);
+                    stateTuple.Item1.Registration.Dispose();
                     stateTuple.Dispose();
                     return false;
                 }
@@ -357,11 +373,11 @@ namespace LuminThread.Unity
 
         #region AssetBundleRequest
 
-        public static AssetBundleRequestAwaiter GetAwaiter(this AssetBundleRequest asyncOperation)
+        public static AssetBundleRequestLuminTaskAwaiter GetAwaiter(this AssetBundleRequest asyncOperation)
         {
             if (asyncOperation == null)
                 throw new ArgumentNullException(nameof(asyncOperation));
-            return new AssetBundleRequestAwaiter(asyncOperation);
+            return new AssetBundleRequestLuminTaskAwaiter(asyncOperation);
         }
 
         public static LuminTask<UnityEngine.Object> WithCancellation(this AssetBundleRequest asyncOperation, CancellationToken cancellationToken)
@@ -385,12 +401,12 @@ namespace LuminThread.Unity
             return AssetBundleRequestPromise.Create(asyncOperation, timing, progress, cancellationToken, cancelImmediately);
         }
 
-        public struct AssetBundleRequestAwaiter : ICriticalNotifyCompletion
+        public struct AssetBundleRequestLuminTaskAwaiter : ICriticalNotifyCompletion
         {
             private AssetBundleRequest _asyncOperation;
             private Action<AsyncOperation> _continuationAction;
 
-            public AssetBundleRequestAwaiter(AssetBundleRequest asyncOperation)
+            public AssetBundleRequestLuminTaskAwaiter(AssetBundleRequest asyncOperation)
             {
                 _asyncOperation = asyncOperation;
                 _continuationAction = null;
@@ -432,6 +448,7 @@ namespace LuminThread.Unity
             {
                 public bool Completed;
                 public bool IsCancellationRequested;
+                public CancellationTokenRegistration Registration;
             }
 
             public static unsafe LuminTask<UnityEngine.Object> Create(AssetBundleRequest asyncOperation, PlayerLoopTiming timing, IProgress<float> progress, CancellationToken cancellationToken, bool cancelImmediately)
@@ -454,6 +471,8 @@ namespace LuminThread.Unity
                         
                     stateData.Completed = true;
                     stateData.IsCancellationRequested = cancellationToken.IsCancellationRequested;
+                    stateTuple.Item1.Completed = true;
+                    stateTuple.Item1.IsCancellationRequested = stateData.IsCancellationRequested;
                     
                     if (cancellationToken.IsCancellationRequested)
                     {
@@ -469,13 +488,16 @@ namespace LuminThread.Unity
                         asyncOperation.completed -= continuation;
                         continuation = null;
                     }
+
+                    stateTuple.Item1.Registration.Dispose();
+                    stateTuple.Dispose();
                 };
 
                 asyncOperation.completed += continuation;
 
                 if (cancelImmediately && cancellationToken.CanBeCanceled)
                 {
-                    var registration = cancellationToken.Register(() =>
+                    stateTuple.Item1.Registration = cancellationToken.Register(() =>
                     {
                         stateData.Completed = true;
                         stateData.IsCancellationRequested = true;
@@ -506,6 +528,7 @@ namespace LuminThread.Unity
                     stateTuple.Item1.Completed = true;
                     stateTuple.Item1.IsCancellationRequested = true;
                     LuminTaskSourceCore<UnityEngine.Object>.TrySetCanceled(state.Source);
+                    stateTuple.Item1.Registration.Dispose();
                     stateTuple.Dispose();
                     return false;
                 }
@@ -517,6 +540,7 @@ namespace LuminThread.Unity
                 {
                     stateTuple.Item1.Completed = true;
                     LuminTaskSourceCore<UnityEngine.Object>.TrySetResult(state.Source, asyncOperation.asset);
+                    stateTuple.Item1.Registration.Dispose();
                     stateTuple.Dispose();
                     return false;
                 }
@@ -529,11 +553,11 @@ namespace LuminThread.Unity
         
         #region AssetBundleCreateRequest
 
-        public static AssetBundleCreateRequestAwaiter GetAwaiter(this AssetBundleCreateRequest asyncOperation)
+        public static AssetBundleCreateRequestLuminTaskAwaiter GetAwaiter(this AssetBundleCreateRequest asyncOperation)
         {
             if (asyncOperation == null)
                 throw new ArgumentNullException(nameof(asyncOperation));
-            return new AssetBundleCreateRequestAwaiter(asyncOperation);
+            return new AssetBundleCreateRequestLuminTaskAwaiter(asyncOperation);
         }
 
         public static LuminTask<AssetBundle> WithCancellation(this AssetBundleCreateRequest asyncOperation, CancellationToken cancellationToken)
@@ -557,12 +581,12 @@ namespace LuminThread.Unity
             return AssetBundleCreateRequestPromise.Create(asyncOperation, timing, progress, cancellationToken, cancelImmediately);
         }
 
-        public struct AssetBundleCreateRequestAwaiter : ICriticalNotifyCompletion
+        public struct AssetBundleCreateRequestLuminTaskAwaiter : ICriticalNotifyCompletion
         {
             private AssetBundleCreateRequest _asyncOperation;
             private Action<AsyncOperation> _continuationAction;
 
-            public AssetBundleCreateRequestAwaiter(AssetBundleCreateRequest asyncOperation)
+            public AssetBundleCreateRequestLuminTaskAwaiter(AssetBundleCreateRequest asyncOperation)
             {
                 _asyncOperation = asyncOperation;
                 _continuationAction = null;
@@ -604,6 +628,7 @@ namespace LuminThread.Unity
             {
                 public bool Completed;
                 public bool IsCancellationRequested;
+                public CancellationTokenRegistration Registration;
             }
 
             public static unsafe LuminTask<AssetBundle> Create(AssetBundleCreateRequest asyncOperation, PlayerLoopTiming timing, IProgress<float> progress, CancellationToken cancellationToken, bool cancelImmediately)
@@ -626,6 +651,8 @@ namespace LuminThread.Unity
                         
                     stateData.Completed = true;
                     stateData.IsCancellationRequested = cancellationToken.IsCancellationRequested;
+                    stateTuple.Item1.Completed = true;
+                    stateTuple.Item1.IsCancellationRequested = stateData.IsCancellationRequested;
                     
                     if (cancellationToken.IsCancellationRequested)
                     {
@@ -641,13 +668,16 @@ namespace LuminThread.Unity
                         asyncOperation.completed -= continuation;
                         continuation = null;
                     }
+
+                    stateTuple.Item1.Registration.Dispose();
+                    stateTuple.Dispose();
                 };
 
                 asyncOperation.completed += continuation;
 
                 if (cancelImmediately && cancellationToken.CanBeCanceled)
                 {
-                    var registration = cancellationToken.Register(() =>
+                    stateTuple.Item1.Registration = cancellationToken.Register(() =>
                     {
                         stateData.Completed = true;
                         stateData.IsCancellationRequested = true;
@@ -678,6 +708,7 @@ namespace LuminThread.Unity
                     stateTuple.Item1.Completed = true;
                     stateTuple.Item1.IsCancellationRequested = true;
                     LuminTaskSourceCore<AssetBundle>.TrySetCanceled(state.Source);
+                    stateTuple.Item1.Registration.Dispose();
                     stateTuple.Dispose();
                     return false;
                 }
@@ -689,6 +720,7 @@ namespace LuminThread.Unity
                 {
                     stateTuple.Item1.Completed = true;
                     LuminTaskSourceCore<AssetBundle>.TrySetResult(state.Source, asyncOperation.assetBundle);
+                    stateTuple.Item1.Registration.Dispose();
                     stateTuple.Dispose();
                     return false;
                 }
@@ -701,11 +733,11 @@ namespace LuminThread.Unity
         
         #region UnityWebRequestAsyncOperation
 
-        public static UnityWebRequestAsyncOperationAwaiter GetAwaiter(this UnityWebRequestAsyncOperation asyncOperation)
+        public static UnityWebRequestOperationLuminTaskAwaiter GetAwaiter(this UnityWebRequestAsyncOperation asyncOperation)
         {
             if (asyncOperation == null)
                 throw new ArgumentNullException(nameof(asyncOperation));
-            return new UnityWebRequestAsyncOperationAwaiter(asyncOperation);
+            return new UnityWebRequestOperationLuminTaskAwaiter(asyncOperation);
         }
 
         public static LuminTask<UnityWebRequest> WithCancellation(this UnityWebRequestAsyncOperation asyncOperation, CancellationToken cancellationToken)
@@ -728,19 +760,19 @@ namespace LuminThread.Unity
             {
                 if (IsError(asyncOperation.webRequest))
                 {
-                    return LuminTask.FromException<UnityWebRequest>(new UnityWebRequestException(asyncOperation.webRequest));
+                    return LuminTask.FromException<UnityWebRequest>(new UnityWebRequestLuminTaskException(asyncOperation.webRequest));
                 }
                 return LuminTask.FromResult(asyncOperation.webRequest);
             }
             return UnityWebRequestAsyncOperationPromise.Create(asyncOperation, timing, progress, cancellationToken, cancelImmediately);
         }
 
-        public struct UnityWebRequestAsyncOperationAwaiter : ICriticalNotifyCompletion
+        public struct UnityWebRequestOperationLuminTaskAwaiter : ICriticalNotifyCompletion
         {
             private UnityWebRequestAsyncOperation _asyncOperation;
             private Action<AsyncOperation> _continuationAction;
 
-            public UnityWebRequestAsyncOperationAwaiter(UnityWebRequestAsyncOperation asyncOperation)
+            public UnityWebRequestOperationLuminTaskAwaiter(UnityWebRequestAsyncOperation asyncOperation)
             {
                 _asyncOperation = asyncOperation;
                 _continuationAction = null;
@@ -758,7 +790,7 @@ namespace LuminThread.Unity
                 
                 if (IsError(_asyncOperation.webRequest))
                 {
-                    throw new UnityWebRequestException(_asyncOperation.webRequest);
+                    throw new UnityWebRequestLuminTaskException(_asyncOperation.webRequest);
                 }
                 return _asyncOperation.webRequest;
             }
@@ -787,6 +819,7 @@ namespace LuminThread.Unity
             {
                 public bool Completed;
                 public bool IsCancellationRequested;
+                public CancellationTokenRegistration Registration;
             }
 
             public static unsafe LuminTask<UnityWebRequest> Create(UnityWebRequestAsyncOperation asyncOperation, PlayerLoopTiming timing, IProgress<float> progress, CancellationToken cancellationToken, bool cancelImmediately)
@@ -809,6 +842,8 @@ namespace LuminThread.Unity
                         
                     stateData.Completed = true;
                     stateData.IsCancellationRequested = cancellationToken.IsCancellationRequested;
+                    stateTuple.Item1.Completed = true;
+                    stateTuple.Item1.IsCancellationRequested = stateData.IsCancellationRequested;
                     
                     if (cancellationToken.IsCancellationRequested)
                     {
@@ -816,7 +851,7 @@ namespace LuminThread.Unity
                     }
                     else if (IsError(asyncOperation.webRequest))
                     {
-                        LuminTaskSourceCore<UnityWebRequest>.TrySetException(core, new UnityWebRequestException(asyncOperation.webRequest));
+                        LuminTaskSourceCore<UnityWebRequest>.TrySetException(core, new UnityWebRequestLuminTaskException(asyncOperation.webRequest));
                     }
                     else
                     {
@@ -828,13 +863,16 @@ namespace LuminThread.Unity
                         asyncOperation.completed -= continuation;
                         continuation = null;
                     }
+
+                    stateTuple.Item1.Registration.Dispose();
+                    stateTuple.Dispose();
                 };
 
                 asyncOperation.completed += continuation;
 
                 if (cancelImmediately && cancellationToken.CanBeCanceled)
                 {
-                    var registration = cancellationToken.Register(() =>
+                    stateTuple.Item1.Registration = cancellationToken.Register(() =>
                     {
                         stateData.Completed = true;
                         stateData.IsCancellationRequested = true;
@@ -867,6 +905,7 @@ namespace LuminThread.Unity
                     stateTuple.Item1.IsCancellationRequested = true;
                     asyncOperation.webRequest.Abort();
                     LuminTaskSourceCore<UnityWebRequest>.TrySetCanceled(state.Source);
+                    stateTuple.Item1.Registration.Dispose();
                     stateTuple.Dispose();
                     return false;
                 }
@@ -880,13 +919,14 @@ namespace LuminThread.Unity
                     
                     if (IsError(asyncOperation.webRequest))
                     {
-                        LuminTaskSourceCore<UnityWebRequest>.TrySetException(state.Source, new UnityWebRequestException(asyncOperation.webRequest));
+                        LuminTaskSourceCore<UnityWebRequest>.TrySetException(state.Source, new UnityWebRequestLuminTaskException(asyncOperation.webRequest));
                     }
                     else
                     {
                         LuminTaskSourceCore<UnityWebRequest>.TrySetResult(state.Source, asyncOperation.webRequest);
                     }
                     
+                    stateTuple.Item1.Registration.Dispose();
                     stateTuple.Dispose();
                     return false;
                 }
@@ -909,14 +949,5 @@ namespace LuminThread.Unity
 #endif
         }
 
-        public class UnityWebRequestException : Exception
-        {
-            public UnityWebRequest Request { get; }
-
-            public UnityWebRequestException(UnityWebRequest request) : base($"UnityWebRequest error: {request.error}")
-            {
-                Request = request;
-            }
-        }
     }
 }

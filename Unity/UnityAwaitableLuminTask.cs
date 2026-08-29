@@ -1,7 +1,7 @@
 #if UNITY_2023_1_OR_NEWER
 namespace LuminThread.Unity
 {
-    public static class UnityAwaitableExtensions
+    public static class UnityAwaitableLuminTask
     {
         public static async LuminTask AsLuminTask(this UnityEngine.Awaitable awaitable)
         {

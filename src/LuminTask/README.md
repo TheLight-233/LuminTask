@@ -51,3 +51,5 @@ LuminTask 遵循类似 `ValueTask` 的单次消费约定：一个任务实例应
 ## 许可证
 
 本项目基于 MIT License 发布。
+
+早期实现中曾学习并借鉴过 [UniTask](https://github.com/Cysharp/UniTask)（MIT，作者 Cysharp）的设计思路，部分异步同步原语（AsyncEx 系列）也参考了 [AsyncEx](https://github.com/StephenCleary/AsyncEx)（MIT，作者 Stephen Cleary）的思想。

@@ -1,4 +1,6 @@
 using LuminThread;
+using LuminThread.AsyncEx;
+using LuminThread.Interface;
 using LuminThread.Utility;
 
 namespace LuminTaskUnitTest;
@@ -22,6 +24,20 @@ public static class BasicTests
         await r.Run("result observed after completion", ResultAfterCompletion);
         await r.Run("ValueTask conversions preserve results", ValueTaskConversions);
         await r.Run("CancellationToken.WaitAsync supports success/canceled modes", CancellationTokenWaitAsync);
+        await r.Run("Never tasks use independent slots", NeverTasksUseIndependentSlots);
+        await r.Run("ConfigureAwait and sequential combinators", ConfigureAwaitAndCombinators);
+        await r.Run("Retry and Unwrap", RetryAndUnwrap);
+        await r.Run("AsyncLazy supports repeated await", AsyncLazyRepeatedAwait);
+        await r.Run("BCL await foreach adapter", BclAwaitForeach);
+        await r.Run("Registered main-thread context", RegisteredMainThreadContext);
+        await r.Run("Run executes sync/async delegates on the thread pool", RunDelegates);
+        await r.Run("RunOnThreadPool runs on a pool thread", RunOnThreadPoolThread);
+        await r.Run("Forget surfaces exceptions through the handler", ForgetExceptionHandler);
+        await r.Run("ContinueWith chains a continuation", ContinueWithChains);
+        await r.Run("Timeout aborts a hanging task", TimeoutAborts);
+        await r.Run("WaitUntil and WaitUntilCanceled complete", WaitUntilCompletes);
+        await r.Run("SuppressCancellationThrow preserves values", SuppressCancellationThrowPreserves);
+        await r.Run("Create and DelayFrame", CreateAndDelayFrame);
     }
 
     private static async LuminTask FromResultReturnsValue()
@@ -179,6 +195,187 @@ public static class BasicTests
                 Assert.Equal(cts.Token, canceled.CancellationToken);
             }
         }
+    }
+
+    private static async LuminTask NeverTasksUseIndependentSlots()
+    {
+        using var first = new CancellationTokenSource();
+        using var second = new CancellationTokenSource();
+        var firstTask = LuminTask.Never(first.Token);
+        var secondTask = LuminTask.Never(second.Token);
+        Assert.True(firstTask.Id != secondTask.Id, "Never tasks must not share a task slot");
+
+        first.Cancel();
+        try { await firstTask; Assert.Fail("expected cancellation"); }
+        catch (OperationCanceledException) { }
+        Assert.Equal(LuminTaskStatus.Pending, secondTask.Status);
+
+        second.Cancel();
+        try { await secondTask; Assert.Fail("expected cancellation"); }
+        catch (OperationCanceledException) { }
+
+        using var alreadyCanceled = new CancellationTokenSource();
+        alreadyCanceled.Cancel();
+        var preCanceled = LuminTask.Never(alreadyCanceled.Token);
+        try { await preCanceled; Assert.Fail("expected cancellation"); }
+        catch (OperationCanceledException) { }
+    }
+
+    private static async LuminTask ConfigureAwaitAndCombinators()
+    {
+        await LuminTask.Delay(1).ConfigureAwait(false);
+        await LuminTask.WhenAllSequential(new[] { LuminTask.CompletedTask(), LuminTask.CompletedTask() });
+    }
+
+    private static async LuminTask RetryAndUnwrap()
+    {
+        var attempts = 0;
+        await LuminTask.Retry(() =>
+        {
+            if (Interlocked.Increment(ref attempts) < 3)
+                return LuminTask.FromException(new InvalidOperationException("retry"));
+            return LuminTask.CompletedTask();
+        }, retryCount: 2);
+        Assert.Equal(3, attempts);
+
+        var nested = LuminTask.FromResult(LuminTask.FromResult(7));
+        Assert.Equal(7, await nested.Unwrap());
+    }
+
+    private static async LuminTask AsyncLazyRepeatedAwait()
+    {
+        var executions = 0;
+        var lazy = new AsyncLazy<int>(() =>
+        {
+            Interlocked.Increment(ref executions);
+            return 17;
+        });
+        Assert.Equal(17, await lazy.Task);
+        Assert.Equal(17, await lazy.Task);
+        Assert.Equal(1, executions);
+        lazy.Dispose();
+    }
+
+    private static async LuminTask BclAwaitForeach()
+    {
+        var enumerable = LuminTask.WhenEach(LuminTask.FromResult(1), LuminTask.FromResult(2)).AsAsyncEnumerable();
+        var sum = 0;
+        await foreach (var item in enumerable)
+            sum += item.GetResult();
+        Assert.Equal(3, sum);
+    }
+
+    private static async LuminTask RegisteredMainThreadContext()
+    {
+        var context = SynchronizationContext.Current ?? new SynchronizationContext();
+        PlayerLoopHelper.RegisterMainThread(context);
+        try
+        {
+            await LuminTask.SwitchToMainThread();
+        }
+        finally
+        {
+            PlayerLoopHelper.UnregisterMainThread();
+        }
+    }
+
+    private static async LuminTask RunDelegates()
+    {
+        var sum = await LuminTask.Run(() => 1 + 2);
+        Assert.Equal(3, sum);
+
+        var fromAsync = await LuminTask.Run(async () => { await LuminTask.Yield(); return 7; });
+        Assert.Equal(7, fromAsync);
+
+        var ranOnPool = false;
+        var mainThreadId = Environment.CurrentManagedThreadId;
+        await LuminTask.Run(() => ranOnPool = Environment.CurrentManagedThreadId != mainThreadId);
+        Assert.True(ranOnPool, "Run should execute the delegate off the calling thread");
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => LuminTask.Run(() => throw new InvalidOperationException("run-boom")));
+    }
+
+    private static async LuminTask RunOnThreadPoolThread()
+    {
+        var mainThreadId = Environment.CurrentManagedThreadId;
+        var ran = false;
+        var result = await LuminTask.RunOnThreadPool(() =>
+        {
+            ran = Environment.CurrentManagedThreadId != mainThreadId;
+            return 11;
+        });
+        Assert.Equal(11, result);
+        Assert.True(ran, "RunOnThreadPool must execute on a thread-pool thread");
+    }
+
+    private static async LuminTask ForgetExceptionHandler()
+    {
+        var caught = new TaskCompletionSource<Exception>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var faulted = LuminTask.FromException(new InvalidOperationException("forget-boom"));
+        faulted.Forget(ex => caught.TrySetResult(ex));
+
+        var ex = await caught.Task;
+        Assert.Equal(typeof(InvalidOperationException), ex.GetType());
+    }
+
+    private static async LuminTask ContinueWithChains()
+    {
+        var value = await LuminTask.FromResult(5).ContinueWith(x => x * 2);
+        Assert.Equal(10, value);
+
+        var chained = await LuminTask.CompletedTask().ContinueWith(() => LuminTask.FromResult("done"));
+        Assert.Equal("done", chained);
+    }
+
+    private static async LuminTask TimeoutAborts()
+    {
+        using var never = new CancellationTokenSource();
+        await Assert.ThrowsAsync<TimeoutException>(() =>
+            LuminTask.Never(never.Token).Timeout(TimeSpan.FromMilliseconds(20)));
+
+        var completed = await LuminTask.FromResult(42).Timeout(TimeSpan.FromMilliseconds(20));
+        Assert.Equal(42, completed);
+    }
+
+    private static async LuminTask WaitUntilCompletes()
+    {
+        var condition = 0;
+        LuminTask.Run(() => { Thread.Sleep(30); condition = 1; }).Forget();
+
+        await LuminTask.WaitUntil(() => condition == 1);
+        Assert.Equal(1, condition);
+
+        using var cts = new CancellationTokenSource();
+        LuminTask.Run(() => { Thread.Sleep(20); cts.Cancel(); }).Forget();
+        await LuminTask.WaitUntilCanceled(cts.Token);
+        Assert.True(cts.IsCancellationRequested);
+    }
+
+    private static async LuminTask SuppressCancellationThrowPreserves()
+    {
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+        var canceled = await LuminTask.FromCanceled<int>(cts.Token).SuppressCancellationThrow();
+        Assert.True(canceled.IsCanceled);
+
+        var value = await LuminTask.FromResult(9).SuppressCancellationThrow();
+        Assert.False(value.IsCanceled);
+        Assert.Equal(9, value.Result);
+    }
+
+    private static async LuminTask CreateAndDelayFrame()
+    {
+        var fromCreate = await LuminTask.Create(() => LuminTask.FromResult(3));
+        Assert.Equal(3, fromCreate);
+
+        var createInt = await LuminTask.Create(() => LuminTask.FromResult(4 * 2));
+        Assert.Equal(8, createInt);
+
+        var fromToken = await LuminTask.Create(() => LuminTask.FromResult(5)).WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Equal(5, fromToken);
+
+        await LuminTask.DelayFrame(1, PlayerLoopTiming.DotNet);
     }
 
     // 9 longs = 72 bytes > 64, exercises the heap-backed inline-result path.

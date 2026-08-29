@@ -8,14 +8,24 @@ namespace LuminThread;
 
 public readonly partial struct LuminTask
 {
+    /// <summary>Registers the synchronization context that represents the application's main thread.</summary>
+    public static void RegisterMainThread(SynchronizationContext synchronizationContext)
+        => PlayerLoopHelper.RegisterMainThread(synchronizationContext);
+
+    /// <summary>Clears the registered main-thread synchronization context.</summary>
+    public static void UnregisterMainThread()
+        => PlayerLoopHelper.UnregisterMainThread();
 
     [DebuggerHidden]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static SwitchToMainThreadAwaitable SwitchToMainThread(CancellationToken cancellationToken = default)
     {
 
+        var context = PlayerLoopHelper.MainThreadSynchronizationContext;
+        if (context != null)
+            return new SwitchToMainThreadAwaitable(context, cancellationToken);
 #if NET8_0_OR_GREATER
-        throw new ArgumentException("DotNet don't have main thread", nameof(PlayerLoopTiming.DotNet));
+        throw new ArgumentException("DotNet has no registered main thread. Call PlayerLoopHelper.RegisterMainThread first.", nameof(PlayerLoopTiming.DotNet));
 #else
         return new SwitchToMainThreadAwaitable(PlayerLoopTiming.Update, cancellationToken);
 #endif
@@ -92,23 +102,37 @@ public readonly struct SwitchToMainThreadAwaitable
 {
     readonly PlayerLoopTiming playerLoopTiming;
     readonly CancellationToken cancellationToken;
+    readonly SynchronizationContext? synchronizationContext;
 
     public SwitchToMainThreadAwaitable(PlayerLoopTiming playerLoopTiming, CancellationToken cancellationToken)
     {
         this.playerLoopTiming = playerLoopTiming;
         this.cancellationToken = cancellationToken;
+        synchronizationContext = null;
     }
 
-    public Awaiter GetAwaiter() => new Awaiter(playerLoopTiming, cancellationToken);
+    internal SwitchToMainThreadAwaitable(SynchronizationContext synchronizationContext, CancellationToken cancellationToken)
+    {
+        playerLoopTiming = PlayerLoopTiming.DotNet;
+        this.cancellationToken = cancellationToken;
+        this.synchronizationContext = synchronizationContext;
+    }
+
+    public Awaiter GetAwaiter() => new Awaiter(playerLoopTiming, synchronizationContext, cancellationToken);
 
     public readonly struct Awaiter : ICriticalNotifyCompletion
     {
         readonly PlayerLoopTiming playerLoopTiming;
+        readonly SynchronizationContext? synchronizationContext;
         readonly CancellationToken cancellationToken;
 
         public Awaiter(PlayerLoopTiming playerLoopTiming, CancellationToken cancellationToken)
+            : this(playerLoopTiming, null, cancellationToken) { }
+
+        internal Awaiter(PlayerLoopTiming playerLoopTiming, SynchronizationContext? synchronizationContext, CancellationToken cancellationToken)
         {
             this.playerLoopTiming = playerLoopTiming;
+            this.synchronizationContext = synchronizationContext;
             this.cancellationToken = cancellationToken;
         }
 
@@ -117,7 +141,8 @@ public readonly struct SwitchToMainThreadAwaitable
             get
             {
                 var currentThreadId = System.Threading.Thread.CurrentThread.ManagedThreadId;
-                if (PlayerLoopHelper.MainThreadId == currentThreadId)
+                if (PlayerLoopHelper.MainThreadId == currentThreadId ||
+                    (synchronizationContext != null && SynchronizationContext.Current == synchronizationContext))
                 {
                     return true;
                 }
@@ -132,12 +157,15 @@ public readonly struct SwitchToMainThreadAwaitable
 
         public void OnCompleted(Action continuation)
         {
-            PlayerLoopHelper.AddContinuation(playerLoopTiming, continuation);
+            if (synchronizationContext != null)
+                synchronizationContext.Post(static state => ((Action)state!).Invoke(), continuation);
+            else
+                PlayerLoopHelper.AddContinuation(playerLoopTiming, continuation);
         }
 
         public void UnsafeOnCompleted(Action continuation)
         {
-            PlayerLoopHelper.AddContinuation(playerLoopTiming, continuation);
+            OnCompleted(continuation);
         }
     }
 }

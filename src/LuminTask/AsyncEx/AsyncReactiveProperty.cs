@@ -309,18 +309,21 @@ internal sealed unsafe class AsyncReactivePropertyAwaiter<T>
         var core = (LuminTaskSourceCore<T>*)ptr;
         LuminTaskSourceCore<T>.TrySetCanceled(core);
         LuminTaskSourceCore<T>.Dispose(core);
+        _registration.Release();
     }
 
     public void RegisterCancellation(CancellationToken cancellationToken, ReactivePropertyState<T> parent)
     {
+        var state = StateTuple.Create(this, parent);
         _registration = cancellationToken.Register(
             static state =>
             {
-                var (awaiter, p) = ((AsyncReactivePropertyAwaiter<T>, ReactivePropertyState<T>))state!;
-                p.TryRemoveAwaiter(awaiter);
-                awaiter.TrySetCanceled();
+                var tuple = (StateTuple<AsyncReactivePropertyAwaiter<T>, ReactivePropertyState<T>>)state!;
+                tuple.Item2.TryRemoveAwaiter(tuple.Item1);
+                tuple.Item1.TrySetCanceled();
+                tuple.Dispose();
             },
-            (this, parent));
+            state);
     }
 }
 

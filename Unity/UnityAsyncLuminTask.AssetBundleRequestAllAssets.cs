@@ -11,13 +11,13 @@ using LuminThread.Utility;
 
 namespace LuminThread.Unity
 {
-    public static partial class UnityAsyncExtensions
+    public static partial class UnityAsyncLuminTask
     {
-        public static AssetBundleRequestAllAssetsAwaiter AwaitForAllAssets(this AssetBundleRequest asyncOperation)
+        public static AssetBundleRequestAllAssetsLuminTaskAwaiter AwaitForAllAssets(this AssetBundleRequest asyncOperation)
         {
             if (asyncOperation == null)
                 throw new ArgumentNullException(nameof(asyncOperation));
-            return new AssetBundleRequestAllAssetsAwaiter(asyncOperation);
+            return new AssetBundleRequestAllAssetsLuminTaskAwaiter(asyncOperation);
         }
 
         public static LuminTask<UnityEngine.Object[]> AwaitForAllAssets(this AssetBundleRequest asyncOperation, CancellationToken cancellationToken)
@@ -41,18 +41,18 @@ namespace LuminThread.Unity
             return AssetBundleRequestAllAssetsPromise.Create(asyncOperation, timing, progress, cancellationToken, cancelImmediately);
         }
 
-        public struct AssetBundleRequestAllAssetsAwaiter : ICriticalNotifyCompletion
+        public struct AssetBundleRequestAllAssetsLuminTaskAwaiter : ICriticalNotifyCompletion
         {
             private AssetBundleRequest _asyncOperation;
             private Action<AsyncOperation> _continuationAction;
 
-            public AssetBundleRequestAllAssetsAwaiter(AssetBundleRequest asyncOperation)
+            public AssetBundleRequestAllAssetsLuminTaskAwaiter(AssetBundleRequest asyncOperation)
             {
                 _asyncOperation = asyncOperation;
                 _continuationAction = null;
             }
 
-            public AssetBundleRequestAllAssetsAwaiter GetAwaiter()
+            public AssetBundleRequestAllAssetsLuminTaskAwaiter GetAwaiter()
             {
                 return this;
             }
@@ -93,6 +93,7 @@ namespace LuminThread.Unity
             {
                 public bool Completed;
                 public bool IsCancellationRequested;
+                public CancellationTokenRegistration Registration;
             }
 
             public static unsafe LuminTask<UnityEngine.Object[]> Create(AssetBundleRequest asyncOperation, PlayerLoopTiming timing, IProgress<float> progress, CancellationToken cancellationToken, bool cancelImmediately)
@@ -115,6 +116,8 @@ namespace LuminThread.Unity
                         
                     stateData.Completed = true;
                     stateData.IsCancellationRequested = cancellationToken.IsCancellationRequested;
+                    stateTuple.Item1.Completed = true;
+                    stateTuple.Item1.IsCancellationRequested = stateData.IsCancellationRequested;
                     
                     if (cancellationToken.IsCancellationRequested)
                     {
@@ -130,13 +133,16 @@ namespace LuminThread.Unity
                         asyncOperation.completed -= continuation;
                         continuation = null;
                     }
+
+                    stateTuple.Item1.Registration.Dispose();
+                    stateTuple.Dispose();
                 };
 
                 asyncOperation.completed += continuation;
 
                 if (cancelImmediately && cancellationToken.CanBeCanceled)
                 {
-                    var registration = cancellationToken.Register(() =>
+                    stateTuple.Item1.Registration = cancellationToken.Register(() =>
                     {
                         stateData.Completed = true;
                         stateData.IsCancellationRequested = true;
@@ -167,6 +173,7 @@ namespace LuminThread.Unity
                     stateTuple.Item1.Completed = true;
                     stateTuple.Item1.IsCancellationRequested = true;
                     LuminTaskSourceCore<UnityEngine.Object[]>.TrySetCanceled(state.Source);
+                    stateTuple.Item1.Registration.Dispose();
                     stateTuple.Dispose();
                     return false;
                 }
@@ -178,6 +185,7 @@ namespace LuminThread.Unity
                 {
                     stateTuple.Item1.Completed = true;
                     LuminTaskSourceCore<UnityEngine.Object[]>.TrySetResult(state.Source, asyncOperation.allAssets);
+                    stateTuple.Item1.Registration.Dispose();
                     stateTuple.Dispose();
                     return false;
                 }

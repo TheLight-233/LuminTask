@@ -18,8 +18,4 @@
                         OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
     </ItemGroup>
 
-    <ItemGroup>
-      <PackageReference Include="UniTask" Version="2.5.11" />
-    </ItemGroup>
-
 </Project>

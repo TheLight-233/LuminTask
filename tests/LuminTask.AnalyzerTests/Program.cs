@@ -46,9 +46,20 @@ public static class Program
         Run("yield return 转移 → 干净", "yield return GetTask();", Array.Empty<string>(), iterator: true);
         Run("async LuminTask 方法内部 await → 干净", "await t;", Array.Empty<string>(), asyncBody: true);
         Run("WaitAsync 链式 + await → 干净", "var t = GetTask(); await t.WaitAsync(ct);", Array.Empty<string>());
+        Run("AsTask 消费 → 干净", "var t = GetTask(); await t.AsTask();", Array.Empty<string>());
+        Run("AsValueTask 消费 → 干净", "var t = GetTask(); await t.AsValueTask();", Array.Empty<string>());
+        Run("ContinueWith 消费 → 干净", "var t = GetTask(); await t.ContinueWith(_ => { });", Array.Empty<string>());
+        Run("Timeout 消费 → 干净", "var t = GetTask(); await t.Timeout(TimeSpan.FromSeconds(1));", Array.Empty<string>());
+        Run("AttachExternalCancellation 消费 → 干净", "var t = GetTask(); await t.AttachExternalCancellation(ct);", Array.Empty<string>());
+        Run("SuppressCancellationThrow 消费 → 干净", "var t = GetTask(); await t.SuppressCancellationThrow();", Array.Empty<string>());
+        Run("try/finally 消费 → 干净", "var t = GetTask(); try { await t; } finally { Console.WriteLine(1); }", Array.Empty<string>());
+        Run("嵌套循环 break/continue 消费 → LUM1001/LUM1002", "var t = GetTask(); while (c) { for (;;) { await t; break; } continue; }", new[] { "LUM1001", "LUM1002" });
         Run("return 转移 → 干净", "return t;", Array.Empty<string>(), returnsTask: true);
         Run("foreach 元素消费 → 干净", "foreach (var x in tasks) { await x; }", Array.Empty<string>());
         Run("被 lambda 捕获 → 干净", "var t = GetTask(); Func<Task> f = async () => { await t; };", Array.Empty<string>());
+        Run("lambda 消费任务 → 干净", "var t = GetTask(); Action f = () => t.Forget(); f();", Array.Empty<string>());
+        Run("跨方法直接转发 → 干净", "var t = GetTask(); await Pass(t);", Array.Empty<string>());
+        Run("switch 模式分支消费 → 干净", "var t = GetTask(); switch (n) { case > 0: await t; break; default: t.Forget(); break; }", Array.Empty<string>());
         Run("提前 return 转移后再 await → 干净", "if (c) return t; await t;", Array.Empty<string>(), asyncReturnsTask: true);
         Run("分支消费后 return，另一分支 await → 干净", "if (c) { await t; return default!; } await t;", Array.Empty<string>(), asyncReturnsTask: true);
         Run("if/else return 后继续路径双消费 → LUM1002", "if (a) { await t; } else { return default!; } await t;", new[] { "LUM1002" }, asyncReturnsTask: true);
@@ -70,6 +81,9 @@ public static class Program
         Run("裸 tcs.Task 访问 → LUM1001", "var tcs = new LuminTaskCompletionSource<int>(); tcs.Task;", new[] { "LUM1001", "LUM1004" });
         Run("循环内声明后未消费 → LUM1001", "while (c) { var x = GetTask(); }", new[] { "LUM1001" });
         Run("if/else 双消费同一分支 → LUM1002", "var t = GetTask(); if (a) { await t; await t; } else { await t; }", new[] { "LUM1002" });
+        Run("lambda 仅捕获未消费 → LUM1001", "var t = GetTask(); Action f = () => Console.WriteLine(t.Id); f();", new[] { "LUM1001" });
+        Run("跨方法吞掉任务 → LUM1001", "var t = GetTask(); Drop(t);", new[] { "LUM1001" });
+        Run("default/null 任务句柄 → 干净", "LuminTask t = default; LuminTask? n = null;", Array.Empty<string>());
 
         Console.WriteLine();
         Console.WriteLine("==============================================================");
@@ -94,6 +108,7 @@ public static class Program
         {
             bool c = true;
             bool a = true;
+            int n = 1;
             CancellationToken ct;
             IEnumerable<LuminTask> tasks = Array.Empty<LuminTask>();
 
@@ -101,6 +116,8 @@ public static class Program
 
             static void Sink(LuminTask task) => task.Forget();
             static void SinkTcs(LuminTaskCompletionSource<int> tcs) => tcs.TrySetResult(1);
+            static LuminTask Pass(LuminTask task) => task;
+            static void Drop(LuminTask task) { }
 
             async Task M()
             {

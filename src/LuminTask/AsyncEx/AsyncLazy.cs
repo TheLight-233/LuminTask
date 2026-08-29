@@ -1,7 +1,7 @@
 using System;
 using System.Runtime.CompilerServices;
+using System.Collections.Generic;
 using System.Threading;
-using System.Threading.Tasks;
 
 namespace LuminThread.AsyncEx
 {
@@ -51,9 +51,11 @@ namespace LuminThread.AsyncEx
         private readonly Func<LuminTask<T>> _factory;
         private readonly bool _retryOnFailure;
 
-        // 工厂至多执行一次；结果停在 Task<T> 上供任意次数 await（LuminTask 只能消费一次）。
-        private Task<T>? _resolution;
+        private readonly List<LuminTaskCompletionSource<T>> _waiters = new();
         private bool _isStarted;
+        private bool _isCompleted;
+        private T? _result;
+        private Exception? _error;
         private volatile bool _isDisposed;
 
         public AsyncLazyState(Func<LuminTask<T>> factory, AsyncLazyFlags flags)
@@ -85,40 +87,73 @@ namespace LuminThread.AsyncEx
                 if (_isDisposed)
                     throw new ObjectDisposedException(nameof(AsyncLazy<T>));
 
-                Task<T> resolution;
+                LuminTask<T> result;
+                var start = false;
                 lock (_mutex)
                 {
+                    if (_isCompleted)
+                    {
+                        if (_error is null)
+                            return LuminTask.FromResult(_result!);
+                        if (_error is OperationCanceledException canceled)
+                            return LuminTask.FromCanceled<T>(canceled.CancellationToken);
+                        return LuminTask.FromException<T>(_error);
+                    }
+
                     if (!_isStarted)
                     {
                         _isStarted = true;
-                        _resolution = ResolveAsync();
+                        start = true;
                     }
-                    resolution = _resolution!;
+
+                    var waiter = new LuminTaskCompletionSource<T>();
+                    _waiters.Add(waiter);
+                    result = waiter.Task;
                 }
 
-                return AwaitResolution(resolution);
+                if (start)
+                    ResolveAsync().Forget();
+                return result;
             }
         }
 
-        private async Task<T> ResolveAsync()
+        private async LuminTask ResolveAsync()
         {
             try
             {
-                return await _factory();
-            }
-            catch when (_retryOnFailure)
-            {
+                var result = await _factory().ConfigureAwait(false);
+                List<LuminTaskCompletionSource<T>> waiters;
                 lock (_mutex)
                 {
-                    _isStarted = false;
-                    _resolution = null;
+                    _result = result;
+                    _error = null;
+                    _isCompleted = true;
+                    waiters = new List<LuminTaskCompletionSource<T>>(_waiters);
+                    _waiters.Clear();
                 }
-                throw;
+                foreach (var waiter in waiters)
+                    waiter.TrySetResult(result);
+            }
+            catch (Exception exception)
+            {
+                List<LuminTaskCompletionSource<T>> waiters;
+                lock (_mutex)
+                {
+                    _error = exception;
+                    _isCompleted = !_retryOnFailure;
+                    _isStarted = _retryOnFailure ? false : true;
+                    waiters = new List<LuminTaskCompletionSource<T>>(_waiters);
+                    _waiters.Clear();
+                }
+                foreach (var waiter in waiters)
+                {
+                    if (exception is OperationCanceledException canceled)
+                        waiter.TrySetCanceled(canceled.CancellationToken);
+                    else
+                        waiter.TrySetException(exception);
+                }
             }
         }
-
-        private static async LuminTask<T> AwaitResolution(Task<T> resolution)
-            => await resolution;
 
         public void Dispose()
         {

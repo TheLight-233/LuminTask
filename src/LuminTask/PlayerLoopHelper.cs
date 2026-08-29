@@ -43,6 +43,7 @@ namespace LuminThread
 
         public static int MainThreadId => _mainThreadId;
         public static bool IsMainThread => Thread.CurrentThread.ManagedThreadId == _mainThreadId;
+        public static SynchronizationContext? MainThreadSynchronizationContext { get; private set; }
 
         private static IPlayLoopStrategy?[] _strategies;
         private static int _mainThreadId;
@@ -58,6 +59,15 @@ namespace LuminThread
         {
             _strategies[(byte)PlayerLoopTiming.DotNet] = new StandardPlayLoopStrategy();
         }
+
+        public static void RegisterMainThread(SynchronizationContext synchronizationContext)
+        {
+            if (synchronizationContext == null) throw new ArgumentNullException(nameof(synchronizationContext));
+            MainThreadSynchronizationContext = synchronizationContext;
+            _mainThreadId = Thread.CurrentThread.ManagedThreadId;
+        }
+
+        public static void UnregisterMainThread() => MainThreadSynchronizationContext = null;
 
         public static void AddAction(PlayerLoopTiming timing, IPlayLoopItem item)
         {
@@ -142,52 +152,45 @@ namespace LuminThread
             private readonly List<(LuminTaskState, IntPtr)> _activeTasks3 = new();
             private readonly ConcurrentQueue<Action> _continuations = new();
             private readonly CancellationTokenSource _cts = new();
-            private Thread _workerThread;
+            private readonly System.Threading.Timer _timer;
+            private int _processing;
             private int _disposed;
-            private int _running;
-            private readonly object _startGate = new();
-            private readonly ManualResetEventSlim _workAvailable = new();
 
+            // Timer-driven scheduling: no dedicated background thread. The timer is armed whenever
+            // work is queued and parked once the active set drains, so a fully idle strategy causes
+            // no periodic wake-ups at all.
             public StandardPlayLoopStrategy()
             {
-                _workerThread = new Thread(RunCore)
-                {
-                    IsBackground = true,
-                    Name = "PlayerLoopWorker",
-                    Priority = ThreadPriority.AboveNormal
-                };
+                _timer = new Timer(static state => ((StandardPlayLoopStrategy)state!).OnTick(), this,
+                    Timeout.Infinite, Timeout.Infinite);
             }
 
             void IPlayLoopStrategy.AddAction(IPlayLoopItem item)
             {
                 ThrowIfDisposed();
-                StartIfNeeded();
                 _incomingQueue1.Enqueue(item);
-                _workAvailable.Set();
+                ArmTimer();
             }
 
             void IPlayLoopStrategy.AddAction(LuminTaskState state, MoveNext item)
             {
                 ThrowIfDisposed();
-                StartIfNeeded();
                 _incomingQueue2.Enqueue((state, item));
-                _workAvailable.Set();
+                ArmTimer();
             }
 
             void IFunctionPointerPlayLoopStrategy.AddAction(LuminTaskState state, IntPtr item)
             {
                 ThrowIfDisposed();
-                StartIfNeeded();
                 _incomingQueue3.Enqueue((state, item));
-                _workAvailable.Set();
+                ArmTimer();
             }
 
             void IPlayLoopStrategy.AddContinuation(Action continuation)
             {
                 ThrowIfDisposed();
-                StartIfNeeded();
                 _continuations.Enqueue(continuation);
-                _workAvailable.Set();
+                ArmTimer();
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -197,37 +200,37 @@ namespace LuminThread
                     throw new ObjectDisposedException(nameof(StandardPlayLoopStrategy));
             }
 
-            private void StartIfNeeded()
+            private void ArmTimer()
             {
-                if (Volatile.Read(ref _running) != 0)
-                    return;
-
-                lock (_startGate)
+                try
                 {
-                    ThrowIfDisposed();
-                    if (Volatile.Read(ref _running) != 0)
-                        return;
-
-                    _workerThread.Start();
-                    Volatile.Write(ref _running, 1);
+                    _timer.Change(0, ActivePollIntervalMilliseconds);
+                }
+                catch (ObjectDisposedException)
+                {
                 }
             }
 
             public void RunCore()
             {
+                if (_cts.IsCancellationRequested)
+                    return;
+                ProcessIncomingTasks();
+                ProcessActiveTasks();
+                ProcessContinuations();
+            }
+
+            private void OnTick()
+            {
+                if (Volatile.Read(ref _disposed) != 0)
+                    return;
+                // Only one processing pass at a time; concurrent ticks are dropped.
+                if (Interlocked.CompareExchange(ref _processing, 1, 0) != 0)
+                    return;
+
                 try
                 {
-                    while (!_cts.IsCancellationRequested)
-                    {
-                        ProcessIncomingTasks();
-                        ProcessActiveTasks();
-                        ProcessContinuations();
-
-                        WaitForWorkIfIdle();
-                    }
-                }
-                catch (OperationCanceledException)
-                {
+                    RunCore();
                 }
                 catch (Exception ex)
                 {
@@ -235,9 +238,17 @@ namespace LuminThread
                 }
                 finally
                 {
-                    Cleanup();
-                    _workAvailable.Dispose();
-                    _cts.Dispose();
+                    Volatile.Write(ref _processing, 0);
+
+                    // Drain the active set, then park the timer. Producers always re-arm after
+                    // enqueueing, and the driver double-checks the queues, so no wake is lost.
+                    if (!HasActiveTasks() && !HasImmediateWork())
+                    {
+                        try { _timer.Change(Timeout.Infinite, Timeout.Infinite); }
+                        catch (ObjectDisposedException) { }
+                        if (HasActiveTasks() || HasImmediateWork())
+                            ArmTimer();
+                    }
                 }
             }
 
@@ -249,24 +260,6 @@ namespace LuminThread
             private bool HasImmediateWork()
                 => !_incomingQueue1.IsEmpty || !_incomingQueue2.IsEmpty || !_incomingQueue3.IsEmpty ||
                    !_continuations.IsEmpty;
-
-            private void WaitForWorkIfIdle()
-            {
-                var hasActiveTasks = HasActiveTasks();
-                if (HasImmediateWork())
-                    return;
-
-                // Reset before the second emptiness check. A producer racing either side of
-                // Reset will leave the queues non-empty or set the event, so no wake-up is lost.
-                _workAvailable.Reset();
-                if (HasImmediateWork())
-                    return;
-
-                if (hasActiveTasks)
-                    _workAvailable.Wait(ActivePollIntervalMilliseconds, _cts.Token);
-                else
-                    _workAvailable.Wait(_cts.Token);
-            }
 
             private void ProcessIncomingTasks()
             {
@@ -348,6 +341,11 @@ namespace LuminThread
                     catch (Exception ex)
                     {
                         Console.WriteLine($"Task execution error: {ex}");
+                        // The promise escaped before releasing its pooled state. Return it now so
+                        // the dropped item doesn't leak a StateTuple; a fault cannot be delivered
+                        // generically because the scheduler has no knowledge of the result type T.
+                        (state.StateTuple as IDisposable)?.Dispose();
+                        (state.State as IDisposable)?.Dispose();
                         shouldContinue = false;
                     }
 
@@ -379,6 +377,9 @@ namespace LuminThread
                     catch (Exception ex)
                     {
                         Console.WriteLine($"Task execution error: {ex}");
+                        // Same last-resort release as queue 2: return pooled state of a dropped item.
+                        (state.StateTuple as IDisposable)?.Dispose();
+                        (state.State as IDisposable)?.Dispose();
                         shouldContinue = false;
                     }
 
@@ -433,27 +434,10 @@ namespace LuminThread
             {
                 if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
 
-                lock (_startGate)
-                {
-                    _cts.Cancel();
-                    _workAvailable.Set();
-                }
-
-                if (Volatile.Read(ref _running) != 0 &&
-                    !ReferenceEquals(Thread.CurrentThread, _workerThread))
-                {
-                    if (!_workerThread.Join(TimeSpan.FromSeconds(2)))
-                    {
-                        _workerThread.Interrupt();
-                        _workerThread.Join(TimeSpan.FromSeconds(2));
-                    }
-                }
-                else if (Volatile.Read(ref _running) == 0)
-                {
-                    Cleanup();
-                    _workAvailable.Dispose();
-                    _cts.Dispose();
-                }
+                _cts.Cancel();
+                _timer.Dispose();
+                Cleanup();
+                _cts.Dispose();
             }
         }
     }

@@ -14,6 +14,12 @@ namespace LuminThread
 {
     public static unsafe class LuminTaskExtensions
     {
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static ValueTask AsValueTask(this LuminTask task) => task;
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static ValueTask<T> AsValueTask<T>(this LuminTask<T> task) => task;
+
         #region Task 转换
 
         public static LuminTask<T> AsLuminTask<T>(this Task<T> task, CancellationToken cancellationToken = default)

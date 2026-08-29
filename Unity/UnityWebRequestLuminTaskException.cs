@@ -6,7 +6,7 @@ using UnityEngine.Networking;
 
 namespace LuminThread.Unity
 {
-    public class UnityWebRequestException : Exception
+    public class UnityWebRequestLuminTaskException : Exception
     {
         public UnityWebRequest UnityWebRequest { get; }
 #if UNITY_2020_2_OR_NEWER
@@ -22,7 +22,7 @@ namespace LuminThread.Unity
 
         string msg;
 
-        public UnityWebRequestException(UnityWebRequest unityWebRequest)
+        public UnityWebRequestLuminTaskException(UnityWebRequest unityWebRequest)
         {
             this.UnityWebRequest = unityWebRequest;
 #if UNITY_2020_2_OR_NEWER

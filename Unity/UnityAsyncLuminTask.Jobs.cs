@@ -11,7 +11,7 @@ using System.Runtime.CompilerServices;
 
 namespace LuminThread.Unity
 {
-    public static partial class UnityAsyncExtensions
+    public static partial class UnityAsyncLuminTask
     {
         public static LuminTaskAwaiter GetAwaiter(this JobHandle jobHandle)
         {

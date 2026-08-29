@@ -92,5 +92,16 @@ namespace LuminThread.Analyzer
             isEnabledByDefault: true,
             description:
                 "分析器只跟踪方法内的局部变量与参数。存放在字段中的 LuminTask 的所有权与消费时机无法静态确认，是泄漏与重复消费的高发来源。");
+
+        /// <summary>LUM9999: analyzer implementation failure.</summary>
+        internal static readonly DiagnosticDescriptor InternalError = new(
+            id: "LUM9999",
+            title: "LuminTask 分析器内部错误",
+            messageFormat: "LuminTask 契约分析器在处理此方法时遇到内部错误：{0}",
+            category: Category,
+            defaultSeverity: DiagnosticSeverity.Warning,
+            isEnabledByDefault: true,
+            description: "分析器遇到未处理的语法或符号形态；请提交可复现代码以便修复分析器。"
+        );
     }
 }

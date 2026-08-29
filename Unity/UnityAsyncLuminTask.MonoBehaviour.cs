@@ -5,12 +5,12 @@ using UnityEngine;
 
 namespace LuminThread.Unity
 {
-    public static class MonoBehaviourExtensions
+    public static class MonoBehaviourLuminTask
     {
         private static readonly ConditionalWeakTable<GameObject, CancellationTokenSource> cancellationTokenSources = 
             new ConditionalWeakTable<GameObject, CancellationTokenSource>();
 
-        public static CancellationToken GetCancellationTokenOnDestroy(this MonoBehaviour monoBehaviour)
+        public static CancellationToken GetOnDestroyCancellationToken(this MonoBehaviour monoBehaviour)
         {
             if (monoBehaviour == null)
                 throw new ArgumentNullException(nameof(monoBehaviour));
@@ -52,11 +52,11 @@ namespace LuminThread.Unity
         }
     }
 
-    public static partial class UnityAsyncExtensions
+    public static partial class UnityAsyncLuminTask
     {
         public static LuminTask StartAsyncCoroutine(this MonoBehaviour monoBehaviour, Func<CancellationToken, LuminTask> asyncCoroutine)
         {
-            var token = monoBehaviour.GetCancellationTokenOnDestroy();
+            var token = monoBehaviour.GetOnDestroyCancellationToken();
             return asyncCoroutine(token);
         }
     }

@@ -13,20 +13,21 @@ LuminTask 是一个面向 .NET 的高性能异步任务库，为 C# 提供可直
 * 提供 `WhenAll`、`WhenAny`、`WhenEach` 等异步组合操作
 * 提供 `LuminTaskCompletionSource<T>`，便于桥接回调式 API
 * 提供 `Forget`、`ContinueWith`、`Timeout` 和外部取消令牌绑定
+* 支持 `ConfigureAwait`、顺序 `WhenAll`、可取消重试和嵌套任务 `Unwrap`
 * 支持 `Task`、`ValueTask` 与 `LuminTask` 之间的互操作
 * 支持将 `CancellationToken` 直接转换为可等待的 `LuminTask`
 * 提供 `AsyncLock`、`AsyncSemaphore`、`AsyncLazy`、异步事件等工具类型
 * 支持可配置的 `PlayerLoopTiming`、线程池调度和主线程切换
 * 保留可选的 Unity 扩展，覆盖常用 Unity、Addressables、DotWeen、TextMeshPro 和 YooAsset 场景
 * Debug 构建包含任务泄漏跟踪器，帮助发现未消费的任务源
-* 支持 .NET Standard 2.1、.NET 8 和 .NET 9
+* 支持 .NET Standard 2.1、.NET 8、.NET 9 和 .NET 10
 
 ## 📦 安装
 
 从 NuGet 安装稳定版本：
 
 ```bash
-dotnet add package LuminTask --version 1.0.2
+dotnet add package LuminTask --version 1.0.5
 ```
 
 > 安装即自带编译期契约分析器（见下文「契约分析器」），违反消费契约的代码会直接编译报错。
@@ -140,6 +141,8 @@ await luminTask.WaitAsync(TimeSpan.FromSeconds(5), cancellationToken);
 | `LUM1004` | Error | LuminTaskCompletionSource 创建后从未完成 |
 | `LUM1005` | Error | 将 LuminTask 赋给丢弃符 `_`（不会释放任务源） |
 | `LUM1006` | Warning | LuminTaskCompletionSource 在同一路径上被多次完成 |
+| `LUM1007` | Warning | LuminTask 存储在字段中，无法静态跟踪单次消费生命周期 |
+| `LUM9999` | Warning | 分析器内部错误（请提交可复现代码） |
 
 ### 自动生效（无需任何配置）
 
@@ -193,6 +196,10 @@ LuminTask 遵循类似 `ValueTask` 的单次消费约定：一个任务实例应
 
 对于 `LuminTask<T>`，只有同步完成的任务可以读取 `Result`；对于可能异步挂起的任务，请使用 `await` 或 awaiter 获取结果。
 
+任务槽位 id 采用 `short`，同时存活的任务源上限为 32767。达到上限时库会抛出包含当前存活数量的诊断异常；这也是库面向客户端/游戏高频短任务场景的容量边界。
+
+Release 构建默认关闭 token 生命周期校验以保持低开销。需要在生产环境捕获重复消费或 token 失配时，可设置 `LuminTask.EnableRuntimeValidation = true`。
+
 库内部使用非托管内存和 `unsafe` 代码，但普通调用方不需要在业务代码中开启 `unsafe`。
 
 ## ⚡ 性能与基准测试
@@ -242,13 +249,12 @@ LuminTask/
 
 ## 🔮 后续计划
 
-* 持续补充 API 文档和典型使用场景
-* 完善跨平台 CI 构建、测试与 NuGet 发布流程
-* 增加更多统一环境下的基准测试报告
-* 持续优化异步组合操作和任务源池
+* 持续补充 Unity 版本矩阵和平台专项示例
+* 根据真实工作负载继续调优任务源池容量与调度参数
+* 在统一硬件上积累可复现的基准历史数据
 
 ## 📄 许可证
 
 本项目基于 MIT License 发布，详情见 [`LICENSE`](LICENSE)。
 
-项目地址：[TheLight-233/LuminTask](https://github.com/TheLight-233/LuminTask)
+早期实现中曾学习并借鉴过 [UniTask](https://github.com/Cysharp/UniTask)（MIT，作者 Cysharp）的设计思路，部分异步同步原语（AsyncEx 系列）也参考了 [AsyncEx](https://github.com/StephenCleary/AsyncEx)（MIT，作者 Stephen Cleary）的思想。

@@ -8,7 +8,7 @@ using LuminThread.TaskSource;
 using LuminThread.Utility;
 using UnityEngine;
 
-public static unsafe class EnumeratorAsyncExtensions
+public static unsafe class EnumeratorAsyncLuminTask
 {
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static IEnumerator Core(IEnumerator inner, MonoBehaviour coroutineRunner, IntPtr source)
@@ -234,7 +234,7 @@ public static unsafe class EnumeratorAsyncExtensions
 
                 WARN:
                 // WaitForEndOfFrame, WaitForFixedUpdate, others.
-                UnityEngine.Debug.LogWarning($"yield {current.GetType().Name} is not supported on await IEnumerator or IEnumerator.ToUniTask(), please use ToUniTask(MonoBehaviour coroutineRunner) instead.");
+                UnityEngine.Debug.LogWarning($"yield {current.GetType().Name} is not supported on await IEnumerator or IEnumerator.ToLuminTask(), please use ToLuminTask(MonoBehaviour coroutineRunner) instead.");
                 yield return null;
             }
         }

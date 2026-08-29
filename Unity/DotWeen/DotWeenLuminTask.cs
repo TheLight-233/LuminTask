@@ -10,7 +10,7 @@ using LuminThread.Interface;
 
 namespace LuminThread.Unity
 {
-    public enum TweenCancelBehaviour
+    public enum TweenLuminTaskCancelBehaviour
     {
         Kill,
         KillWithCompleteCallback,
@@ -25,7 +25,7 @@ namespace LuminThread.Unity
         CompleteWithSequenceCallbackAndCancelAwait
     }
 
-    public static class DOTweenAsyncExtensions
+    public static class DotWeenLuminTask
     {
         public enum CallbackType
         {
@@ -37,9 +37,9 @@ namespace LuminThread.Unity
             StepComplete
         }
 
-        public static TweenAwaiter GetAwaiter(this Tween tween)
+        public static TweenLuminTaskAwaiter GetAwaiter(this Tween tween)
         {
-            return new TweenAwaiter(tween);
+            return new TweenLuminTaskAwaiter(tween);
         }
 
         public static LuminTask WithCancellation(this Tween tween, CancellationToken cancellationToken)
@@ -48,76 +48,76 @@ namespace LuminThread.Unity
                 throw new ArgumentNullException(nameof(tween));
 
             if (!tween.IsActive()) return LuminTask.CompletedTask();
-            return TweenConfiguredSource.Create(tween, TweenCancelBehaviour.Kill, cancellationToken, CallbackType.Kill);
+            return TweenLuminTaskConfiguredSource.Create(tween, TweenLuminTaskCancelBehaviour.Kill, cancellationToken, CallbackType.Kill);
         }
 
-        public static LuminTask ToLuminTask(this Tween tween, TweenCancelBehaviour tweenCancelBehaviour = TweenCancelBehaviour.Kill, CancellationToken cancellationToken = default)
+        public static LuminTask ToLuminTask(this Tween tween, TweenLuminTaskCancelBehaviour tweenCancelBehaviour = TweenLuminTaskCancelBehaviour.Kill, CancellationToken cancellationToken = default)
         {
             if (tween == null)
                 throw new ArgumentNullException(nameof(tween));
 
             if (!tween.IsActive()) return LuminTask.CompletedTask();
-            return TweenConfiguredSource.Create(tween, tweenCancelBehaviour, cancellationToken, CallbackType.Kill);
+            return TweenLuminTaskConfiguredSource.Create(tween, tweenCancelBehaviour, cancellationToken, CallbackType.Kill);
         }
 
-        public static LuminTask AwaitForComplete(this Tween tween, TweenCancelBehaviour tweenCancelBehaviour = TweenCancelBehaviour.Kill, CancellationToken cancellationToken = default)
+        public static LuminTask AwaitForComplete(this Tween tween, TweenLuminTaskCancelBehaviour tweenCancelBehaviour = TweenLuminTaskCancelBehaviour.Kill, CancellationToken cancellationToken = default)
         {
             if (tween == null)
                 throw new ArgumentNullException(nameof(tween));
 
             if (!tween.IsActive()) return LuminTask.CompletedTask();
-            return TweenConfiguredSource.Create(tween, tweenCancelBehaviour, cancellationToken, CallbackType.Complete);
+            return TweenLuminTaskConfiguredSource.Create(tween, tweenCancelBehaviour, cancellationToken, CallbackType.Complete);
         }
 
-        public static LuminTask AwaitForPause(this Tween tween, TweenCancelBehaviour tweenCancelBehaviour = TweenCancelBehaviour.Kill, CancellationToken cancellationToken = default)
+        public static LuminTask AwaitForPause(this Tween tween, TweenLuminTaskCancelBehaviour tweenCancelBehaviour = TweenLuminTaskCancelBehaviour.Kill, CancellationToken cancellationToken = default)
         {
             if (tween == null)
                 throw new ArgumentNullException(nameof(tween));
 
             if (!tween.IsActive()) return LuminTask.CompletedTask();
-            return TweenConfiguredSource.Create(tween, tweenCancelBehaviour, cancellationToken, CallbackType.Pause);
+            return TweenLuminTaskConfiguredSource.Create(tween, tweenCancelBehaviour, cancellationToken, CallbackType.Pause);
         }
 
-        public static LuminTask AwaitForPlay(this Tween tween, TweenCancelBehaviour tweenCancelBehaviour = TweenCancelBehaviour.Kill, CancellationToken cancellationToken = default)
+        public static LuminTask AwaitForPlay(this Tween tween, TweenLuminTaskCancelBehaviour tweenCancelBehaviour = TweenLuminTaskCancelBehaviour.Kill, CancellationToken cancellationToken = default)
         {
             if (tween == null)
                 throw new ArgumentNullException(nameof(tween));
 
             if (!tween.IsActive()) return LuminTask.CompletedTask();
-            return TweenConfiguredSource.Create(tween, tweenCancelBehaviour, cancellationToken, CallbackType.Play);
+            return TweenLuminTaskConfiguredSource.Create(tween, tweenCancelBehaviour, cancellationToken, CallbackType.Play);
         }
 
-        public static LuminTask AwaitForRewind(this Tween tween, TweenCancelBehaviour tweenCancelBehaviour = TweenCancelBehaviour.Kill, CancellationToken cancellationToken = default)
+        public static LuminTask AwaitForRewind(this Tween tween, TweenLuminTaskCancelBehaviour tweenCancelBehaviour = TweenLuminTaskCancelBehaviour.Kill, CancellationToken cancellationToken = default)
         {
             if (tween == null)
                 throw new ArgumentNullException(nameof(tween));
 
             if (!tween.IsActive()) return LuminTask.CompletedTask();
-            return TweenConfiguredSource.Create(tween, tweenCancelBehaviour, cancellationToken, CallbackType.Rewind);
+            return TweenLuminTaskConfiguredSource.Create(tween, tweenCancelBehaviour, cancellationToken, CallbackType.Rewind);
         }
 
-        public static LuminTask AwaitForStepComplete(this Tween tween, TweenCancelBehaviour tweenCancelBehaviour = TweenCancelBehaviour.Kill, CancellationToken cancellationToken = default)
+        public static LuminTask AwaitForStepComplete(this Tween tween, TweenLuminTaskCancelBehaviour tweenCancelBehaviour = TweenLuminTaskCancelBehaviour.Kill, CancellationToken cancellationToken = default)
         {
             if (tween == null)
                 throw new ArgumentNullException(nameof(tween));
 
             if (!tween.IsActive()) return LuminTask.CompletedTask();
-            return TweenConfiguredSource.Create(tween, tweenCancelBehaviour, cancellationToken, CallbackType.StepComplete);
+            return TweenLuminTaskConfiguredSource.Create(tween, tweenCancelBehaviour, cancellationToken, CallbackType.StepComplete);
         }
 
-        public struct TweenAwaiter : ICriticalNotifyCompletion
+        public struct TweenLuminTaskAwaiter : ICriticalNotifyCompletion
         {
             readonly Tween tween;
 
             // killed(non active) as completed.
             public bool IsCompleted => !tween.IsActive();
 
-            public TweenAwaiter(Tween tween)
+            public TweenLuminTaskAwaiter(Tween tween)
             {
                 this.tween = tween;
             }
 
-            public TweenAwaiter GetAwaiter()
+            public TweenLuminTaskAwaiter GetAwaiter()
             {
                 return this;
             }
@@ -138,14 +138,15 @@ namespace LuminThread.Unity
             }
         }
 
-        public unsafe struct TweenConfiguredSource
+        public unsafe struct TweenLuminTaskConfiguredSource
         {
             struct PromiseState
             {
                 public bool Canceled;
+                public CancellationTokenRegistration Registration;
             }
 
-            public static LuminTask Create(Tween tween, TweenCancelBehaviour cancelBehaviour, CancellationToken cancellationToken, CallbackType callbackType)
+            public static LuminTask Create(Tween tween, TweenLuminTaskCancelBehaviour cancelBehaviour, CancellationToken cancellationToken, CallbackType callbackType)
             {
                 if (cancellationToken.IsCancellationRequested)
                 {
@@ -208,68 +209,71 @@ namespace LuminThread.Unity
                 // Register cancellation
                 if (cancellationToken.CanBeCanceled)
                 {
-                    cancellationToken.Register(static s =>
+                    stateTuple.Item1.Registration = cancellationToken.Register(static s =>
                     {
                         var taskState = (LuminTaskState)s;
-                        var tuple = Unsafe.As<StateTuple<PromiseState, (Tween, TweenCancelBehaviour, CallbackType, TweenCallback)>>(taskState.StateTuple);
+                        var tuple = Unsafe.As<StateTuple<PromiseState, (Tween, TweenLuminTaskCancelBehaviour, CallbackType, TweenCallback)>>(taskState.StateTuple);
                         
                         var (tween, cancelBehaviour, callbackType, originalCallback) = tuple.Item2;
                         
                         switch (cancelBehaviour)
                         {
-                            case TweenCancelBehaviour.Kill:
+                            case TweenLuminTaskCancelBehaviour.Kill:
                             default:
                                 tween.Kill(false);
                                 break;
-                            case TweenCancelBehaviour.KillAndCancelAwait:
+                            case TweenLuminTaskCancelBehaviour.KillAndCancelAwait:
                                 tuple.Item1.Canceled = true;
                                 tween.Kill(false);
                                 break;
-                            case TweenCancelBehaviour.KillWithCompleteCallback:
+                            case TweenLuminTaskCancelBehaviour.KillWithCompleteCallback:
                                 tween.Kill(true);
                                 break;
-                            case TweenCancelBehaviour.KillWithCompleteCallbackAndCancelAwait:
+                            case TweenLuminTaskCancelBehaviour.KillWithCompleteCallbackAndCancelAwait:
                                 tuple.Item1.Canceled = true;
                                 tween.Kill(true);
                                 break;
-                            case TweenCancelBehaviour.Complete:
+                            case TweenLuminTaskCancelBehaviour.Complete:
                                 tween.Complete(false);
                                 break;
-                            case TweenCancelBehaviour.CompleteAndCancelAwait:
+                            case TweenLuminTaskCancelBehaviour.CompleteAndCancelAwait:
                                 tuple.Item1.Canceled = true;
                                 tween.Complete(false);
                                 break;
-                            case TweenCancelBehaviour.CompleteWithSequenceCallback:
+                            case TweenLuminTaskCancelBehaviour.CompleteWithSequenceCallback:
                                 tween.Complete(true);
                                 break;
-                            case TweenCancelBehaviour.CompleteWithSequenceCallbackAndCancelAwait:
+                            case TweenLuminTaskCancelBehaviour.CompleteWithSequenceCallbackAndCancelAwait:
                                 tuple.Item1.Canceled = true;
                                 tween.Complete(true);
                                 break;
-                            case TweenCancelBehaviour.CancelAwait:
+                            case TweenLuminTaskCancelBehaviour.CancelAwait:
                                 RestoreOriginalCallback(tween, callbackType, originalCallback);
                                 LuminTaskSourceCore<AsyncUnit>.TrySetCanceled(taskState.Source);
                                 break;
                         }
+
+                        // 回调自身在途：仅清引用，释放交给 OnCompleted。
+                        tuple.Item1.Registration = default;
                     }, state);
                 }
 
-                return new LuminTask(LuminTaskSourceCore<AsyncUnit>.MethodTable, core, core->Id);
+                return new LuminTask(LuminTaskSourceCore<AsyncUnit>.MethodTablePtr, core, core->Id);
             }
 
             static void OnCompleted(LuminTaskState state)
             {
-                var tuple = Unsafe.As<StateTuple<PromiseState, (Tween, TweenCancelBehaviour, CallbackType, TweenCallback)>>(state.StateTuple);
+                var tuple = Unsafe.As<StateTuple<PromiseState, (Tween, TweenLuminTaskCancelBehaviour, CallbackType, TweenCallback)>>(state.StateTuple);
                 
                 var (tween, cancelBehaviour, callbackType, originalCallback) = tuple.Item2;
                 
                 if (state.CancellationToken.IsCancellationRequested)
                 {
-                    if (cancelBehaviour == TweenCancelBehaviour.KillAndCancelAwait
-                        || cancelBehaviour == TweenCancelBehaviour.KillWithCompleteCallbackAndCancelAwait
-                        || cancelBehaviour == TweenCancelBehaviour.CompleteAndCancelAwait
-                        || cancelBehaviour == TweenCancelBehaviour.CompleteWithSequenceCallbackAndCancelAwait
-                        || cancelBehaviour == TweenCancelBehaviour.CancelAwait)
+                    if (cancelBehaviour == TweenLuminTaskCancelBehaviour.KillAndCancelAwait
+                        || cancelBehaviour == TweenLuminTaskCancelBehaviour.KillWithCompleteCallbackAndCancelAwait
+                        || cancelBehaviour == TweenLuminTaskCancelBehaviour.CompleteAndCancelAwait
+                        || cancelBehaviour == TweenLuminTaskCancelBehaviour.CompleteWithSequenceCallbackAndCancelAwait
+                        || cancelBehaviour == TweenLuminTaskCancelBehaviour.CancelAwait)
                     {
                         tuple.Item1.Canceled = true;
                     }
@@ -286,6 +290,7 @@ namespace LuminThread.Unity
                 }
                 
                 RestoreOriginalCallback(tween, callbackType, originalCallback);
+                tuple.Item1.Registration.Dispose();
                 tuple.Dispose();
                 LuminTaskSourceCore<AsyncUnit>.Dispose(state.Source);
             }
@@ -315,36 +320,36 @@ namespace LuminThread.Unity
                 }
             }
 
-            static void DoCancelBeforeCreate(Tween tween, TweenCancelBehaviour tweenCancelBehaviour)
+            static void DoCancelBeforeCreate(Tween tween, TweenLuminTaskCancelBehaviour tweenCancelBehaviour)
             {
                 switch (tweenCancelBehaviour)
                 {
-                    case TweenCancelBehaviour.Kill:
+                    case TweenLuminTaskCancelBehaviour.Kill:
                     default:
                         tween.Kill(false);
                         break;
-                    case TweenCancelBehaviour.KillAndCancelAwait:
+                    case TweenLuminTaskCancelBehaviour.KillAndCancelAwait:
                         tween.Kill(false);
                         break;
-                    case TweenCancelBehaviour.KillWithCompleteCallback:
+                    case TweenLuminTaskCancelBehaviour.KillWithCompleteCallback:
                         tween.Kill(true);
                         break;
-                    case TweenCancelBehaviour.KillWithCompleteCallbackAndCancelAwait:
+                    case TweenLuminTaskCancelBehaviour.KillWithCompleteCallbackAndCancelAwait:
                         tween.Kill(true);
                         break;
-                    case TweenCancelBehaviour.Complete:
+                    case TweenLuminTaskCancelBehaviour.Complete:
                         tween.Complete(false);
                         break;
-                    case TweenCancelBehaviour.CompleteAndCancelAwait:
+                    case TweenLuminTaskCancelBehaviour.CompleteAndCancelAwait:
                         tween.Complete(false);
                         break;
-                    case TweenCancelBehaviour.CompleteWithSequenceCallback:
+                    case TweenLuminTaskCancelBehaviour.CompleteWithSequenceCallback:
                         tween.Complete(true);
                         break;
-                    case TweenCancelBehaviour.CompleteWithSequenceCallbackAndCancelAwait:
+                    case TweenLuminTaskCancelBehaviour.CompleteWithSequenceCallbackAndCancelAwait:
                         tween.Complete(true);
                         break;
-                    case TweenCancelBehaviour.CancelAwait:
+                    case TweenLuminTaskCancelBehaviour.CancelAwait:
                         break;
                 }
             }
@@ -353,39 +358,27 @@ namespace LuminThread.Unity
 
     sealed class PooledTweenCallback
     {
-        static readonly ConcurrentQueue<PooledTweenCallback> pool = new ConcurrentQueue<PooledTweenCallback>();
-
+        readonly PooledDelegateBody body;
         readonly TweenCallback runDelegate;
 
-        Action continuation;
-
-        PooledTweenCallback()
+        PooledTweenCallback(PooledDelegateBody body)
         {
+            this.body = body;
             runDelegate = Run;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static TweenCallback Create(Action continuation)
         {
-            if (!pool.TryDequeue(out var item))
-            {
-                item = new PooledTweenCallback();
-            }
-
-            item.continuation = continuation;
+            var body = PooledDelegateCore.Rent(continuation);
+            var item = new PooledTweenCallback(body);
             return item.runDelegate;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         void Run()
         {
-            var call = continuation;
-            continuation = null;
-            if (call != null)
-            {
-                pool.Enqueue(this);
-                call.Invoke();
-            }
+            body.Invoke();
         }
     }
 }

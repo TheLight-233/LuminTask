@@ -47,7 +47,11 @@ public unsafe struct VTable
     [FieldOffset(56)]
     public delegate*<void*, void> Dispose;
 
-    [FieldOffset(0)]
+    // Value-returning counterpart of GetResult. Kept at its own offset so the void
+    // GetResult thunk is a genuine void-returning function: a large-struct T (e.g. a
+    // 16-byte LuminTask<T>) is returned through a hidden buffer that would otherwise
+    // clobber the args of a void-signature call on the same slot.
+    [FieldOffset(64)]
     public void* GetResultValue;
 }
 
@@ -62,6 +66,12 @@ public readonly unsafe partial struct LuminTask
     public short Id => _id;
 
     public static volatile LuminTaskModel Model = LuminTaskModel.Safe;
+
+    /// <summary>
+    /// Enables token and lifecycle validation in Release builds. Disabled by default to preserve
+    /// the library's normal low-overhead behavior.
+    /// </summary>
+    public static volatile bool EnableRuntimeValidation;
 
     [DebuggerHidden]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]

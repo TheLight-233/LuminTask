@@ -13,10 +13,10 @@ public interface IPlayLoopStrategy : IDisposable
     void RunCore();
 }
 
-// Function pointers are an optional execution optimization. Keeping this marker internal
-// ensures external runtimes (notably Unity/IL2CPP) use the managed MoveNext fallback unless
-// the in-box .NET strategy explicitly opts into calli-based dispatch.
-internal interface IFunctionPointerPlayLoopStrategy
+// Function pointers are an optional execution optimization. External runtimes may implement
+// this interface when they can safely invoke unmanaged function pointers (Unity IL2CPP does so
+// through its player-loop strategy).
+public interface IFunctionPointerPlayLoopStrategy
 {
     void AddAction(LuminTaskState state, IntPtr functionPointer);
 }
