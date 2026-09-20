@@ -320,13 +320,13 @@ namespace LuminThread.Unity
                 if (stateTuple == null)
                     return false;
 
-                if (stateTuple.Item1.Completed)
+                if (stateTuple.Item.Completed)
                     return false;
 
                 if (state.CancellationToken.IsCancellationRequested)
                 {
-                    stateTuple.Item1.Completed = true;
-                    stateTuple.Item1.IsCancellationRequested = true;
+                    stateTuple.Item.Completed = true;
+                    stateTuple.Item.IsCancellationRequested = true;
                     LuminTaskSourceCore<AsyncUnit>.TrySetCanceled(state.Source);
                     stateTuple.Dispose();
                     return false;
@@ -414,13 +414,13 @@ namespace LuminThread.Unity
                 if (stateTuple == null)
                     return false;
 
-                if (stateTuple.Item1.Completed)
+                if (stateTuple.Item.Completed)
                     return false;
 
                 if (state.CancellationToken.IsCancellationRequested)
                 {
-                    stateTuple.Item1.Completed = true;
-                    stateTuple.Item1.IsCancellationRequested = true;
+                    stateTuple.Item.Completed = true;
+                    stateTuple.Item.IsCancellationRequested = true;
                     LuminTaskSourceCore<T>.TrySetCanceled(state.Source);
                     stateTuple.Dispose();
                     return false;

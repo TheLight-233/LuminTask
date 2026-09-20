@@ -33,7 +33,7 @@ namespace LuminThread.AsyncEx
         public LuminTask<T> Task => GetState().Task;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public LuminTaskAwaiter<T> GetAwaiter() => Task.GetAwaiter();
+        public LuminTask<T> GetAwaiter() => Task.GetAwaiter();
 
         public void Dispose() => GetState().Dispose();
 

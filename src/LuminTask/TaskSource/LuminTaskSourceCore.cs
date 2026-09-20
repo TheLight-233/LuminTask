@@ -45,13 +45,6 @@ public unsafe struct LuminTaskSourceCore<T>
     private static void SentinelInvoked(object _)
         => LuminTaskExceptionHelper.ThrowInvalidOperation("LuminTask completion sentinel must never be invoked.");
 
-    // 每（封闭 T × 线程）一个缓存槽：顺序工作负载取槽无需任何原子操作。
-    private static class SlotCache
-    {
-        [ThreadStatic]
-        internal static IntPtr Cached;
-    }
-
     public short Id;
     private static readonly bool ShouldClearResult = TypeMeta<T>.Size > 64;
 
@@ -73,12 +66,8 @@ public unsafe struct LuminTaskSourceCore<T>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static LuminTaskSourceCore<T>* Create(bool continueOnCapturedContext = false)
     {
-        var cached = SlotCache.Cached;
-        SlotCache.Cached = IntPtr.Zero;
-        var ptr = cached != IntPtr.Zero
-            ? (LuminTaskSourceCore<T>*)cached.ToPointer()
-            : (LuminTaskSourceCore<T>*)MemoryHelper.Alloc(
-                (nuint)Math.Max(Unsafe.SizeOf<LuminTaskSourceCore<T>>(), IntPtr.Size));
+        var size = (nuint)Math.Max(Unsafe.SizeOf<LuminTaskSourceCore<T>>(), IntPtr.Size);
+        var ptr = (LuminTaskSourceCore<T>*)LuminSourceCache.Rent(size);
 
         ptr->Id = LuminTaskBag.GetId();
         ref var item = ref LuminTaskMarshal.GetTaskItem(ptr->Id);
@@ -222,7 +211,7 @@ public unsafe struct LuminTaskSourceCore<T>
                     {
                         if (item.ResultRef is StateTuple<T> stateTuple)
                         {
-                            var result = stateTuple.Item1;
+                            var result = stateTuple.Item;
                             return result;
                         }
                         return default!;
@@ -290,7 +279,7 @@ public unsafe struct LuminTaskSourceCore<T>
                     }
                     else
                     {
-                        result = item.ResultRef is StateTuple<T> stateTuple ? stateTuple.Item1 : default!;
+                        result = item.ResultRef is StateTuple<T> stateTuple ? stateTuple.Item : default!;
                     }
 #else
                     if (TypeMeta<T>.Size > 64)
@@ -584,12 +573,9 @@ public unsafe struct LuminTaskSourceCore<T>
 
         LuminTaskLeakTracker.OnReturn(ptr); // DEBUG-only; compiled out in Release
 
-        // 每线程一个原生缓存块：顺序工作负载免于反复进出原生分配器；
+        // 每线程一个原生缓存块（跨 T 共享）：顺序工作负载免于反复进出原生分配器；
         // 槽位已占用时多余块直接归还分配器（有界，不会随线程数无限制增长）。
-        if (SlotCache.Cached == IntPtr.Zero)
-            SlotCache.Cached = new IntPtr(ptr);
-        else
-            MemoryHelper.Free(ptr);
+        LuminSourceCache.Return(ptr, (nuint)Math.Max(Unsafe.SizeOf<LuminTaskSourceCore<T>>(), IntPtr.Size));
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]

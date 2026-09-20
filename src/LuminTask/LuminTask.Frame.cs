@@ -32,7 +32,7 @@ public readonly partial struct LuminTask
             return false;
         }
 
-        if (--tuple.Item1 <= 0)
+        if (--tuple.Item <= 0)
         {
             LuminTaskSourceCore<AsyncUnit>.TrySetResult(state.Source);
             tuple.Dispose();

@@ -276,7 +276,7 @@ public unsafe struct WaitUntilPromise<TState, TResult>
 
         try
         {
-            if (!predicate(stateTuple.Item1))
+            if (!predicate(stateTuple.Item))
             {
                 return true;
             }

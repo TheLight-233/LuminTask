@@ -12,11 +12,11 @@ namespace LuminThread.Utility
         private static readonly Action<object> s_run = Run;
 
         private ForgetBlock? _next;
-        private LuminTaskAwaiter _awaiter;
+        private LuminTask _awaiter;
         private Action<Exception>? _handler;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static void Schedule(in LuminTaskAwaiter awaiter, Action<Exception>? handler)
+        public static void Schedule(in LuminTask awaiter, Action<Exception>? handler)
         {
             var b = _freeList;
             if (b != null) { _freeList = b._next; b._next = null; }
@@ -49,11 +49,11 @@ namespace LuminThread.Utility
         private static readonly Action<object> s_run = Run;
 
         private ForgetBlock<T>? _next;
-        private LuminTaskAwaiter<T> _awaiter;
+        private LuminTask<T> _awaiter;
         private Action<Exception>? _handler;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static void Schedule(in LuminTaskAwaiter<T> awaiter, Action<Exception>? handler)
+        public static void Schedule(in LuminTask<T> awaiter, Action<Exception>? handler)
         {
             var b = _freeList;
             if (b != null) { _freeList = b._next; b._next = null; }

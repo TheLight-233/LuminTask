@@ -1,4 +1,4 @@
-﻿<#@ template language="C#" #>
+<#@ template language="C#" #>
 <#@ assembly name="System.Core" #>
 <#@ import namespace="System.Linq" #>
 <#@ import namespace="System.Text" #>
@@ -51,9 +51,9 @@ public sealed unsafe class WhenAllPromise<<#= typeParams #>>
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAllPromise<<#= typeParams #>>, LuminTaskAwaiter<T<#= j #>>>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
+                    var t = (StateTuple<(WhenAllPromise<<#= typeParams #>>, LuminTask<T<#= j #>>)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
                     t.Dispose();
                     TryInvokeContinuationT<#= j #>(owner, awaiter);
                 }, StateTuple.Create(this, awaiter));
@@ -63,7 +63,7 @@ public sealed unsafe class WhenAllPromise<<#= typeParams #>>
     }
 
 <# for (int j = 1; j <= i; j++) { #>
-    static void TryInvokeContinuationT<#= j #>(WhenAllPromise<<#= typeParams #>> self, in LuminTaskAwaiter<T<#= j #>> awaiter)
+    static void TryInvokeContinuationT<#= j #>(WhenAllPromise<<#= typeParams #>> self, in LuminTask<T<#= j #>> awaiter)
     {
         try
         {
@@ -118,9 +118,9 @@ public sealed unsafe class WhenAllPromise<#= i #>
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAllPromise<#= i #>, LuminTaskAwaiter>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
+                    var t = (StateTuple<(WhenAllPromise<#= i #>, LuminTask)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
                     t.Dispose();
                     TryInvokeContinuationT<#= j #>(owner, awaiter);
                 }, StateTuple.Create(this, awaiter));
@@ -130,7 +130,7 @@ public sealed unsafe class WhenAllPromise<#= i #>
     }
 
 <# for (int j = 1; j <= i; j++) { #>
-    static void TryInvokeContinuationT<#= j #>(WhenAllPromise<#= i #> self, in LuminTaskAwaiter awaiter)
+    static void TryInvokeContinuationT<#= j #>(WhenAllPromise<#= i #> self, in LuminTask awaiter)
     {
         try
         {
@@ -200,18 +200,18 @@ public sealed unsafe class WhenAllPromise<T>
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var tuple = (StateTuple<WhenAllPromise<T>, LuminTaskAwaiter<T>, int>)state;
-                    var owner = tuple.Item1;
-                    var awaiter = tuple.Item2;
-                    var index = tuple.Item3;
+                    var tuple = (StateTuple<(WhenAllPromise<T>, LuminTask<T>, int)>)state;
+                    var owner = tuple.Item.Item1;
+                    var awaiter = tuple.Item.Item2;
+                    var index = tuple.Item.Item3;
                     tuple.Dispose();
                     TryInvokeContinuation(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, index));
+                }, StateTuple.Create((this, awaiter, index)));
             }
         }
     }
 
-    static void TryInvokeContinuation(WhenAllPromise<T> self, in LuminTaskAwaiter<T> awaiter, int index)
+    static void TryInvokeContinuation(WhenAllPromise<T> self, in LuminTask<T> awaiter, int index)
     {
         try
         {
@@ -274,9 +274,9 @@ public sealed unsafe class WhenAllPromise
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var tuple = (StateTuple<WhenAllPromise, LuminTaskAwaiter>)state;
-                    var owner = tuple.Item1;
-                    var awaiter = tuple.Item2;
+                    var tuple = (StateTuple<(WhenAllPromise, LuminTask)>)state;
+                    var owner = tuple.Item.Item1;
+                    var awaiter = tuple.Item.Item2;
                     tuple.Dispose();
                     TryInvokeContinuation(owner, awaiter);
                 }, StateTuple.Create(this, awaiter));
@@ -284,7 +284,7 @@ public sealed unsafe class WhenAllPromise
         }
     }
 
-    static void TryInvokeContinuation(WhenAllPromise self, in LuminTaskAwaiter awaiter)
+    static void TryInvokeContinuation(WhenAllPromise self, in LuminTask awaiter)
     {
         try
         {

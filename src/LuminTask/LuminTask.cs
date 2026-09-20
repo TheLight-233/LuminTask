@@ -57,7 +57,7 @@ public unsafe struct VTable
 
 [AsyncMethodBuilder(typeof(AsyncLuminTaskMethodBuilder))]
 [StructLayout(LayoutKind.Sequential)]
-public readonly unsafe partial struct LuminTask
+public readonly unsafe partial struct LuminTask : ICriticalNotifyCompletion
 {
     internal readonly VTable* _vTable;
     internal readonly void* _taskSource;
@@ -84,7 +84,58 @@ public readonly unsafe partial struct LuminTask
 
     [DebuggerHidden]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public LuminTaskAwaiter GetAwaiter() => new(in this);
+    public LuminTask GetAwaiter() => this;
+
+    public bool IsCompleted
+    {
+        [DebuggerHidden]
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        get
+        {
+            if (_taskSource == null)
+                return true;
+            return _vTable->GetStatus(_taskSource, _id).IsCompleted();
+        }
+    }
+
+    [DebuggerHidden]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public void GetResult()
+    {
+        if (_taskSource == null)
+            return;
+        _vTable->GetResult(_taskSource, _id);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public void OnCompleted(Action continuation)
+    {
+        if (_taskSource == null)
+        {
+            continuation();
+        }
+        else
+        {
+            _vTable->OnCompleted(_taskSource, static s => ((Action)s)(), continuation, _id);
+        }
+    }
+
+    [DebuggerHidden]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public void SourceOnCompleted(Action<object> continuation, object state)
+    {
+        if (_taskSource == null)
+        {
+            continuation(state);
+        }
+        else
+        {
+            _vTable->OnCompleted(_taskSource, continuation, state, _id);
+        }
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public void UnsafeOnCompleted(Action continuation) => OnCompleted(continuation);
 
     public LuminTaskStatus Status
     {
@@ -120,7 +171,7 @@ public readonly unsafe partial struct LuminTask
 
 [AsyncMethodBuilder(typeof(AsyncLuminTaskMethodBuilder<>))]
 [StructLayout(LayoutKind.Sequential)]
-public readonly unsafe partial struct LuminTask<T>
+public readonly unsafe partial struct LuminTask<T> : ICriticalNotifyCompletion
 {
     internal readonly VTable* _vTable;
     internal readonly void* _taskSource;
@@ -156,7 +207,58 @@ public readonly unsafe partial struct LuminTask<T>
 
     [DebuggerHidden]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public LuminTaskAwaiter<T> GetAwaiter() => new(in this);
+    public LuminTask<T> GetAwaiter() => this;
+
+    public bool IsCompleted
+    {
+        [DebuggerHidden]
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        get
+        {
+            if (_taskSource == null)
+                return true;
+            return _vTable->GetStatus(_taskSource, _id).IsCompleted();
+        }
+    }
+
+    [DebuggerHidden]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public T GetResult()
+    {
+        if (_taskSource == null)
+            return _result!;
+        return ((delegate*<void*, short, T>)_vTable->GetResultValue)(_taskSource, _id);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public void OnCompleted(Action continuation)
+    {
+        if (_taskSource == null)
+        {
+            continuation();
+        }
+        else
+        {
+            _vTable->OnCompleted(_taskSource, static s => ((Action)s)(), continuation, _id);
+        }
+    }
+
+    [DebuggerHidden]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public void SourceOnCompleted(Action<object> continuation, object state)
+    {
+        if (_taskSource == null)
+        {
+            continuation(state);
+        }
+        else
+        {
+            _vTable->OnCompleted(_taskSource, continuation, state, _id);
+        }
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public void UnsafeOnCompleted(Action continuation) => OnCompleted(continuation);
 
     public LuminTaskStatus Status
     {

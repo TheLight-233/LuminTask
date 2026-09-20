@@ -1,4 +1,4 @@
-﻿
+
 using System;
 using System.Threading;
 using System.Collections.Generic;
@@ -34,13 +34,13 @@ public sealed unsafe class WhenAnyPromise<T1, T2>
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise<T1, T2>, LuminTaskAwaiter<T1>, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise<T1, T2>, LuminTask<T1>, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT1(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, 0));
+                }, StateTuple.Create((this, awaiter, 0)));
             }
         }
         {
@@ -53,18 +53,18 @@ public sealed unsafe class WhenAnyPromise<T1, T2>
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise<T1, T2>, LuminTaskAwaiter<T2>, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise<T1, T2>, LuminTask<T2>, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT2(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, 1));
+                }, StateTuple.Create((this, awaiter, 1)));
             }
         }
     }
 
-    static void TryInvokeContinuationT1(WhenAnyPromise<T1, T2> self, in LuminTaskAwaiter<T1> awaiter, int index)
+    static void TryInvokeContinuationT1(WhenAnyPromise<T1, T2> self, in LuminTask<T1> awaiter, int index)
     {
         try
         {
@@ -85,7 +85,7 @@ public sealed unsafe class WhenAnyPromise<T1, T2>
         }
     }
 
-    static void TryInvokeContinuationT2(WhenAnyPromise<T1, T2> self, in LuminTaskAwaiter<T2> awaiter, int index)
+    static void TryInvokeContinuationT2(WhenAnyPromise<T1, T2> self, in LuminTask<T2> awaiter, int index)
     {
         try
         {
@@ -136,13 +136,13 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3>
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise<T1, T2, T3>, LuminTaskAwaiter<T1>, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise<T1, T2, T3>, LuminTask<T1>, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT1(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, 0));
+                }, StateTuple.Create((this, awaiter, 0)));
             }
         }
         {
@@ -155,13 +155,13 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3>
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise<T1, T2, T3>, LuminTaskAwaiter<T2>, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise<T1, T2, T3>, LuminTask<T2>, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT2(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, 1));
+                }, StateTuple.Create((this, awaiter, 1)));
             }
         }
         {
@@ -174,18 +174,18 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3>
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise<T1, T2, T3>, LuminTaskAwaiter<T3>, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise<T1, T2, T3>, LuminTask<T3>, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT3(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, 2));
+                }, StateTuple.Create((this, awaiter, 2)));
             }
         }
     }
 
-    static void TryInvokeContinuationT1(WhenAnyPromise<T1, T2, T3> self, in LuminTaskAwaiter<T1> awaiter, int index)
+    static void TryInvokeContinuationT1(WhenAnyPromise<T1, T2, T3> self, in LuminTask<T1> awaiter, int index)
     {
         try
         {
@@ -206,7 +206,7 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3>
         }
     }
 
-    static void TryInvokeContinuationT2(WhenAnyPromise<T1, T2, T3> self, in LuminTaskAwaiter<T2> awaiter, int index)
+    static void TryInvokeContinuationT2(WhenAnyPromise<T1, T2, T3> self, in LuminTask<T2> awaiter, int index)
     {
         try
         {
@@ -227,7 +227,7 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3>
         }
     }
 
-    static void TryInvokeContinuationT3(WhenAnyPromise<T1, T2, T3> self, in LuminTaskAwaiter<T3> awaiter, int index)
+    static void TryInvokeContinuationT3(WhenAnyPromise<T1, T2, T3> self, in LuminTask<T3> awaiter, int index)
     {
         try
         {
@@ -279,13 +279,13 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4>
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise<T1, T2, T3, T4>, LuminTaskAwaiter<T1>, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise<T1, T2, T3, T4>, LuminTask<T1>, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT1(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, 0));
+                }, StateTuple.Create((this, awaiter, 0)));
             }
         }
         {
@@ -298,13 +298,13 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4>
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise<T1, T2, T3, T4>, LuminTaskAwaiter<T2>, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise<T1, T2, T3, T4>, LuminTask<T2>, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT2(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, 1));
+                }, StateTuple.Create((this, awaiter, 1)));
             }
         }
         {
@@ -317,13 +317,13 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4>
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise<T1, T2, T3, T4>, LuminTaskAwaiter<T3>, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise<T1, T2, T3, T4>, LuminTask<T3>, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT3(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, 2));
+                }, StateTuple.Create((this, awaiter, 2)));
             }
         }
         {
@@ -336,18 +336,18 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4>
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise<T1, T2, T3, T4>, LuminTaskAwaiter<T4>, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise<T1, T2, T3, T4>, LuminTask<T4>, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT4(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, 3));
+                }, StateTuple.Create((this, awaiter, 3)));
             }
         }
     }
 
-    static void TryInvokeContinuationT1(WhenAnyPromise<T1, T2, T3, T4> self, in LuminTaskAwaiter<T1> awaiter, int index)
+    static void TryInvokeContinuationT1(WhenAnyPromise<T1, T2, T3, T4> self, in LuminTask<T1> awaiter, int index)
     {
         try
         {
@@ -368,7 +368,7 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4>
         }
     }
 
-    static void TryInvokeContinuationT2(WhenAnyPromise<T1, T2, T3, T4> self, in LuminTaskAwaiter<T2> awaiter, int index)
+    static void TryInvokeContinuationT2(WhenAnyPromise<T1, T2, T3, T4> self, in LuminTask<T2> awaiter, int index)
     {
         try
         {
@@ -389,7 +389,7 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4>
         }
     }
 
-    static void TryInvokeContinuationT3(WhenAnyPromise<T1, T2, T3, T4> self, in LuminTaskAwaiter<T3> awaiter, int index)
+    static void TryInvokeContinuationT3(WhenAnyPromise<T1, T2, T3, T4> self, in LuminTask<T3> awaiter, int index)
     {
         try
         {
@@ -410,7 +410,7 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4>
         }
     }
 
-    static void TryInvokeContinuationT4(WhenAnyPromise<T1, T2, T3, T4> self, in LuminTaskAwaiter<T4> awaiter, int index)
+    static void TryInvokeContinuationT4(WhenAnyPromise<T1, T2, T3, T4> self, in LuminTask<T4> awaiter, int index)
     {
         try
         {
@@ -463,13 +463,13 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5>
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise<T1, T2, T3, T4, T5>, LuminTaskAwaiter<T1>, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise<T1, T2, T3, T4, T5>, LuminTask<T1>, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT1(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, 0));
+                }, StateTuple.Create((this, awaiter, 0)));
             }
         }
         {
@@ -482,13 +482,13 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5>
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise<T1, T2, T3, T4, T5>, LuminTaskAwaiter<T2>, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise<T1, T2, T3, T4, T5>, LuminTask<T2>, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT2(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, 1));
+                }, StateTuple.Create((this, awaiter, 1)));
             }
         }
         {
@@ -501,13 +501,13 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5>
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise<T1, T2, T3, T4, T5>, LuminTaskAwaiter<T3>, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise<T1, T2, T3, T4, T5>, LuminTask<T3>, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT3(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, 2));
+                }, StateTuple.Create((this, awaiter, 2)));
             }
         }
         {
@@ -520,13 +520,13 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5>
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise<T1, T2, T3, T4, T5>, LuminTaskAwaiter<T4>, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise<T1, T2, T3, T4, T5>, LuminTask<T4>, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT4(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, 3));
+                }, StateTuple.Create((this, awaiter, 3)));
             }
         }
         {
@@ -539,18 +539,18 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5>
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise<T1, T2, T3, T4, T5>, LuminTaskAwaiter<T5>, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise<T1, T2, T3, T4, T5>, LuminTask<T5>, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT5(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, 4));
+                }, StateTuple.Create((this, awaiter, 4)));
             }
         }
     }
 
-    static void TryInvokeContinuationT1(WhenAnyPromise<T1, T2, T3, T4, T5> self, in LuminTaskAwaiter<T1> awaiter, int index)
+    static void TryInvokeContinuationT1(WhenAnyPromise<T1, T2, T3, T4, T5> self, in LuminTask<T1> awaiter, int index)
     {
         try
         {
@@ -571,7 +571,7 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5>
         }
     }
 
-    static void TryInvokeContinuationT2(WhenAnyPromise<T1, T2, T3, T4, T5> self, in LuminTaskAwaiter<T2> awaiter, int index)
+    static void TryInvokeContinuationT2(WhenAnyPromise<T1, T2, T3, T4, T5> self, in LuminTask<T2> awaiter, int index)
     {
         try
         {
@@ -592,7 +592,7 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5>
         }
     }
 
-    static void TryInvokeContinuationT3(WhenAnyPromise<T1, T2, T3, T4, T5> self, in LuminTaskAwaiter<T3> awaiter, int index)
+    static void TryInvokeContinuationT3(WhenAnyPromise<T1, T2, T3, T4, T5> self, in LuminTask<T3> awaiter, int index)
     {
         try
         {
@@ -613,7 +613,7 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5>
         }
     }
 
-    static void TryInvokeContinuationT4(WhenAnyPromise<T1, T2, T3, T4, T5> self, in LuminTaskAwaiter<T4> awaiter, int index)
+    static void TryInvokeContinuationT4(WhenAnyPromise<T1, T2, T3, T4, T5> self, in LuminTask<T4> awaiter, int index)
     {
         try
         {
@@ -634,7 +634,7 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5>
         }
     }
 
-    static void TryInvokeContinuationT5(WhenAnyPromise<T1, T2, T3, T4, T5> self, in LuminTaskAwaiter<T5> awaiter, int index)
+    static void TryInvokeContinuationT5(WhenAnyPromise<T1, T2, T3, T4, T5> self, in LuminTask<T5> awaiter, int index)
     {
         try
         {
@@ -688,13 +688,13 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6>
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise<T1, T2, T3, T4, T5, T6>, LuminTaskAwaiter<T1>, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise<T1, T2, T3, T4, T5, T6>, LuminTask<T1>, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT1(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, 0));
+                }, StateTuple.Create((this, awaiter, 0)));
             }
         }
         {
@@ -707,13 +707,13 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6>
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise<T1, T2, T3, T4, T5, T6>, LuminTaskAwaiter<T2>, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise<T1, T2, T3, T4, T5, T6>, LuminTask<T2>, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT2(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, 1));
+                }, StateTuple.Create((this, awaiter, 1)));
             }
         }
         {
@@ -726,13 +726,13 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6>
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise<T1, T2, T3, T4, T5, T6>, LuminTaskAwaiter<T3>, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise<T1, T2, T3, T4, T5, T6>, LuminTask<T3>, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT3(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, 2));
+                }, StateTuple.Create((this, awaiter, 2)));
             }
         }
         {
@@ -745,13 +745,13 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6>
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise<T1, T2, T3, T4, T5, T6>, LuminTaskAwaiter<T4>, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise<T1, T2, T3, T4, T5, T6>, LuminTask<T4>, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT4(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, 3));
+                }, StateTuple.Create((this, awaiter, 3)));
             }
         }
         {
@@ -764,13 +764,13 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6>
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise<T1, T2, T3, T4, T5, T6>, LuminTaskAwaiter<T5>, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise<T1, T2, T3, T4, T5, T6>, LuminTask<T5>, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT5(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, 4));
+                }, StateTuple.Create((this, awaiter, 4)));
             }
         }
         {
@@ -783,18 +783,18 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6>
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise<T1, T2, T3, T4, T5, T6>, LuminTaskAwaiter<T6>, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise<T1, T2, T3, T4, T5, T6>, LuminTask<T6>, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT6(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, 5));
+                }, StateTuple.Create((this, awaiter, 5)));
             }
         }
     }
 
-    static void TryInvokeContinuationT1(WhenAnyPromise<T1, T2, T3, T4, T5, T6> self, in LuminTaskAwaiter<T1> awaiter, int index)
+    static void TryInvokeContinuationT1(WhenAnyPromise<T1, T2, T3, T4, T5, T6> self, in LuminTask<T1> awaiter, int index)
     {
         try
         {
@@ -815,7 +815,7 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6>
         }
     }
 
-    static void TryInvokeContinuationT2(WhenAnyPromise<T1, T2, T3, T4, T5, T6> self, in LuminTaskAwaiter<T2> awaiter, int index)
+    static void TryInvokeContinuationT2(WhenAnyPromise<T1, T2, T3, T4, T5, T6> self, in LuminTask<T2> awaiter, int index)
     {
         try
         {
@@ -836,7 +836,7 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6>
         }
     }
 
-    static void TryInvokeContinuationT3(WhenAnyPromise<T1, T2, T3, T4, T5, T6> self, in LuminTaskAwaiter<T3> awaiter, int index)
+    static void TryInvokeContinuationT3(WhenAnyPromise<T1, T2, T3, T4, T5, T6> self, in LuminTask<T3> awaiter, int index)
     {
         try
         {
@@ -857,7 +857,7 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6>
         }
     }
 
-    static void TryInvokeContinuationT4(WhenAnyPromise<T1, T2, T3, T4, T5, T6> self, in LuminTaskAwaiter<T4> awaiter, int index)
+    static void TryInvokeContinuationT4(WhenAnyPromise<T1, T2, T3, T4, T5, T6> self, in LuminTask<T4> awaiter, int index)
     {
         try
         {
@@ -878,7 +878,7 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6>
         }
     }
 
-    static void TryInvokeContinuationT5(WhenAnyPromise<T1, T2, T3, T4, T5, T6> self, in LuminTaskAwaiter<T5> awaiter, int index)
+    static void TryInvokeContinuationT5(WhenAnyPromise<T1, T2, T3, T4, T5, T6> self, in LuminTask<T5> awaiter, int index)
     {
         try
         {
@@ -899,7 +899,7 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6>
         }
     }
 
-    static void TryInvokeContinuationT6(WhenAnyPromise<T1, T2, T3, T4, T5, T6> self, in LuminTaskAwaiter<T6> awaiter, int index)
+    static void TryInvokeContinuationT6(WhenAnyPromise<T1, T2, T3, T4, T5, T6> self, in LuminTask<T6> awaiter, int index)
     {
         try
         {
@@ -954,13 +954,13 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7>
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7>, LuminTaskAwaiter<T1>, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7>, LuminTask<T1>, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT1(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, 0));
+                }, StateTuple.Create((this, awaiter, 0)));
             }
         }
         {
@@ -973,13 +973,13 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7>
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7>, LuminTaskAwaiter<T2>, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7>, LuminTask<T2>, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT2(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, 1));
+                }, StateTuple.Create((this, awaiter, 1)));
             }
         }
         {
@@ -992,13 +992,13 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7>
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7>, LuminTaskAwaiter<T3>, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7>, LuminTask<T3>, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT3(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, 2));
+                }, StateTuple.Create((this, awaiter, 2)));
             }
         }
         {
@@ -1011,13 +1011,13 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7>
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7>, LuminTaskAwaiter<T4>, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7>, LuminTask<T4>, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT4(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, 3));
+                }, StateTuple.Create((this, awaiter, 3)));
             }
         }
         {
@@ -1030,13 +1030,13 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7>
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7>, LuminTaskAwaiter<T5>, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7>, LuminTask<T5>, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT5(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, 4));
+                }, StateTuple.Create((this, awaiter, 4)));
             }
         }
         {
@@ -1049,13 +1049,13 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7>
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7>, LuminTaskAwaiter<T6>, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7>, LuminTask<T6>, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT6(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, 5));
+                }, StateTuple.Create((this, awaiter, 5)));
             }
         }
         {
@@ -1068,18 +1068,18 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7>
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7>, LuminTaskAwaiter<T7>, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7>, LuminTask<T7>, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT7(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, 6));
+                }, StateTuple.Create((this, awaiter, 6)));
             }
         }
     }
 
-    static void TryInvokeContinuationT1(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7> self, in LuminTaskAwaiter<T1> awaiter, int index)
+    static void TryInvokeContinuationT1(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7> self, in LuminTask<T1> awaiter, int index)
     {
         try
         {
@@ -1100,7 +1100,7 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7>
         }
     }
 
-    static void TryInvokeContinuationT2(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7> self, in LuminTaskAwaiter<T2> awaiter, int index)
+    static void TryInvokeContinuationT2(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7> self, in LuminTask<T2> awaiter, int index)
     {
         try
         {
@@ -1121,7 +1121,7 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7>
         }
     }
 
-    static void TryInvokeContinuationT3(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7> self, in LuminTaskAwaiter<T3> awaiter, int index)
+    static void TryInvokeContinuationT3(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7> self, in LuminTask<T3> awaiter, int index)
     {
         try
         {
@@ -1142,7 +1142,7 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7>
         }
     }
 
-    static void TryInvokeContinuationT4(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7> self, in LuminTaskAwaiter<T4> awaiter, int index)
+    static void TryInvokeContinuationT4(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7> self, in LuminTask<T4> awaiter, int index)
     {
         try
         {
@@ -1163,7 +1163,7 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7>
         }
     }
 
-    static void TryInvokeContinuationT5(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7> self, in LuminTaskAwaiter<T5> awaiter, int index)
+    static void TryInvokeContinuationT5(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7> self, in LuminTask<T5> awaiter, int index)
     {
         try
         {
@@ -1184,7 +1184,7 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7>
         }
     }
 
-    static void TryInvokeContinuationT6(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7> self, in LuminTaskAwaiter<T6> awaiter, int index)
+    static void TryInvokeContinuationT6(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7> self, in LuminTask<T6> awaiter, int index)
     {
         try
         {
@@ -1205,7 +1205,7 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7>
         }
     }
 
-    static void TryInvokeContinuationT7(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7> self, in LuminTaskAwaiter<T7> awaiter, int index)
+    static void TryInvokeContinuationT7(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7> self, in LuminTask<T7> awaiter, int index)
     {
         try
         {
@@ -1261,13 +1261,13 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8>
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8>, LuminTaskAwaiter<T1>, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8>, LuminTask<T1>, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT1(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, 0));
+                }, StateTuple.Create((this, awaiter, 0)));
             }
         }
         {
@@ -1280,13 +1280,13 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8>
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8>, LuminTaskAwaiter<T2>, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8>, LuminTask<T2>, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT2(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, 1));
+                }, StateTuple.Create((this, awaiter, 1)));
             }
         }
         {
@@ -1299,13 +1299,13 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8>
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8>, LuminTaskAwaiter<T3>, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8>, LuminTask<T3>, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT3(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, 2));
+                }, StateTuple.Create((this, awaiter, 2)));
             }
         }
         {
@@ -1318,13 +1318,13 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8>
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8>, LuminTaskAwaiter<T4>, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8>, LuminTask<T4>, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT4(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, 3));
+                }, StateTuple.Create((this, awaiter, 3)));
             }
         }
         {
@@ -1337,13 +1337,13 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8>
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8>, LuminTaskAwaiter<T5>, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8>, LuminTask<T5>, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT5(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, 4));
+                }, StateTuple.Create((this, awaiter, 4)));
             }
         }
         {
@@ -1356,13 +1356,13 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8>
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8>, LuminTaskAwaiter<T6>, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8>, LuminTask<T6>, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT6(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, 5));
+                }, StateTuple.Create((this, awaiter, 5)));
             }
         }
         {
@@ -1375,13 +1375,13 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8>
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8>, LuminTaskAwaiter<T7>, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8>, LuminTask<T7>, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT7(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, 6));
+                }, StateTuple.Create((this, awaiter, 6)));
             }
         }
         {
@@ -1394,18 +1394,18 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8>
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8>, LuminTaskAwaiter<T8>, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8>, LuminTask<T8>, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT8(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, 7));
+                }, StateTuple.Create((this, awaiter, 7)));
             }
         }
     }
 
-    static void TryInvokeContinuationT1(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8> self, in LuminTaskAwaiter<T1> awaiter, int index)
+    static void TryInvokeContinuationT1(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8> self, in LuminTask<T1> awaiter, int index)
     {
         try
         {
@@ -1426,7 +1426,7 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8>
         }
     }
 
-    static void TryInvokeContinuationT2(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8> self, in LuminTaskAwaiter<T2> awaiter, int index)
+    static void TryInvokeContinuationT2(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8> self, in LuminTask<T2> awaiter, int index)
     {
         try
         {
@@ -1447,7 +1447,7 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8>
         }
     }
 
-    static void TryInvokeContinuationT3(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8> self, in LuminTaskAwaiter<T3> awaiter, int index)
+    static void TryInvokeContinuationT3(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8> self, in LuminTask<T3> awaiter, int index)
     {
         try
         {
@@ -1468,7 +1468,7 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8>
         }
     }
 
-    static void TryInvokeContinuationT4(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8> self, in LuminTaskAwaiter<T4> awaiter, int index)
+    static void TryInvokeContinuationT4(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8> self, in LuminTask<T4> awaiter, int index)
     {
         try
         {
@@ -1489,7 +1489,7 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8>
         }
     }
 
-    static void TryInvokeContinuationT5(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8> self, in LuminTaskAwaiter<T5> awaiter, int index)
+    static void TryInvokeContinuationT5(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8> self, in LuminTask<T5> awaiter, int index)
     {
         try
         {
@@ -1510,7 +1510,7 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8>
         }
     }
 
-    static void TryInvokeContinuationT6(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8> self, in LuminTaskAwaiter<T6> awaiter, int index)
+    static void TryInvokeContinuationT6(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8> self, in LuminTask<T6> awaiter, int index)
     {
         try
         {
@@ -1531,7 +1531,7 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8>
         }
     }
 
-    static void TryInvokeContinuationT7(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8> self, in LuminTaskAwaiter<T7> awaiter, int index)
+    static void TryInvokeContinuationT7(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8> self, in LuminTask<T7> awaiter, int index)
     {
         try
         {
@@ -1552,7 +1552,7 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8>
         }
     }
 
-    static void TryInvokeContinuationT8(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8> self, in LuminTaskAwaiter<T8> awaiter, int index)
+    static void TryInvokeContinuationT8(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8> self, in LuminTask<T8> awaiter, int index)
     {
         try
         {
@@ -1609,13 +1609,13 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9>
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9>, LuminTaskAwaiter<T1>, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9>, LuminTask<T1>, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT1(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, 0));
+                }, StateTuple.Create((this, awaiter, 0)));
             }
         }
         {
@@ -1628,13 +1628,13 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9>
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9>, LuminTaskAwaiter<T2>, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9>, LuminTask<T2>, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT2(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, 1));
+                }, StateTuple.Create((this, awaiter, 1)));
             }
         }
         {
@@ -1647,13 +1647,13 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9>
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9>, LuminTaskAwaiter<T3>, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9>, LuminTask<T3>, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT3(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, 2));
+                }, StateTuple.Create((this, awaiter, 2)));
             }
         }
         {
@@ -1666,13 +1666,13 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9>
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9>, LuminTaskAwaiter<T4>, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9>, LuminTask<T4>, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT4(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, 3));
+                }, StateTuple.Create((this, awaiter, 3)));
             }
         }
         {
@@ -1685,13 +1685,13 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9>
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9>, LuminTaskAwaiter<T5>, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9>, LuminTask<T5>, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT5(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, 4));
+                }, StateTuple.Create((this, awaiter, 4)));
             }
         }
         {
@@ -1704,13 +1704,13 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9>
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9>, LuminTaskAwaiter<T6>, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9>, LuminTask<T6>, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT6(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, 5));
+                }, StateTuple.Create((this, awaiter, 5)));
             }
         }
         {
@@ -1723,13 +1723,13 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9>
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9>, LuminTaskAwaiter<T7>, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9>, LuminTask<T7>, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT7(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, 6));
+                }, StateTuple.Create((this, awaiter, 6)));
             }
         }
         {
@@ -1742,13 +1742,13 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9>
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9>, LuminTaskAwaiter<T8>, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9>, LuminTask<T8>, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT8(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, 7));
+                }, StateTuple.Create((this, awaiter, 7)));
             }
         }
         {
@@ -1761,18 +1761,18 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9>
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9>, LuminTaskAwaiter<T9>, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9>, LuminTask<T9>, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT9(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, 8));
+                }, StateTuple.Create((this, awaiter, 8)));
             }
         }
     }
 
-    static void TryInvokeContinuationT1(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9> self, in LuminTaskAwaiter<T1> awaiter, int index)
+    static void TryInvokeContinuationT1(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9> self, in LuminTask<T1> awaiter, int index)
     {
         try
         {
@@ -1793,7 +1793,7 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9>
         }
     }
 
-    static void TryInvokeContinuationT2(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9> self, in LuminTaskAwaiter<T2> awaiter, int index)
+    static void TryInvokeContinuationT2(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9> self, in LuminTask<T2> awaiter, int index)
     {
         try
         {
@@ -1814,7 +1814,7 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9>
         }
     }
 
-    static void TryInvokeContinuationT3(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9> self, in LuminTaskAwaiter<T3> awaiter, int index)
+    static void TryInvokeContinuationT3(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9> self, in LuminTask<T3> awaiter, int index)
     {
         try
         {
@@ -1835,7 +1835,7 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9>
         }
     }
 
-    static void TryInvokeContinuationT4(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9> self, in LuminTaskAwaiter<T4> awaiter, int index)
+    static void TryInvokeContinuationT4(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9> self, in LuminTask<T4> awaiter, int index)
     {
         try
         {
@@ -1856,7 +1856,7 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9>
         }
     }
 
-    static void TryInvokeContinuationT5(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9> self, in LuminTaskAwaiter<T5> awaiter, int index)
+    static void TryInvokeContinuationT5(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9> self, in LuminTask<T5> awaiter, int index)
     {
         try
         {
@@ -1877,7 +1877,7 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9>
         }
     }
 
-    static void TryInvokeContinuationT6(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9> self, in LuminTaskAwaiter<T6> awaiter, int index)
+    static void TryInvokeContinuationT6(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9> self, in LuminTask<T6> awaiter, int index)
     {
         try
         {
@@ -1898,7 +1898,7 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9>
         }
     }
 
-    static void TryInvokeContinuationT7(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9> self, in LuminTaskAwaiter<T7> awaiter, int index)
+    static void TryInvokeContinuationT7(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9> self, in LuminTask<T7> awaiter, int index)
     {
         try
         {
@@ -1919,7 +1919,7 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9>
         }
     }
 
-    static void TryInvokeContinuationT8(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9> self, in LuminTaskAwaiter<T8> awaiter, int index)
+    static void TryInvokeContinuationT8(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9> self, in LuminTask<T8> awaiter, int index)
     {
         try
         {
@@ -1940,7 +1940,7 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9>
         }
     }
 
-    static void TryInvokeContinuationT9(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9> self, in LuminTaskAwaiter<T9> awaiter, int index)
+    static void TryInvokeContinuationT9(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9> self, in LuminTask<T9> awaiter, int index)
     {
         try
         {
@@ -1998,13 +1998,13 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10>, LuminTaskAwaiter<T1>, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10>, LuminTask<T1>, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT1(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, 0));
+                }, StateTuple.Create((this, awaiter, 0)));
             }
         }
         {
@@ -2017,13 +2017,13 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10>, LuminTaskAwaiter<T2>, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10>, LuminTask<T2>, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT2(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, 1));
+                }, StateTuple.Create((this, awaiter, 1)));
             }
         }
         {
@@ -2036,13 +2036,13 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10>, LuminTaskAwaiter<T3>, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10>, LuminTask<T3>, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT3(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, 2));
+                }, StateTuple.Create((this, awaiter, 2)));
             }
         }
         {
@@ -2055,13 +2055,13 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10>, LuminTaskAwaiter<T4>, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10>, LuminTask<T4>, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT4(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, 3));
+                }, StateTuple.Create((this, awaiter, 3)));
             }
         }
         {
@@ -2074,13 +2074,13 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10>, LuminTaskAwaiter<T5>, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10>, LuminTask<T5>, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT5(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, 4));
+                }, StateTuple.Create((this, awaiter, 4)));
             }
         }
         {
@@ -2093,13 +2093,13 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10>, LuminTaskAwaiter<T6>, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10>, LuminTask<T6>, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT6(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, 5));
+                }, StateTuple.Create((this, awaiter, 5)));
             }
         }
         {
@@ -2112,13 +2112,13 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10>, LuminTaskAwaiter<T7>, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10>, LuminTask<T7>, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT7(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, 6));
+                }, StateTuple.Create((this, awaiter, 6)));
             }
         }
         {
@@ -2131,13 +2131,13 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10>, LuminTaskAwaiter<T8>, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10>, LuminTask<T8>, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT8(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, 7));
+                }, StateTuple.Create((this, awaiter, 7)));
             }
         }
         {
@@ -2150,13 +2150,13 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10>, LuminTaskAwaiter<T9>, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10>, LuminTask<T9>, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT9(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, 8));
+                }, StateTuple.Create((this, awaiter, 8)));
             }
         }
         {
@@ -2169,18 +2169,18 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10>, LuminTaskAwaiter<T10>, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10>, LuminTask<T10>, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT10(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, 9));
+                }, StateTuple.Create((this, awaiter, 9)));
             }
         }
     }
 
-    static void TryInvokeContinuationT1(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10> self, in LuminTaskAwaiter<T1> awaiter, int index)
+    static void TryInvokeContinuationT1(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10> self, in LuminTask<T1> awaiter, int index)
     {
         try
         {
@@ -2201,7 +2201,7 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         }
     }
 
-    static void TryInvokeContinuationT2(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10> self, in LuminTaskAwaiter<T2> awaiter, int index)
+    static void TryInvokeContinuationT2(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10> self, in LuminTask<T2> awaiter, int index)
     {
         try
         {
@@ -2222,7 +2222,7 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         }
     }
 
-    static void TryInvokeContinuationT3(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10> self, in LuminTaskAwaiter<T3> awaiter, int index)
+    static void TryInvokeContinuationT3(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10> self, in LuminTask<T3> awaiter, int index)
     {
         try
         {
@@ -2243,7 +2243,7 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         }
     }
 
-    static void TryInvokeContinuationT4(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10> self, in LuminTaskAwaiter<T4> awaiter, int index)
+    static void TryInvokeContinuationT4(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10> self, in LuminTask<T4> awaiter, int index)
     {
         try
         {
@@ -2264,7 +2264,7 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         }
     }
 
-    static void TryInvokeContinuationT5(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10> self, in LuminTaskAwaiter<T5> awaiter, int index)
+    static void TryInvokeContinuationT5(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10> self, in LuminTask<T5> awaiter, int index)
     {
         try
         {
@@ -2285,7 +2285,7 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         }
     }
 
-    static void TryInvokeContinuationT6(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10> self, in LuminTaskAwaiter<T6> awaiter, int index)
+    static void TryInvokeContinuationT6(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10> self, in LuminTask<T6> awaiter, int index)
     {
         try
         {
@@ -2306,7 +2306,7 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         }
     }
 
-    static void TryInvokeContinuationT7(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10> self, in LuminTaskAwaiter<T7> awaiter, int index)
+    static void TryInvokeContinuationT7(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10> self, in LuminTask<T7> awaiter, int index)
     {
         try
         {
@@ -2327,7 +2327,7 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         }
     }
 
-    static void TryInvokeContinuationT8(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10> self, in LuminTaskAwaiter<T8> awaiter, int index)
+    static void TryInvokeContinuationT8(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10> self, in LuminTask<T8> awaiter, int index)
     {
         try
         {
@@ -2348,7 +2348,7 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         }
     }
 
-    static void TryInvokeContinuationT9(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10> self, in LuminTaskAwaiter<T9> awaiter, int index)
+    static void TryInvokeContinuationT9(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10> self, in LuminTask<T9> awaiter, int index)
     {
         try
         {
@@ -2369,7 +2369,7 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         }
     }
 
-    static void TryInvokeContinuationT10(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10> self, in LuminTaskAwaiter<T10> awaiter, int index)
+    static void TryInvokeContinuationT10(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10> self, in LuminTask<T10> awaiter, int index)
     {
         try
         {
@@ -2428,13 +2428,13 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11>, LuminTaskAwaiter<T1>, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11>, LuminTask<T1>, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT1(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, 0));
+                }, StateTuple.Create((this, awaiter, 0)));
             }
         }
         {
@@ -2447,13 +2447,13 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11>, LuminTaskAwaiter<T2>, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11>, LuminTask<T2>, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT2(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, 1));
+                }, StateTuple.Create((this, awaiter, 1)));
             }
         }
         {
@@ -2466,13 +2466,13 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11>, LuminTaskAwaiter<T3>, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11>, LuminTask<T3>, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT3(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, 2));
+                }, StateTuple.Create((this, awaiter, 2)));
             }
         }
         {
@@ -2485,13 +2485,13 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11>, LuminTaskAwaiter<T4>, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11>, LuminTask<T4>, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT4(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, 3));
+                }, StateTuple.Create((this, awaiter, 3)));
             }
         }
         {
@@ -2504,13 +2504,13 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11>, LuminTaskAwaiter<T5>, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11>, LuminTask<T5>, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT5(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, 4));
+                }, StateTuple.Create((this, awaiter, 4)));
             }
         }
         {
@@ -2523,13 +2523,13 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11>, LuminTaskAwaiter<T6>, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11>, LuminTask<T6>, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT6(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, 5));
+                }, StateTuple.Create((this, awaiter, 5)));
             }
         }
         {
@@ -2542,13 +2542,13 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11>, LuminTaskAwaiter<T7>, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11>, LuminTask<T7>, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT7(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, 6));
+                }, StateTuple.Create((this, awaiter, 6)));
             }
         }
         {
@@ -2561,13 +2561,13 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11>, LuminTaskAwaiter<T8>, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11>, LuminTask<T8>, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT8(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, 7));
+                }, StateTuple.Create((this, awaiter, 7)));
             }
         }
         {
@@ -2580,13 +2580,13 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11>, LuminTaskAwaiter<T9>, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11>, LuminTask<T9>, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT9(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, 8));
+                }, StateTuple.Create((this, awaiter, 8)));
             }
         }
         {
@@ -2599,13 +2599,13 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11>, LuminTaskAwaiter<T10>, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11>, LuminTask<T10>, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT10(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, 9));
+                }, StateTuple.Create((this, awaiter, 9)));
             }
         }
         {
@@ -2618,18 +2618,18 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11>, LuminTaskAwaiter<T11>, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11>, LuminTask<T11>, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT11(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, 10));
+                }, StateTuple.Create((this, awaiter, 10)));
             }
         }
     }
 
-    static void TryInvokeContinuationT1(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11> self, in LuminTaskAwaiter<T1> awaiter, int index)
+    static void TryInvokeContinuationT1(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11> self, in LuminTask<T1> awaiter, int index)
     {
         try
         {
@@ -2650,7 +2650,7 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         }
     }
 
-    static void TryInvokeContinuationT2(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11> self, in LuminTaskAwaiter<T2> awaiter, int index)
+    static void TryInvokeContinuationT2(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11> self, in LuminTask<T2> awaiter, int index)
     {
         try
         {
@@ -2671,7 +2671,7 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         }
     }
 
-    static void TryInvokeContinuationT3(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11> self, in LuminTaskAwaiter<T3> awaiter, int index)
+    static void TryInvokeContinuationT3(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11> self, in LuminTask<T3> awaiter, int index)
     {
         try
         {
@@ -2692,7 +2692,7 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         }
     }
 
-    static void TryInvokeContinuationT4(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11> self, in LuminTaskAwaiter<T4> awaiter, int index)
+    static void TryInvokeContinuationT4(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11> self, in LuminTask<T4> awaiter, int index)
     {
         try
         {
@@ -2713,7 +2713,7 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         }
     }
 
-    static void TryInvokeContinuationT5(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11> self, in LuminTaskAwaiter<T5> awaiter, int index)
+    static void TryInvokeContinuationT5(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11> self, in LuminTask<T5> awaiter, int index)
     {
         try
         {
@@ -2734,7 +2734,7 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         }
     }
 
-    static void TryInvokeContinuationT6(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11> self, in LuminTaskAwaiter<T6> awaiter, int index)
+    static void TryInvokeContinuationT6(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11> self, in LuminTask<T6> awaiter, int index)
     {
         try
         {
@@ -2755,7 +2755,7 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         }
     }
 
-    static void TryInvokeContinuationT7(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11> self, in LuminTaskAwaiter<T7> awaiter, int index)
+    static void TryInvokeContinuationT7(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11> self, in LuminTask<T7> awaiter, int index)
     {
         try
         {
@@ -2776,7 +2776,7 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         }
     }
 
-    static void TryInvokeContinuationT8(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11> self, in LuminTaskAwaiter<T8> awaiter, int index)
+    static void TryInvokeContinuationT8(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11> self, in LuminTask<T8> awaiter, int index)
     {
         try
         {
@@ -2797,7 +2797,7 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         }
     }
 
-    static void TryInvokeContinuationT9(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11> self, in LuminTaskAwaiter<T9> awaiter, int index)
+    static void TryInvokeContinuationT9(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11> self, in LuminTask<T9> awaiter, int index)
     {
         try
         {
@@ -2818,7 +2818,7 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         }
     }
 
-    static void TryInvokeContinuationT10(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11> self, in LuminTaskAwaiter<T10> awaiter, int index)
+    static void TryInvokeContinuationT10(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11> self, in LuminTask<T10> awaiter, int index)
     {
         try
         {
@@ -2839,7 +2839,7 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         }
     }
 
-    static void TryInvokeContinuationT11(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11> self, in LuminTaskAwaiter<T11> awaiter, int index)
+    static void TryInvokeContinuationT11(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11> self, in LuminTask<T11> awaiter, int index)
     {
         try
         {
@@ -2899,13 +2899,13 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12>, LuminTaskAwaiter<T1>, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12>, LuminTask<T1>, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT1(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, 0));
+                }, StateTuple.Create((this, awaiter, 0)));
             }
         }
         {
@@ -2918,13 +2918,13 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12>, LuminTaskAwaiter<T2>, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12>, LuminTask<T2>, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT2(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, 1));
+                }, StateTuple.Create((this, awaiter, 1)));
             }
         }
         {
@@ -2937,13 +2937,13 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12>, LuminTaskAwaiter<T3>, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12>, LuminTask<T3>, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT3(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, 2));
+                }, StateTuple.Create((this, awaiter, 2)));
             }
         }
         {
@@ -2956,13 +2956,13 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12>, LuminTaskAwaiter<T4>, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12>, LuminTask<T4>, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT4(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, 3));
+                }, StateTuple.Create((this, awaiter, 3)));
             }
         }
         {
@@ -2975,13 +2975,13 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12>, LuminTaskAwaiter<T5>, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12>, LuminTask<T5>, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT5(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, 4));
+                }, StateTuple.Create((this, awaiter, 4)));
             }
         }
         {
@@ -2994,13 +2994,13 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12>, LuminTaskAwaiter<T6>, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12>, LuminTask<T6>, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT6(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, 5));
+                }, StateTuple.Create((this, awaiter, 5)));
             }
         }
         {
@@ -3013,13 +3013,13 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12>, LuminTaskAwaiter<T7>, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12>, LuminTask<T7>, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT7(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, 6));
+                }, StateTuple.Create((this, awaiter, 6)));
             }
         }
         {
@@ -3032,13 +3032,13 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12>, LuminTaskAwaiter<T8>, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12>, LuminTask<T8>, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT8(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, 7));
+                }, StateTuple.Create((this, awaiter, 7)));
             }
         }
         {
@@ -3051,13 +3051,13 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12>, LuminTaskAwaiter<T9>, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12>, LuminTask<T9>, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT9(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, 8));
+                }, StateTuple.Create((this, awaiter, 8)));
             }
         }
         {
@@ -3070,13 +3070,13 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12>, LuminTaskAwaiter<T10>, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12>, LuminTask<T10>, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT10(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, 9));
+                }, StateTuple.Create((this, awaiter, 9)));
             }
         }
         {
@@ -3089,13 +3089,13 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12>, LuminTaskAwaiter<T11>, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12>, LuminTask<T11>, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT11(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, 10));
+                }, StateTuple.Create((this, awaiter, 10)));
             }
         }
         {
@@ -3108,18 +3108,18 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12>, LuminTaskAwaiter<T12>, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12>, LuminTask<T12>, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT12(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, 11));
+                }, StateTuple.Create((this, awaiter, 11)));
             }
         }
     }
 
-    static void TryInvokeContinuationT1(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12> self, in LuminTaskAwaiter<T1> awaiter, int index)
+    static void TryInvokeContinuationT1(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12> self, in LuminTask<T1> awaiter, int index)
     {
         try
         {
@@ -3140,7 +3140,7 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         }
     }
 
-    static void TryInvokeContinuationT2(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12> self, in LuminTaskAwaiter<T2> awaiter, int index)
+    static void TryInvokeContinuationT2(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12> self, in LuminTask<T2> awaiter, int index)
     {
         try
         {
@@ -3161,7 +3161,7 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         }
     }
 
-    static void TryInvokeContinuationT3(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12> self, in LuminTaskAwaiter<T3> awaiter, int index)
+    static void TryInvokeContinuationT3(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12> self, in LuminTask<T3> awaiter, int index)
     {
         try
         {
@@ -3182,7 +3182,7 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         }
     }
 
-    static void TryInvokeContinuationT4(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12> self, in LuminTaskAwaiter<T4> awaiter, int index)
+    static void TryInvokeContinuationT4(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12> self, in LuminTask<T4> awaiter, int index)
     {
         try
         {
@@ -3203,7 +3203,7 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         }
     }
 
-    static void TryInvokeContinuationT5(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12> self, in LuminTaskAwaiter<T5> awaiter, int index)
+    static void TryInvokeContinuationT5(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12> self, in LuminTask<T5> awaiter, int index)
     {
         try
         {
@@ -3224,7 +3224,7 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         }
     }
 
-    static void TryInvokeContinuationT6(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12> self, in LuminTaskAwaiter<T6> awaiter, int index)
+    static void TryInvokeContinuationT6(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12> self, in LuminTask<T6> awaiter, int index)
     {
         try
         {
@@ -3245,7 +3245,7 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         }
     }
 
-    static void TryInvokeContinuationT7(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12> self, in LuminTaskAwaiter<T7> awaiter, int index)
+    static void TryInvokeContinuationT7(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12> self, in LuminTask<T7> awaiter, int index)
     {
         try
         {
@@ -3266,7 +3266,7 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         }
     }
 
-    static void TryInvokeContinuationT8(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12> self, in LuminTaskAwaiter<T8> awaiter, int index)
+    static void TryInvokeContinuationT8(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12> self, in LuminTask<T8> awaiter, int index)
     {
         try
         {
@@ -3287,7 +3287,7 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         }
     }
 
-    static void TryInvokeContinuationT9(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12> self, in LuminTaskAwaiter<T9> awaiter, int index)
+    static void TryInvokeContinuationT9(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12> self, in LuminTask<T9> awaiter, int index)
     {
         try
         {
@@ -3308,7 +3308,7 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         }
     }
 
-    static void TryInvokeContinuationT10(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12> self, in LuminTaskAwaiter<T10> awaiter, int index)
+    static void TryInvokeContinuationT10(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12> self, in LuminTask<T10> awaiter, int index)
     {
         try
         {
@@ -3329,7 +3329,7 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         }
     }
 
-    static void TryInvokeContinuationT11(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12> self, in LuminTaskAwaiter<T11> awaiter, int index)
+    static void TryInvokeContinuationT11(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12> self, in LuminTask<T11> awaiter, int index)
     {
         try
         {
@@ -3350,7 +3350,7 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         }
     }
 
-    static void TryInvokeContinuationT12(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12> self, in LuminTaskAwaiter<T12> awaiter, int index)
+    static void TryInvokeContinuationT12(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12> self, in LuminTask<T12> awaiter, int index)
     {
         try
         {
@@ -3411,13 +3411,13 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13>, LuminTaskAwaiter<T1>, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13>, LuminTask<T1>, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT1(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, 0));
+                }, StateTuple.Create((this, awaiter, 0)));
             }
         }
         {
@@ -3430,13 +3430,13 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13>, LuminTaskAwaiter<T2>, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13>, LuminTask<T2>, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT2(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, 1));
+                }, StateTuple.Create((this, awaiter, 1)));
             }
         }
         {
@@ -3449,13 +3449,13 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13>, LuminTaskAwaiter<T3>, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13>, LuminTask<T3>, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT3(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, 2));
+                }, StateTuple.Create((this, awaiter, 2)));
             }
         }
         {
@@ -3468,13 +3468,13 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13>, LuminTaskAwaiter<T4>, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13>, LuminTask<T4>, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT4(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, 3));
+                }, StateTuple.Create((this, awaiter, 3)));
             }
         }
         {
@@ -3487,13 +3487,13 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13>, LuminTaskAwaiter<T5>, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13>, LuminTask<T5>, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT5(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, 4));
+                }, StateTuple.Create((this, awaiter, 4)));
             }
         }
         {
@@ -3506,13 +3506,13 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13>, LuminTaskAwaiter<T6>, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13>, LuminTask<T6>, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT6(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, 5));
+                }, StateTuple.Create((this, awaiter, 5)));
             }
         }
         {
@@ -3525,13 +3525,13 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13>, LuminTaskAwaiter<T7>, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13>, LuminTask<T7>, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT7(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, 6));
+                }, StateTuple.Create((this, awaiter, 6)));
             }
         }
         {
@@ -3544,13 +3544,13 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13>, LuminTaskAwaiter<T8>, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13>, LuminTask<T8>, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT8(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, 7));
+                }, StateTuple.Create((this, awaiter, 7)));
             }
         }
         {
@@ -3563,13 +3563,13 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13>, LuminTaskAwaiter<T9>, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13>, LuminTask<T9>, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT9(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, 8));
+                }, StateTuple.Create((this, awaiter, 8)));
             }
         }
         {
@@ -3582,13 +3582,13 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13>, LuminTaskAwaiter<T10>, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13>, LuminTask<T10>, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT10(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, 9));
+                }, StateTuple.Create((this, awaiter, 9)));
             }
         }
         {
@@ -3601,13 +3601,13 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13>, LuminTaskAwaiter<T11>, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13>, LuminTask<T11>, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT11(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, 10));
+                }, StateTuple.Create((this, awaiter, 10)));
             }
         }
         {
@@ -3620,13 +3620,13 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13>, LuminTaskAwaiter<T12>, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13>, LuminTask<T12>, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT12(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, 11));
+                }, StateTuple.Create((this, awaiter, 11)));
             }
         }
         {
@@ -3639,18 +3639,18 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13>, LuminTaskAwaiter<T13>, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13>, LuminTask<T13>, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT13(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, 12));
+                }, StateTuple.Create((this, awaiter, 12)));
             }
         }
     }
 
-    static void TryInvokeContinuationT1(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13> self, in LuminTaskAwaiter<T1> awaiter, int index)
+    static void TryInvokeContinuationT1(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13> self, in LuminTask<T1> awaiter, int index)
     {
         try
         {
@@ -3671,7 +3671,7 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         }
     }
 
-    static void TryInvokeContinuationT2(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13> self, in LuminTaskAwaiter<T2> awaiter, int index)
+    static void TryInvokeContinuationT2(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13> self, in LuminTask<T2> awaiter, int index)
     {
         try
         {
@@ -3692,7 +3692,7 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         }
     }
 
-    static void TryInvokeContinuationT3(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13> self, in LuminTaskAwaiter<T3> awaiter, int index)
+    static void TryInvokeContinuationT3(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13> self, in LuminTask<T3> awaiter, int index)
     {
         try
         {
@@ -3713,7 +3713,7 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         }
     }
 
-    static void TryInvokeContinuationT4(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13> self, in LuminTaskAwaiter<T4> awaiter, int index)
+    static void TryInvokeContinuationT4(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13> self, in LuminTask<T4> awaiter, int index)
     {
         try
         {
@@ -3734,7 +3734,7 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         }
     }
 
-    static void TryInvokeContinuationT5(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13> self, in LuminTaskAwaiter<T5> awaiter, int index)
+    static void TryInvokeContinuationT5(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13> self, in LuminTask<T5> awaiter, int index)
     {
         try
         {
@@ -3755,7 +3755,7 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         }
     }
 
-    static void TryInvokeContinuationT6(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13> self, in LuminTaskAwaiter<T6> awaiter, int index)
+    static void TryInvokeContinuationT6(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13> self, in LuminTask<T6> awaiter, int index)
     {
         try
         {
@@ -3776,7 +3776,7 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         }
     }
 
-    static void TryInvokeContinuationT7(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13> self, in LuminTaskAwaiter<T7> awaiter, int index)
+    static void TryInvokeContinuationT7(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13> self, in LuminTask<T7> awaiter, int index)
     {
         try
         {
@@ -3797,7 +3797,7 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         }
     }
 
-    static void TryInvokeContinuationT8(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13> self, in LuminTaskAwaiter<T8> awaiter, int index)
+    static void TryInvokeContinuationT8(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13> self, in LuminTask<T8> awaiter, int index)
     {
         try
         {
@@ -3818,7 +3818,7 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         }
     }
 
-    static void TryInvokeContinuationT9(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13> self, in LuminTaskAwaiter<T9> awaiter, int index)
+    static void TryInvokeContinuationT9(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13> self, in LuminTask<T9> awaiter, int index)
     {
         try
         {
@@ -3839,7 +3839,7 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         }
     }
 
-    static void TryInvokeContinuationT10(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13> self, in LuminTaskAwaiter<T10> awaiter, int index)
+    static void TryInvokeContinuationT10(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13> self, in LuminTask<T10> awaiter, int index)
     {
         try
         {
@@ -3860,7 +3860,7 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         }
     }
 
-    static void TryInvokeContinuationT11(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13> self, in LuminTaskAwaiter<T11> awaiter, int index)
+    static void TryInvokeContinuationT11(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13> self, in LuminTask<T11> awaiter, int index)
     {
         try
         {
@@ -3881,7 +3881,7 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         }
     }
 
-    static void TryInvokeContinuationT12(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13> self, in LuminTaskAwaiter<T12> awaiter, int index)
+    static void TryInvokeContinuationT12(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13> self, in LuminTask<T12> awaiter, int index)
     {
         try
         {
@@ -3902,7 +3902,7 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         }
     }
 
-    static void TryInvokeContinuationT13(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13> self, in LuminTaskAwaiter<T13> awaiter, int index)
+    static void TryInvokeContinuationT13(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13> self, in LuminTask<T13> awaiter, int index)
     {
         try
         {
@@ -3964,13 +3964,13 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14>, LuminTaskAwaiter<T1>, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14>, LuminTask<T1>, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT1(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, 0));
+                }, StateTuple.Create((this, awaiter, 0)));
             }
         }
         {
@@ -3983,13 +3983,13 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14>, LuminTaskAwaiter<T2>, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14>, LuminTask<T2>, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT2(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, 1));
+                }, StateTuple.Create((this, awaiter, 1)));
             }
         }
         {
@@ -4002,13 +4002,13 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14>, LuminTaskAwaiter<T3>, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14>, LuminTask<T3>, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT3(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, 2));
+                }, StateTuple.Create((this, awaiter, 2)));
             }
         }
         {
@@ -4021,13 +4021,13 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14>, LuminTaskAwaiter<T4>, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14>, LuminTask<T4>, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT4(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, 3));
+                }, StateTuple.Create((this, awaiter, 3)));
             }
         }
         {
@@ -4040,13 +4040,13 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14>, LuminTaskAwaiter<T5>, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14>, LuminTask<T5>, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT5(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, 4));
+                }, StateTuple.Create((this, awaiter, 4)));
             }
         }
         {
@@ -4059,13 +4059,13 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14>, LuminTaskAwaiter<T6>, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14>, LuminTask<T6>, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT6(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, 5));
+                }, StateTuple.Create((this, awaiter, 5)));
             }
         }
         {
@@ -4078,13 +4078,13 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14>, LuminTaskAwaiter<T7>, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14>, LuminTask<T7>, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT7(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, 6));
+                }, StateTuple.Create((this, awaiter, 6)));
             }
         }
         {
@@ -4097,13 +4097,13 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14>, LuminTaskAwaiter<T8>, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14>, LuminTask<T8>, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT8(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, 7));
+                }, StateTuple.Create((this, awaiter, 7)));
             }
         }
         {
@@ -4116,13 +4116,13 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14>, LuminTaskAwaiter<T9>, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14>, LuminTask<T9>, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT9(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, 8));
+                }, StateTuple.Create((this, awaiter, 8)));
             }
         }
         {
@@ -4135,13 +4135,13 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14>, LuminTaskAwaiter<T10>, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14>, LuminTask<T10>, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT10(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, 9));
+                }, StateTuple.Create((this, awaiter, 9)));
             }
         }
         {
@@ -4154,13 +4154,13 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14>, LuminTaskAwaiter<T11>, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14>, LuminTask<T11>, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT11(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, 10));
+                }, StateTuple.Create((this, awaiter, 10)));
             }
         }
         {
@@ -4173,13 +4173,13 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14>, LuminTaskAwaiter<T12>, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14>, LuminTask<T12>, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT12(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, 11));
+                }, StateTuple.Create((this, awaiter, 11)));
             }
         }
         {
@@ -4192,13 +4192,13 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14>, LuminTaskAwaiter<T13>, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14>, LuminTask<T13>, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT13(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, 12));
+                }, StateTuple.Create((this, awaiter, 12)));
             }
         }
         {
@@ -4211,18 +4211,18 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14>, LuminTaskAwaiter<T14>, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14>, LuminTask<T14>, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT14(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, 13));
+                }, StateTuple.Create((this, awaiter, 13)));
             }
         }
     }
 
-    static void TryInvokeContinuationT1(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14> self, in LuminTaskAwaiter<T1> awaiter, int index)
+    static void TryInvokeContinuationT1(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14> self, in LuminTask<T1> awaiter, int index)
     {
         try
         {
@@ -4243,7 +4243,7 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         }
     }
 
-    static void TryInvokeContinuationT2(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14> self, in LuminTaskAwaiter<T2> awaiter, int index)
+    static void TryInvokeContinuationT2(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14> self, in LuminTask<T2> awaiter, int index)
     {
         try
         {
@@ -4264,7 +4264,7 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         }
     }
 
-    static void TryInvokeContinuationT3(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14> self, in LuminTaskAwaiter<T3> awaiter, int index)
+    static void TryInvokeContinuationT3(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14> self, in LuminTask<T3> awaiter, int index)
     {
         try
         {
@@ -4285,7 +4285,7 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         }
     }
 
-    static void TryInvokeContinuationT4(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14> self, in LuminTaskAwaiter<T4> awaiter, int index)
+    static void TryInvokeContinuationT4(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14> self, in LuminTask<T4> awaiter, int index)
     {
         try
         {
@@ -4306,7 +4306,7 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         }
     }
 
-    static void TryInvokeContinuationT5(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14> self, in LuminTaskAwaiter<T5> awaiter, int index)
+    static void TryInvokeContinuationT5(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14> self, in LuminTask<T5> awaiter, int index)
     {
         try
         {
@@ -4327,7 +4327,7 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         }
     }
 
-    static void TryInvokeContinuationT6(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14> self, in LuminTaskAwaiter<T6> awaiter, int index)
+    static void TryInvokeContinuationT6(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14> self, in LuminTask<T6> awaiter, int index)
     {
         try
         {
@@ -4348,7 +4348,7 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         }
     }
 
-    static void TryInvokeContinuationT7(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14> self, in LuminTaskAwaiter<T7> awaiter, int index)
+    static void TryInvokeContinuationT7(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14> self, in LuminTask<T7> awaiter, int index)
     {
         try
         {
@@ -4369,7 +4369,7 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         }
     }
 
-    static void TryInvokeContinuationT8(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14> self, in LuminTaskAwaiter<T8> awaiter, int index)
+    static void TryInvokeContinuationT8(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14> self, in LuminTask<T8> awaiter, int index)
     {
         try
         {
@@ -4390,7 +4390,7 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         }
     }
 
-    static void TryInvokeContinuationT9(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14> self, in LuminTaskAwaiter<T9> awaiter, int index)
+    static void TryInvokeContinuationT9(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14> self, in LuminTask<T9> awaiter, int index)
     {
         try
         {
@@ -4411,7 +4411,7 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         }
     }
 
-    static void TryInvokeContinuationT10(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14> self, in LuminTaskAwaiter<T10> awaiter, int index)
+    static void TryInvokeContinuationT10(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14> self, in LuminTask<T10> awaiter, int index)
     {
         try
         {
@@ -4432,7 +4432,7 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         }
     }
 
-    static void TryInvokeContinuationT11(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14> self, in LuminTaskAwaiter<T11> awaiter, int index)
+    static void TryInvokeContinuationT11(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14> self, in LuminTask<T11> awaiter, int index)
     {
         try
         {
@@ -4453,7 +4453,7 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         }
     }
 
-    static void TryInvokeContinuationT12(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14> self, in LuminTaskAwaiter<T12> awaiter, int index)
+    static void TryInvokeContinuationT12(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14> self, in LuminTask<T12> awaiter, int index)
     {
         try
         {
@@ -4474,7 +4474,7 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         }
     }
 
-    static void TryInvokeContinuationT13(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14> self, in LuminTaskAwaiter<T13> awaiter, int index)
+    static void TryInvokeContinuationT13(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14> self, in LuminTask<T13> awaiter, int index)
     {
         try
         {
@@ -4495,7 +4495,7 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         }
     }
 
-    static void TryInvokeContinuationT14(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14> self, in LuminTaskAwaiter<T14> awaiter, int index)
+    static void TryInvokeContinuationT14(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14> self, in LuminTask<T14> awaiter, int index)
     {
         try
         {
@@ -4558,13 +4558,13 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15>, LuminTaskAwaiter<T1>, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15>, LuminTask<T1>, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT1(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, 0));
+                }, StateTuple.Create((this, awaiter, 0)));
             }
         }
         {
@@ -4577,13 +4577,13 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15>, LuminTaskAwaiter<T2>, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15>, LuminTask<T2>, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT2(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, 1));
+                }, StateTuple.Create((this, awaiter, 1)));
             }
         }
         {
@@ -4596,13 +4596,13 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15>, LuminTaskAwaiter<T3>, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15>, LuminTask<T3>, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT3(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, 2));
+                }, StateTuple.Create((this, awaiter, 2)));
             }
         }
         {
@@ -4615,13 +4615,13 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15>, LuminTaskAwaiter<T4>, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15>, LuminTask<T4>, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT4(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, 3));
+                }, StateTuple.Create((this, awaiter, 3)));
             }
         }
         {
@@ -4634,13 +4634,13 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15>, LuminTaskAwaiter<T5>, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15>, LuminTask<T5>, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT5(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, 4));
+                }, StateTuple.Create((this, awaiter, 4)));
             }
         }
         {
@@ -4653,13 +4653,13 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15>, LuminTaskAwaiter<T6>, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15>, LuminTask<T6>, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT6(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, 5));
+                }, StateTuple.Create((this, awaiter, 5)));
             }
         }
         {
@@ -4672,13 +4672,13 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15>, LuminTaskAwaiter<T7>, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15>, LuminTask<T7>, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT7(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, 6));
+                }, StateTuple.Create((this, awaiter, 6)));
             }
         }
         {
@@ -4691,13 +4691,13 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15>, LuminTaskAwaiter<T8>, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15>, LuminTask<T8>, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT8(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, 7));
+                }, StateTuple.Create((this, awaiter, 7)));
             }
         }
         {
@@ -4710,13 +4710,13 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15>, LuminTaskAwaiter<T9>, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15>, LuminTask<T9>, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT9(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, 8));
+                }, StateTuple.Create((this, awaiter, 8)));
             }
         }
         {
@@ -4729,13 +4729,13 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15>, LuminTaskAwaiter<T10>, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15>, LuminTask<T10>, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT10(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, 9));
+                }, StateTuple.Create((this, awaiter, 9)));
             }
         }
         {
@@ -4748,13 +4748,13 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15>, LuminTaskAwaiter<T11>, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15>, LuminTask<T11>, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT11(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, 10));
+                }, StateTuple.Create((this, awaiter, 10)));
             }
         }
         {
@@ -4767,13 +4767,13 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15>, LuminTaskAwaiter<T12>, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15>, LuminTask<T12>, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT12(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, 11));
+                }, StateTuple.Create((this, awaiter, 11)));
             }
         }
         {
@@ -4786,13 +4786,13 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15>, LuminTaskAwaiter<T13>, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15>, LuminTask<T13>, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT13(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, 12));
+                }, StateTuple.Create((this, awaiter, 12)));
             }
         }
         {
@@ -4805,13 +4805,13 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15>, LuminTaskAwaiter<T14>, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15>, LuminTask<T14>, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT14(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, 13));
+                }, StateTuple.Create((this, awaiter, 13)));
             }
         }
         {
@@ -4824,18 +4824,18 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15>, LuminTaskAwaiter<T15>, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15>, LuminTask<T15>, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT15(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, 14));
+                }, StateTuple.Create((this, awaiter, 14)));
             }
         }
     }
 
-    static void TryInvokeContinuationT1(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15> self, in LuminTaskAwaiter<T1> awaiter, int index)
+    static void TryInvokeContinuationT1(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15> self, in LuminTask<T1> awaiter, int index)
     {
         try
         {
@@ -4856,7 +4856,7 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         }
     }
 
-    static void TryInvokeContinuationT2(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15> self, in LuminTaskAwaiter<T2> awaiter, int index)
+    static void TryInvokeContinuationT2(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15> self, in LuminTask<T2> awaiter, int index)
     {
         try
         {
@@ -4877,7 +4877,7 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         }
     }
 
-    static void TryInvokeContinuationT3(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15> self, in LuminTaskAwaiter<T3> awaiter, int index)
+    static void TryInvokeContinuationT3(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15> self, in LuminTask<T3> awaiter, int index)
     {
         try
         {
@@ -4898,7 +4898,7 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         }
     }
 
-    static void TryInvokeContinuationT4(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15> self, in LuminTaskAwaiter<T4> awaiter, int index)
+    static void TryInvokeContinuationT4(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15> self, in LuminTask<T4> awaiter, int index)
     {
         try
         {
@@ -4919,7 +4919,7 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         }
     }
 
-    static void TryInvokeContinuationT5(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15> self, in LuminTaskAwaiter<T5> awaiter, int index)
+    static void TryInvokeContinuationT5(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15> self, in LuminTask<T5> awaiter, int index)
     {
         try
         {
@@ -4940,7 +4940,7 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         }
     }
 
-    static void TryInvokeContinuationT6(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15> self, in LuminTaskAwaiter<T6> awaiter, int index)
+    static void TryInvokeContinuationT6(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15> self, in LuminTask<T6> awaiter, int index)
     {
         try
         {
@@ -4961,7 +4961,7 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         }
     }
 
-    static void TryInvokeContinuationT7(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15> self, in LuminTaskAwaiter<T7> awaiter, int index)
+    static void TryInvokeContinuationT7(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15> self, in LuminTask<T7> awaiter, int index)
     {
         try
         {
@@ -4982,7 +4982,7 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         }
     }
 
-    static void TryInvokeContinuationT8(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15> self, in LuminTaskAwaiter<T8> awaiter, int index)
+    static void TryInvokeContinuationT8(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15> self, in LuminTask<T8> awaiter, int index)
     {
         try
         {
@@ -5003,7 +5003,7 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         }
     }
 
-    static void TryInvokeContinuationT9(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15> self, in LuminTaskAwaiter<T9> awaiter, int index)
+    static void TryInvokeContinuationT9(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15> self, in LuminTask<T9> awaiter, int index)
     {
         try
         {
@@ -5024,7 +5024,7 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         }
     }
 
-    static void TryInvokeContinuationT10(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15> self, in LuminTaskAwaiter<T10> awaiter, int index)
+    static void TryInvokeContinuationT10(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15> self, in LuminTask<T10> awaiter, int index)
     {
         try
         {
@@ -5045,7 +5045,7 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         }
     }
 
-    static void TryInvokeContinuationT11(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15> self, in LuminTaskAwaiter<T11> awaiter, int index)
+    static void TryInvokeContinuationT11(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15> self, in LuminTask<T11> awaiter, int index)
     {
         try
         {
@@ -5066,7 +5066,7 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         }
     }
 
-    static void TryInvokeContinuationT12(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15> self, in LuminTaskAwaiter<T12> awaiter, int index)
+    static void TryInvokeContinuationT12(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15> self, in LuminTask<T12> awaiter, int index)
     {
         try
         {
@@ -5087,7 +5087,7 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         }
     }
 
-    static void TryInvokeContinuationT13(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15> self, in LuminTaskAwaiter<T13> awaiter, int index)
+    static void TryInvokeContinuationT13(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15> self, in LuminTask<T13> awaiter, int index)
     {
         try
         {
@@ -5108,7 +5108,7 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         }
     }
 
-    static void TryInvokeContinuationT14(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15> self, in LuminTaskAwaiter<T14> awaiter, int index)
+    static void TryInvokeContinuationT14(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15> self, in LuminTask<T14> awaiter, int index)
     {
         try
         {
@@ -5129,7 +5129,7 @@ public sealed unsafe class WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T1
         }
     }
 
-    static void TryInvokeContinuationT15(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15> self, in LuminTaskAwaiter<T15> awaiter, int index)
+    static void TryInvokeContinuationT15(WhenAnyPromise<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15> self, in LuminTask<T15> awaiter, int index)
     {
         try
         {
@@ -5197,18 +5197,18 @@ public sealed unsafe class WhenAnyPromise<T>
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var tuple = (StateTuple<WhenAnyPromise<T>, LuminTaskAwaiter<T>, int>)state;
-                    var owner = tuple.Item1;
-                    var awaiter = tuple.Item2;
-                    var index = tuple.Item3;
+                    var tuple = (StateTuple<(WhenAnyPromise<T>, LuminTask<T>, int)>)state;
+                    var owner = tuple.Item.Item1;
+                    var awaiter = tuple.Item.Item2;
+                    var index = tuple.Item.Item3;
                     tuple.Dispose();
                     TryInvokeContinuation(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, index));
+                }, StateTuple.Create((this, awaiter, index)));
             }
         }
     }
 
-    static void TryInvokeContinuation(WhenAnyPromise<T> self, in LuminTaskAwaiter<T> awaiter, int index)
+    static void TryInvokeContinuation(WhenAnyPromise<T> self, in LuminTask<T> awaiter, int index)
     {
         try
         {
@@ -5252,13 +5252,13 @@ public sealed unsafe class WhenAnyPromise2
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise2, LuminTaskAwaiter, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise2, LuminTask, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT1(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, index));
+                }, StateTuple.Create((this, awaiter, index)));
             }
         }
         {
@@ -5272,18 +5272,18 @@ public sealed unsafe class WhenAnyPromise2
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise2, LuminTaskAwaiter, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise2, LuminTask, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT2(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, index));
+                }, StateTuple.Create((this, awaiter, index)));
             }
         }
     }
 
-    static void TryInvokeContinuationT1(WhenAnyPromise2 self, in LuminTaskAwaiter awaiter, int index)
+    static void TryInvokeContinuationT1(WhenAnyPromise2 self, in LuminTask awaiter, int index)
     {
         try
         {
@@ -5303,7 +5303,7 @@ public sealed unsafe class WhenAnyPromise2
             LuminTaskSourceCore<int>.TrySetResult(self._core, index);
         }
     }
-    static void TryInvokeContinuationT2(WhenAnyPromise2 self, in LuminTaskAwaiter awaiter, int index)
+    static void TryInvokeContinuationT2(WhenAnyPromise2 self, in LuminTask awaiter, int index)
     {
         try
         {
@@ -5347,13 +5347,13 @@ public sealed unsafe class WhenAnyPromise3
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise3, LuminTaskAwaiter, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise3, LuminTask, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT1(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, index));
+                }, StateTuple.Create((this, awaiter, index)));
             }
         }
         {
@@ -5367,13 +5367,13 @@ public sealed unsafe class WhenAnyPromise3
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise3, LuminTaskAwaiter, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise3, LuminTask, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT2(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, index));
+                }, StateTuple.Create((this, awaiter, index)));
             }
         }
         {
@@ -5387,18 +5387,18 @@ public sealed unsafe class WhenAnyPromise3
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise3, LuminTaskAwaiter, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise3, LuminTask, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT3(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, index));
+                }, StateTuple.Create((this, awaiter, index)));
             }
         }
     }
 
-    static void TryInvokeContinuationT1(WhenAnyPromise3 self, in LuminTaskAwaiter awaiter, int index)
+    static void TryInvokeContinuationT1(WhenAnyPromise3 self, in LuminTask awaiter, int index)
     {
         try
         {
@@ -5418,7 +5418,7 @@ public sealed unsafe class WhenAnyPromise3
             LuminTaskSourceCore<int>.TrySetResult(self._core, index);
         }
     }
-    static void TryInvokeContinuationT2(WhenAnyPromise3 self, in LuminTaskAwaiter awaiter, int index)
+    static void TryInvokeContinuationT2(WhenAnyPromise3 self, in LuminTask awaiter, int index)
     {
         try
         {
@@ -5438,7 +5438,7 @@ public sealed unsafe class WhenAnyPromise3
             LuminTaskSourceCore<int>.TrySetResult(self._core, index);
         }
     }
-    static void TryInvokeContinuationT3(WhenAnyPromise3 self, in LuminTaskAwaiter awaiter, int index)
+    static void TryInvokeContinuationT3(WhenAnyPromise3 self, in LuminTask awaiter, int index)
     {
         try
         {
@@ -5482,13 +5482,13 @@ public sealed unsafe class WhenAnyPromise4
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise4, LuminTaskAwaiter, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise4, LuminTask, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT1(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, index));
+                }, StateTuple.Create((this, awaiter, index)));
             }
         }
         {
@@ -5502,13 +5502,13 @@ public sealed unsafe class WhenAnyPromise4
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise4, LuminTaskAwaiter, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise4, LuminTask, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT2(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, index));
+                }, StateTuple.Create((this, awaiter, index)));
             }
         }
         {
@@ -5522,13 +5522,13 @@ public sealed unsafe class WhenAnyPromise4
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise4, LuminTaskAwaiter, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise4, LuminTask, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT3(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, index));
+                }, StateTuple.Create((this, awaiter, index)));
             }
         }
         {
@@ -5542,18 +5542,18 @@ public sealed unsafe class WhenAnyPromise4
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise4, LuminTaskAwaiter, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise4, LuminTask, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT4(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, index));
+                }, StateTuple.Create((this, awaiter, index)));
             }
         }
     }
 
-    static void TryInvokeContinuationT1(WhenAnyPromise4 self, in LuminTaskAwaiter awaiter, int index)
+    static void TryInvokeContinuationT1(WhenAnyPromise4 self, in LuminTask awaiter, int index)
     {
         try
         {
@@ -5573,7 +5573,7 @@ public sealed unsafe class WhenAnyPromise4
             LuminTaskSourceCore<int>.TrySetResult(self._core, index);
         }
     }
-    static void TryInvokeContinuationT2(WhenAnyPromise4 self, in LuminTaskAwaiter awaiter, int index)
+    static void TryInvokeContinuationT2(WhenAnyPromise4 self, in LuminTask awaiter, int index)
     {
         try
         {
@@ -5593,7 +5593,7 @@ public sealed unsafe class WhenAnyPromise4
             LuminTaskSourceCore<int>.TrySetResult(self._core, index);
         }
     }
-    static void TryInvokeContinuationT3(WhenAnyPromise4 self, in LuminTaskAwaiter awaiter, int index)
+    static void TryInvokeContinuationT3(WhenAnyPromise4 self, in LuminTask awaiter, int index)
     {
         try
         {
@@ -5613,7 +5613,7 @@ public sealed unsafe class WhenAnyPromise4
             LuminTaskSourceCore<int>.TrySetResult(self._core, index);
         }
     }
-    static void TryInvokeContinuationT4(WhenAnyPromise4 self, in LuminTaskAwaiter awaiter, int index)
+    static void TryInvokeContinuationT4(WhenAnyPromise4 self, in LuminTask awaiter, int index)
     {
         try
         {
@@ -5657,13 +5657,13 @@ public sealed unsafe class WhenAnyPromise5
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise5, LuminTaskAwaiter, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise5, LuminTask, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT1(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, index));
+                }, StateTuple.Create((this, awaiter, index)));
             }
         }
         {
@@ -5677,13 +5677,13 @@ public sealed unsafe class WhenAnyPromise5
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise5, LuminTaskAwaiter, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise5, LuminTask, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT2(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, index));
+                }, StateTuple.Create((this, awaiter, index)));
             }
         }
         {
@@ -5697,13 +5697,13 @@ public sealed unsafe class WhenAnyPromise5
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise5, LuminTaskAwaiter, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise5, LuminTask, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT3(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, index));
+                }, StateTuple.Create((this, awaiter, index)));
             }
         }
         {
@@ -5717,13 +5717,13 @@ public sealed unsafe class WhenAnyPromise5
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise5, LuminTaskAwaiter, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise5, LuminTask, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT4(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, index));
+                }, StateTuple.Create((this, awaiter, index)));
             }
         }
         {
@@ -5737,18 +5737,18 @@ public sealed unsafe class WhenAnyPromise5
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise5, LuminTaskAwaiter, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise5, LuminTask, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT5(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, index));
+                }, StateTuple.Create((this, awaiter, index)));
             }
         }
     }
 
-    static void TryInvokeContinuationT1(WhenAnyPromise5 self, in LuminTaskAwaiter awaiter, int index)
+    static void TryInvokeContinuationT1(WhenAnyPromise5 self, in LuminTask awaiter, int index)
     {
         try
         {
@@ -5768,7 +5768,7 @@ public sealed unsafe class WhenAnyPromise5
             LuminTaskSourceCore<int>.TrySetResult(self._core, index);
         }
     }
-    static void TryInvokeContinuationT2(WhenAnyPromise5 self, in LuminTaskAwaiter awaiter, int index)
+    static void TryInvokeContinuationT2(WhenAnyPromise5 self, in LuminTask awaiter, int index)
     {
         try
         {
@@ -5788,7 +5788,7 @@ public sealed unsafe class WhenAnyPromise5
             LuminTaskSourceCore<int>.TrySetResult(self._core, index);
         }
     }
-    static void TryInvokeContinuationT3(WhenAnyPromise5 self, in LuminTaskAwaiter awaiter, int index)
+    static void TryInvokeContinuationT3(WhenAnyPromise5 self, in LuminTask awaiter, int index)
     {
         try
         {
@@ -5808,7 +5808,7 @@ public sealed unsafe class WhenAnyPromise5
             LuminTaskSourceCore<int>.TrySetResult(self._core, index);
         }
     }
-    static void TryInvokeContinuationT4(WhenAnyPromise5 self, in LuminTaskAwaiter awaiter, int index)
+    static void TryInvokeContinuationT4(WhenAnyPromise5 self, in LuminTask awaiter, int index)
     {
         try
         {
@@ -5828,7 +5828,7 @@ public sealed unsafe class WhenAnyPromise5
             LuminTaskSourceCore<int>.TrySetResult(self._core, index);
         }
     }
-    static void TryInvokeContinuationT5(WhenAnyPromise5 self, in LuminTaskAwaiter awaiter, int index)
+    static void TryInvokeContinuationT5(WhenAnyPromise5 self, in LuminTask awaiter, int index)
     {
         try
         {
@@ -5872,13 +5872,13 @@ public sealed unsafe class WhenAnyPromise6
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise6, LuminTaskAwaiter, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise6, LuminTask, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT1(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, index));
+                }, StateTuple.Create((this, awaiter, index)));
             }
         }
         {
@@ -5892,13 +5892,13 @@ public sealed unsafe class WhenAnyPromise6
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise6, LuminTaskAwaiter, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise6, LuminTask, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT2(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, index));
+                }, StateTuple.Create((this, awaiter, index)));
             }
         }
         {
@@ -5912,13 +5912,13 @@ public sealed unsafe class WhenAnyPromise6
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise6, LuminTaskAwaiter, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise6, LuminTask, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT3(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, index));
+                }, StateTuple.Create((this, awaiter, index)));
             }
         }
         {
@@ -5932,13 +5932,13 @@ public sealed unsafe class WhenAnyPromise6
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise6, LuminTaskAwaiter, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise6, LuminTask, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT4(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, index));
+                }, StateTuple.Create((this, awaiter, index)));
             }
         }
         {
@@ -5952,13 +5952,13 @@ public sealed unsafe class WhenAnyPromise6
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise6, LuminTaskAwaiter, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise6, LuminTask, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT5(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, index));
+                }, StateTuple.Create((this, awaiter, index)));
             }
         }
         {
@@ -5972,18 +5972,18 @@ public sealed unsafe class WhenAnyPromise6
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise6, LuminTaskAwaiter, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise6, LuminTask, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT6(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, index));
+                }, StateTuple.Create((this, awaiter, index)));
             }
         }
     }
 
-    static void TryInvokeContinuationT1(WhenAnyPromise6 self, in LuminTaskAwaiter awaiter, int index)
+    static void TryInvokeContinuationT1(WhenAnyPromise6 self, in LuminTask awaiter, int index)
     {
         try
         {
@@ -6003,7 +6003,7 @@ public sealed unsafe class WhenAnyPromise6
             LuminTaskSourceCore<int>.TrySetResult(self._core, index);
         }
     }
-    static void TryInvokeContinuationT2(WhenAnyPromise6 self, in LuminTaskAwaiter awaiter, int index)
+    static void TryInvokeContinuationT2(WhenAnyPromise6 self, in LuminTask awaiter, int index)
     {
         try
         {
@@ -6023,7 +6023,7 @@ public sealed unsafe class WhenAnyPromise6
             LuminTaskSourceCore<int>.TrySetResult(self._core, index);
         }
     }
-    static void TryInvokeContinuationT3(WhenAnyPromise6 self, in LuminTaskAwaiter awaiter, int index)
+    static void TryInvokeContinuationT3(WhenAnyPromise6 self, in LuminTask awaiter, int index)
     {
         try
         {
@@ -6043,7 +6043,7 @@ public sealed unsafe class WhenAnyPromise6
             LuminTaskSourceCore<int>.TrySetResult(self._core, index);
         }
     }
-    static void TryInvokeContinuationT4(WhenAnyPromise6 self, in LuminTaskAwaiter awaiter, int index)
+    static void TryInvokeContinuationT4(WhenAnyPromise6 self, in LuminTask awaiter, int index)
     {
         try
         {
@@ -6063,7 +6063,7 @@ public sealed unsafe class WhenAnyPromise6
             LuminTaskSourceCore<int>.TrySetResult(self._core, index);
         }
     }
-    static void TryInvokeContinuationT5(WhenAnyPromise6 self, in LuminTaskAwaiter awaiter, int index)
+    static void TryInvokeContinuationT5(WhenAnyPromise6 self, in LuminTask awaiter, int index)
     {
         try
         {
@@ -6083,7 +6083,7 @@ public sealed unsafe class WhenAnyPromise6
             LuminTaskSourceCore<int>.TrySetResult(self._core, index);
         }
     }
-    static void TryInvokeContinuationT6(WhenAnyPromise6 self, in LuminTaskAwaiter awaiter, int index)
+    static void TryInvokeContinuationT6(WhenAnyPromise6 self, in LuminTask awaiter, int index)
     {
         try
         {
@@ -6127,13 +6127,13 @@ public sealed unsafe class WhenAnyPromise7
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise7, LuminTaskAwaiter, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise7, LuminTask, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT1(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, index));
+                }, StateTuple.Create((this, awaiter, index)));
             }
         }
         {
@@ -6147,13 +6147,13 @@ public sealed unsafe class WhenAnyPromise7
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise7, LuminTaskAwaiter, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise7, LuminTask, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT2(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, index));
+                }, StateTuple.Create((this, awaiter, index)));
             }
         }
         {
@@ -6167,13 +6167,13 @@ public sealed unsafe class WhenAnyPromise7
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise7, LuminTaskAwaiter, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise7, LuminTask, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT3(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, index));
+                }, StateTuple.Create((this, awaiter, index)));
             }
         }
         {
@@ -6187,13 +6187,13 @@ public sealed unsafe class WhenAnyPromise7
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise7, LuminTaskAwaiter, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise7, LuminTask, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT4(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, index));
+                }, StateTuple.Create((this, awaiter, index)));
             }
         }
         {
@@ -6207,13 +6207,13 @@ public sealed unsafe class WhenAnyPromise7
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise7, LuminTaskAwaiter, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise7, LuminTask, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT5(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, index));
+                }, StateTuple.Create((this, awaiter, index)));
             }
         }
         {
@@ -6227,13 +6227,13 @@ public sealed unsafe class WhenAnyPromise7
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise7, LuminTaskAwaiter, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise7, LuminTask, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT6(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, index));
+                }, StateTuple.Create((this, awaiter, index)));
             }
         }
         {
@@ -6247,18 +6247,18 @@ public sealed unsafe class WhenAnyPromise7
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise7, LuminTaskAwaiter, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise7, LuminTask, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT7(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, index));
+                }, StateTuple.Create((this, awaiter, index)));
             }
         }
     }
 
-    static void TryInvokeContinuationT1(WhenAnyPromise7 self, in LuminTaskAwaiter awaiter, int index)
+    static void TryInvokeContinuationT1(WhenAnyPromise7 self, in LuminTask awaiter, int index)
     {
         try
         {
@@ -6278,7 +6278,7 @@ public sealed unsafe class WhenAnyPromise7
             LuminTaskSourceCore<int>.TrySetResult(self._core, index);
         }
     }
-    static void TryInvokeContinuationT2(WhenAnyPromise7 self, in LuminTaskAwaiter awaiter, int index)
+    static void TryInvokeContinuationT2(WhenAnyPromise7 self, in LuminTask awaiter, int index)
     {
         try
         {
@@ -6298,7 +6298,7 @@ public sealed unsafe class WhenAnyPromise7
             LuminTaskSourceCore<int>.TrySetResult(self._core, index);
         }
     }
-    static void TryInvokeContinuationT3(WhenAnyPromise7 self, in LuminTaskAwaiter awaiter, int index)
+    static void TryInvokeContinuationT3(WhenAnyPromise7 self, in LuminTask awaiter, int index)
     {
         try
         {
@@ -6318,7 +6318,7 @@ public sealed unsafe class WhenAnyPromise7
             LuminTaskSourceCore<int>.TrySetResult(self._core, index);
         }
     }
-    static void TryInvokeContinuationT4(WhenAnyPromise7 self, in LuminTaskAwaiter awaiter, int index)
+    static void TryInvokeContinuationT4(WhenAnyPromise7 self, in LuminTask awaiter, int index)
     {
         try
         {
@@ -6338,7 +6338,7 @@ public sealed unsafe class WhenAnyPromise7
             LuminTaskSourceCore<int>.TrySetResult(self._core, index);
         }
     }
-    static void TryInvokeContinuationT5(WhenAnyPromise7 self, in LuminTaskAwaiter awaiter, int index)
+    static void TryInvokeContinuationT5(WhenAnyPromise7 self, in LuminTask awaiter, int index)
     {
         try
         {
@@ -6358,7 +6358,7 @@ public sealed unsafe class WhenAnyPromise7
             LuminTaskSourceCore<int>.TrySetResult(self._core, index);
         }
     }
-    static void TryInvokeContinuationT6(WhenAnyPromise7 self, in LuminTaskAwaiter awaiter, int index)
+    static void TryInvokeContinuationT6(WhenAnyPromise7 self, in LuminTask awaiter, int index)
     {
         try
         {
@@ -6378,7 +6378,7 @@ public sealed unsafe class WhenAnyPromise7
             LuminTaskSourceCore<int>.TrySetResult(self._core, index);
         }
     }
-    static void TryInvokeContinuationT7(WhenAnyPromise7 self, in LuminTaskAwaiter awaiter, int index)
+    static void TryInvokeContinuationT7(WhenAnyPromise7 self, in LuminTask awaiter, int index)
     {
         try
         {
@@ -6422,13 +6422,13 @@ public sealed unsafe class WhenAnyPromise8
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise8, LuminTaskAwaiter, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise8, LuminTask, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT1(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, index));
+                }, StateTuple.Create((this, awaiter, index)));
             }
         }
         {
@@ -6442,13 +6442,13 @@ public sealed unsafe class WhenAnyPromise8
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise8, LuminTaskAwaiter, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise8, LuminTask, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT2(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, index));
+                }, StateTuple.Create((this, awaiter, index)));
             }
         }
         {
@@ -6462,13 +6462,13 @@ public sealed unsafe class WhenAnyPromise8
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise8, LuminTaskAwaiter, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise8, LuminTask, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT3(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, index));
+                }, StateTuple.Create((this, awaiter, index)));
             }
         }
         {
@@ -6482,13 +6482,13 @@ public sealed unsafe class WhenAnyPromise8
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise8, LuminTaskAwaiter, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise8, LuminTask, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT4(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, index));
+                }, StateTuple.Create((this, awaiter, index)));
             }
         }
         {
@@ -6502,13 +6502,13 @@ public sealed unsafe class WhenAnyPromise8
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise8, LuminTaskAwaiter, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise8, LuminTask, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT5(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, index));
+                }, StateTuple.Create((this, awaiter, index)));
             }
         }
         {
@@ -6522,13 +6522,13 @@ public sealed unsafe class WhenAnyPromise8
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise8, LuminTaskAwaiter, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise8, LuminTask, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT6(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, index));
+                }, StateTuple.Create((this, awaiter, index)));
             }
         }
         {
@@ -6542,13 +6542,13 @@ public sealed unsafe class WhenAnyPromise8
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise8, LuminTaskAwaiter, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise8, LuminTask, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT7(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, index));
+                }, StateTuple.Create((this, awaiter, index)));
             }
         }
         {
@@ -6562,18 +6562,18 @@ public sealed unsafe class WhenAnyPromise8
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise8, LuminTaskAwaiter, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise8, LuminTask, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT8(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, index));
+                }, StateTuple.Create((this, awaiter, index)));
             }
         }
     }
 
-    static void TryInvokeContinuationT1(WhenAnyPromise8 self, in LuminTaskAwaiter awaiter, int index)
+    static void TryInvokeContinuationT1(WhenAnyPromise8 self, in LuminTask awaiter, int index)
     {
         try
         {
@@ -6593,7 +6593,7 @@ public sealed unsafe class WhenAnyPromise8
             LuminTaskSourceCore<int>.TrySetResult(self._core, index);
         }
     }
-    static void TryInvokeContinuationT2(WhenAnyPromise8 self, in LuminTaskAwaiter awaiter, int index)
+    static void TryInvokeContinuationT2(WhenAnyPromise8 self, in LuminTask awaiter, int index)
     {
         try
         {
@@ -6613,7 +6613,7 @@ public sealed unsafe class WhenAnyPromise8
             LuminTaskSourceCore<int>.TrySetResult(self._core, index);
         }
     }
-    static void TryInvokeContinuationT3(WhenAnyPromise8 self, in LuminTaskAwaiter awaiter, int index)
+    static void TryInvokeContinuationT3(WhenAnyPromise8 self, in LuminTask awaiter, int index)
     {
         try
         {
@@ -6633,7 +6633,7 @@ public sealed unsafe class WhenAnyPromise8
             LuminTaskSourceCore<int>.TrySetResult(self._core, index);
         }
     }
-    static void TryInvokeContinuationT4(WhenAnyPromise8 self, in LuminTaskAwaiter awaiter, int index)
+    static void TryInvokeContinuationT4(WhenAnyPromise8 self, in LuminTask awaiter, int index)
     {
         try
         {
@@ -6653,7 +6653,7 @@ public sealed unsafe class WhenAnyPromise8
             LuminTaskSourceCore<int>.TrySetResult(self._core, index);
         }
     }
-    static void TryInvokeContinuationT5(WhenAnyPromise8 self, in LuminTaskAwaiter awaiter, int index)
+    static void TryInvokeContinuationT5(WhenAnyPromise8 self, in LuminTask awaiter, int index)
     {
         try
         {
@@ -6673,7 +6673,7 @@ public sealed unsafe class WhenAnyPromise8
             LuminTaskSourceCore<int>.TrySetResult(self._core, index);
         }
     }
-    static void TryInvokeContinuationT6(WhenAnyPromise8 self, in LuminTaskAwaiter awaiter, int index)
+    static void TryInvokeContinuationT6(WhenAnyPromise8 self, in LuminTask awaiter, int index)
     {
         try
         {
@@ -6693,7 +6693,7 @@ public sealed unsafe class WhenAnyPromise8
             LuminTaskSourceCore<int>.TrySetResult(self._core, index);
         }
     }
-    static void TryInvokeContinuationT7(WhenAnyPromise8 self, in LuminTaskAwaiter awaiter, int index)
+    static void TryInvokeContinuationT7(WhenAnyPromise8 self, in LuminTask awaiter, int index)
     {
         try
         {
@@ -6713,7 +6713,7 @@ public sealed unsafe class WhenAnyPromise8
             LuminTaskSourceCore<int>.TrySetResult(self._core, index);
         }
     }
-    static void TryInvokeContinuationT8(WhenAnyPromise8 self, in LuminTaskAwaiter awaiter, int index)
+    static void TryInvokeContinuationT8(WhenAnyPromise8 self, in LuminTask awaiter, int index)
     {
         try
         {
@@ -6757,13 +6757,13 @@ public sealed unsafe class WhenAnyPromise9
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise9, LuminTaskAwaiter, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise9, LuminTask, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT1(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, index));
+                }, StateTuple.Create((this, awaiter, index)));
             }
         }
         {
@@ -6777,13 +6777,13 @@ public sealed unsafe class WhenAnyPromise9
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise9, LuminTaskAwaiter, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise9, LuminTask, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT2(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, index));
+                }, StateTuple.Create((this, awaiter, index)));
             }
         }
         {
@@ -6797,13 +6797,13 @@ public sealed unsafe class WhenAnyPromise9
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise9, LuminTaskAwaiter, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise9, LuminTask, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT3(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, index));
+                }, StateTuple.Create((this, awaiter, index)));
             }
         }
         {
@@ -6817,13 +6817,13 @@ public sealed unsafe class WhenAnyPromise9
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise9, LuminTaskAwaiter, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise9, LuminTask, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT4(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, index));
+                }, StateTuple.Create((this, awaiter, index)));
             }
         }
         {
@@ -6837,13 +6837,13 @@ public sealed unsafe class WhenAnyPromise9
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise9, LuminTaskAwaiter, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise9, LuminTask, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT5(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, index));
+                }, StateTuple.Create((this, awaiter, index)));
             }
         }
         {
@@ -6857,13 +6857,13 @@ public sealed unsafe class WhenAnyPromise9
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise9, LuminTaskAwaiter, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise9, LuminTask, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT6(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, index));
+                }, StateTuple.Create((this, awaiter, index)));
             }
         }
         {
@@ -6877,13 +6877,13 @@ public sealed unsafe class WhenAnyPromise9
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise9, LuminTaskAwaiter, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise9, LuminTask, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT7(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, index));
+                }, StateTuple.Create((this, awaiter, index)));
             }
         }
         {
@@ -6897,13 +6897,13 @@ public sealed unsafe class WhenAnyPromise9
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise9, LuminTaskAwaiter, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise9, LuminTask, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT8(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, index));
+                }, StateTuple.Create((this, awaiter, index)));
             }
         }
         {
@@ -6917,18 +6917,18 @@ public sealed unsafe class WhenAnyPromise9
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise9, LuminTaskAwaiter, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise9, LuminTask, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT9(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, index));
+                }, StateTuple.Create((this, awaiter, index)));
             }
         }
     }
 
-    static void TryInvokeContinuationT1(WhenAnyPromise9 self, in LuminTaskAwaiter awaiter, int index)
+    static void TryInvokeContinuationT1(WhenAnyPromise9 self, in LuminTask awaiter, int index)
     {
         try
         {
@@ -6948,7 +6948,7 @@ public sealed unsafe class WhenAnyPromise9
             LuminTaskSourceCore<int>.TrySetResult(self._core, index);
         }
     }
-    static void TryInvokeContinuationT2(WhenAnyPromise9 self, in LuminTaskAwaiter awaiter, int index)
+    static void TryInvokeContinuationT2(WhenAnyPromise9 self, in LuminTask awaiter, int index)
     {
         try
         {
@@ -6968,7 +6968,7 @@ public sealed unsafe class WhenAnyPromise9
             LuminTaskSourceCore<int>.TrySetResult(self._core, index);
         }
     }
-    static void TryInvokeContinuationT3(WhenAnyPromise9 self, in LuminTaskAwaiter awaiter, int index)
+    static void TryInvokeContinuationT3(WhenAnyPromise9 self, in LuminTask awaiter, int index)
     {
         try
         {
@@ -6988,7 +6988,7 @@ public sealed unsafe class WhenAnyPromise9
             LuminTaskSourceCore<int>.TrySetResult(self._core, index);
         }
     }
-    static void TryInvokeContinuationT4(WhenAnyPromise9 self, in LuminTaskAwaiter awaiter, int index)
+    static void TryInvokeContinuationT4(WhenAnyPromise9 self, in LuminTask awaiter, int index)
     {
         try
         {
@@ -7008,7 +7008,7 @@ public sealed unsafe class WhenAnyPromise9
             LuminTaskSourceCore<int>.TrySetResult(self._core, index);
         }
     }
-    static void TryInvokeContinuationT5(WhenAnyPromise9 self, in LuminTaskAwaiter awaiter, int index)
+    static void TryInvokeContinuationT5(WhenAnyPromise9 self, in LuminTask awaiter, int index)
     {
         try
         {
@@ -7028,7 +7028,7 @@ public sealed unsafe class WhenAnyPromise9
             LuminTaskSourceCore<int>.TrySetResult(self._core, index);
         }
     }
-    static void TryInvokeContinuationT6(WhenAnyPromise9 self, in LuminTaskAwaiter awaiter, int index)
+    static void TryInvokeContinuationT6(WhenAnyPromise9 self, in LuminTask awaiter, int index)
     {
         try
         {
@@ -7048,7 +7048,7 @@ public sealed unsafe class WhenAnyPromise9
             LuminTaskSourceCore<int>.TrySetResult(self._core, index);
         }
     }
-    static void TryInvokeContinuationT7(WhenAnyPromise9 self, in LuminTaskAwaiter awaiter, int index)
+    static void TryInvokeContinuationT7(WhenAnyPromise9 self, in LuminTask awaiter, int index)
     {
         try
         {
@@ -7068,7 +7068,7 @@ public sealed unsafe class WhenAnyPromise9
             LuminTaskSourceCore<int>.TrySetResult(self._core, index);
         }
     }
-    static void TryInvokeContinuationT8(WhenAnyPromise9 self, in LuminTaskAwaiter awaiter, int index)
+    static void TryInvokeContinuationT8(WhenAnyPromise9 self, in LuminTask awaiter, int index)
     {
         try
         {
@@ -7088,7 +7088,7 @@ public sealed unsafe class WhenAnyPromise9
             LuminTaskSourceCore<int>.TrySetResult(self._core, index);
         }
     }
-    static void TryInvokeContinuationT9(WhenAnyPromise9 self, in LuminTaskAwaiter awaiter, int index)
+    static void TryInvokeContinuationT9(WhenAnyPromise9 self, in LuminTask awaiter, int index)
     {
         try
         {
@@ -7132,13 +7132,13 @@ public sealed unsafe class WhenAnyPromise10
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise10, LuminTaskAwaiter, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise10, LuminTask, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT1(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, index));
+                }, StateTuple.Create((this, awaiter, index)));
             }
         }
         {
@@ -7152,13 +7152,13 @@ public sealed unsafe class WhenAnyPromise10
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise10, LuminTaskAwaiter, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise10, LuminTask, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT2(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, index));
+                }, StateTuple.Create((this, awaiter, index)));
             }
         }
         {
@@ -7172,13 +7172,13 @@ public sealed unsafe class WhenAnyPromise10
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise10, LuminTaskAwaiter, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise10, LuminTask, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT3(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, index));
+                }, StateTuple.Create((this, awaiter, index)));
             }
         }
         {
@@ -7192,13 +7192,13 @@ public sealed unsafe class WhenAnyPromise10
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise10, LuminTaskAwaiter, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise10, LuminTask, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT4(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, index));
+                }, StateTuple.Create((this, awaiter, index)));
             }
         }
         {
@@ -7212,13 +7212,13 @@ public sealed unsafe class WhenAnyPromise10
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise10, LuminTaskAwaiter, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise10, LuminTask, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT5(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, index));
+                }, StateTuple.Create((this, awaiter, index)));
             }
         }
         {
@@ -7232,13 +7232,13 @@ public sealed unsafe class WhenAnyPromise10
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise10, LuminTaskAwaiter, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise10, LuminTask, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT6(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, index));
+                }, StateTuple.Create((this, awaiter, index)));
             }
         }
         {
@@ -7252,13 +7252,13 @@ public sealed unsafe class WhenAnyPromise10
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise10, LuminTaskAwaiter, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise10, LuminTask, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT7(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, index));
+                }, StateTuple.Create((this, awaiter, index)));
             }
         }
         {
@@ -7272,13 +7272,13 @@ public sealed unsafe class WhenAnyPromise10
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise10, LuminTaskAwaiter, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise10, LuminTask, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT8(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, index));
+                }, StateTuple.Create((this, awaiter, index)));
             }
         }
         {
@@ -7292,13 +7292,13 @@ public sealed unsafe class WhenAnyPromise10
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise10, LuminTaskAwaiter, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise10, LuminTask, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT9(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, index));
+                }, StateTuple.Create((this, awaiter, index)));
             }
         }
         {
@@ -7312,18 +7312,18 @@ public sealed unsafe class WhenAnyPromise10
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise10, LuminTaskAwaiter, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise10, LuminTask, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT10(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, index));
+                }, StateTuple.Create((this, awaiter, index)));
             }
         }
     }
 
-    static void TryInvokeContinuationT1(WhenAnyPromise10 self, in LuminTaskAwaiter awaiter, int index)
+    static void TryInvokeContinuationT1(WhenAnyPromise10 self, in LuminTask awaiter, int index)
     {
         try
         {
@@ -7343,7 +7343,7 @@ public sealed unsafe class WhenAnyPromise10
             LuminTaskSourceCore<int>.TrySetResult(self._core, index);
         }
     }
-    static void TryInvokeContinuationT2(WhenAnyPromise10 self, in LuminTaskAwaiter awaiter, int index)
+    static void TryInvokeContinuationT2(WhenAnyPromise10 self, in LuminTask awaiter, int index)
     {
         try
         {
@@ -7363,7 +7363,7 @@ public sealed unsafe class WhenAnyPromise10
             LuminTaskSourceCore<int>.TrySetResult(self._core, index);
         }
     }
-    static void TryInvokeContinuationT3(WhenAnyPromise10 self, in LuminTaskAwaiter awaiter, int index)
+    static void TryInvokeContinuationT3(WhenAnyPromise10 self, in LuminTask awaiter, int index)
     {
         try
         {
@@ -7383,7 +7383,7 @@ public sealed unsafe class WhenAnyPromise10
             LuminTaskSourceCore<int>.TrySetResult(self._core, index);
         }
     }
-    static void TryInvokeContinuationT4(WhenAnyPromise10 self, in LuminTaskAwaiter awaiter, int index)
+    static void TryInvokeContinuationT4(WhenAnyPromise10 self, in LuminTask awaiter, int index)
     {
         try
         {
@@ -7403,7 +7403,7 @@ public sealed unsafe class WhenAnyPromise10
             LuminTaskSourceCore<int>.TrySetResult(self._core, index);
         }
     }
-    static void TryInvokeContinuationT5(WhenAnyPromise10 self, in LuminTaskAwaiter awaiter, int index)
+    static void TryInvokeContinuationT5(WhenAnyPromise10 self, in LuminTask awaiter, int index)
     {
         try
         {
@@ -7423,7 +7423,7 @@ public sealed unsafe class WhenAnyPromise10
             LuminTaskSourceCore<int>.TrySetResult(self._core, index);
         }
     }
-    static void TryInvokeContinuationT6(WhenAnyPromise10 self, in LuminTaskAwaiter awaiter, int index)
+    static void TryInvokeContinuationT6(WhenAnyPromise10 self, in LuminTask awaiter, int index)
     {
         try
         {
@@ -7443,7 +7443,7 @@ public sealed unsafe class WhenAnyPromise10
             LuminTaskSourceCore<int>.TrySetResult(self._core, index);
         }
     }
-    static void TryInvokeContinuationT7(WhenAnyPromise10 self, in LuminTaskAwaiter awaiter, int index)
+    static void TryInvokeContinuationT7(WhenAnyPromise10 self, in LuminTask awaiter, int index)
     {
         try
         {
@@ -7463,7 +7463,7 @@ public sealed unsafe class WhenAnyPromise10
             LuminTaskSourceCore<int>.TrySetResult(self._core, index);
         }
     }
-    static void TryInvokeContinuationT8(WhenAnyPromise10 self, in LuminTaskAwaiter awaiter, int index)
+    static void TryInvokeContinuationT8(WhenAnyPromise10 self, in LuminTask awaiter, int index)
     {
         try
         {
@@ -7483,7 +7483,7 @@ public sealed unsafe class WhenAnyPromise10
             LuminTaskSourceCore<int>.TrySetResult(self._core, index);
         }
     }
-    static void TryInvokeContinuationT9(WhenAnyPromise10 self, in LuminTaskAwaiter awaiter, int index)
+    static void TryInvokeContinuationT9(WhenAnyPromise10 self, in LuminTask awaiter, int index)
     {
         try
         {
@@ -7503,7 +7503,7 @@ public sealed unsafe class WhenAnyPromise10
             LuminTaskSourceCore<int>.TrySetResult(self._core, index);
         }
     }
-    static void TryInvokeContinuationT10(WhenAnyPromise10 self, in LuminTaskAwaiter awaiter, int index)
+    static void TryInvokeContinuationT10(WhenAnyPromise10 self, in LuminTask awaiter, int index)
     {
         try
         {
@@ -7547,13 +7547,13 @@ public sealed unsafe class WhenAnyPromise11
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise11, LuminTaskAwaiter, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise11, LuminTask, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT1(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, index));
+                }, StateTuple.Create((this, awaiter, index)));
             }
         }
         {
@@ -7567,13 +7567,13 @@ public sealed unsafe class WhenAnyPromise11
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise11, LuminTaskAwaiter, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise11, LuminTask, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT2(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, index));
+                }, StateTuple.Create((this, awaiter, index)));
             }
         }
         {
@@ -7587,13 +7587,13 @@ public sealed unsafe class WhenAnyPromise11
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise11, LuminTaskAwaiter, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise11, LuminTask, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT3(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, index));
+                }, StateTuple.Create((this, awaiter, index)));
             }
         }
         {
@@ -7607,13 +7607,13 @@ public sealed unsafe class WhenAnyPromise11
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise11, LuminTaskAwaiter, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise11, LuminTask, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT4(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, index));
+                }, StateTuple.Create((this, awaiter, index)));
             }
         }
         {
@@ -7627,13 +7627,13 @@ public sealed unsafe class WhenAnyPromise11
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise11, LuminTaskAwaiter, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise11, LuminTask, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT5(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, index));
+                }, StateTuple.Create((this, awaiter, index)));
             }
         }
         {
@@ -7647,13 +7647,13 @@ public sealed unsafe class WhenAnyPromise11
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise11, LuminTaskAwaiter, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise11, LuminTask, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT6(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, index));
+                }, StateTuple.Create((this, awaiter, index)));
             }
         }
         {
@@ -7667,13 +7667,13 @@ public sealed unsafe class WhenAnyPromise11
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise11, LuminTaskAwaiter, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise11, LuminTask, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT7(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, index));
+                }, StateTuple.Create((this, awaiter, index)));
             }
         }
         {
@@ -7687,13 +7687,13 @@ public sealed unsafe class WhenAnyPromise11
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise11, LuminTaskAwaiter, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise11, LuminTask, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT8(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, index));
+                }, StateTuple.Create((this, awaiter, index)));
             }
         }
         {
@@ -7707,13 +7707,13 @@ public sealed unsafe class WhenAnyPromise11
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise11, LuminTaskAwaiter, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise11, LuminTask, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT9(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, index));
+                }, StateTuple.Create((this, awaiter, index)));
             }
         }
         {
@@ -7727,13 +7727,13 @@ public sealed unsafe class WhenAnyPromise11
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise11, LuminTaskAwaiter, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise11, LuminTask, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT10(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, index));
+                }, StateTuple.Create((this, awaiter, index)));
             }
         }
         {
@@ -7747,18 +7747,18 @@ public sealed unsafe class WhenAnyPromise11
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise11, LuminTaskAwaiter, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise11, LuminTask, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT11(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, index));
+                }, StateTuple.Create((this, awaiter, index)));
             }
         }
     }
 
-    static void TryInvokeContinuationT1(WhenAnyPromise11 self, in LuminTaskAwaiter awaiter, int index)
+    static void TryInvokeContinuationT1(WhenAnyPromise11 self, in LuminTask awaiter, int index)
     {
         try
         {
@@ -7778,7 +7778,7 @@ public sealed unsafe class WhenAnyPromise11
             LuminTaskSourceCore<int>.TrySetResult(self._core, index);
         }
     }
-    static void TryInvokeContinuationT2(WhenAnyPromise11 self, in LuminTaskAwaiter awaiter, int index)
+    static void TryInvokeContinuationT2(WhenAnyPromise11 self, in LuminTask awaiter, int index)
     {
         try
         {
@@ -7798,7 +7798,7 @@ public sealed unsafe class WhenAnyPromise11
             LuminTaskSourceCore<int>.TrySetResult(self._core, index);
         }
     }
-    static void TryInvokeContinuationT3(WhenAnyPromise11 self, in LuminTaskAwaiter awaiter, int index)
+    static void TryInvokeContinuationT3(WhenAnyPromise11 self, in LuminTask awaiter, int index)
     {
         try
         {
@@ -7818,7 +7818,7 @@ public sealed unsafe class WhenAnyPromise11
             LuminTaskSourceCore<int>.TrySetResult(self._core, index);
         }
     }
-    static void TryInvokeContinuationT4(WhenAnyPromise11 self, in LuminTaskAwaiter awaiter, int index)
+    static void TryInvokeContinuationT4(WhenAnyPromise11 self, in LuminTask awaiter, int index)
     {
         try
         {
@@ -7838,7 +7838,7 @@ public sealed unsafe class WhenAnyPromise11
             LuminTaskSourceCore<int>.TrySetResult(self._core, index);
         }
     }
-    static void TryInvokeContinuationT5(WhenAnyPromise11 self, in LuminTaskAwaiter awaiter, int index)
+    static void TryInvokeContinuationT5(WhenAnyPromise11 self, in LuminTask awaiter, int index)
     {
         try
         {
@@ -7858,7 +7858,7 @@ public sealed unsafe class WhenAnyPromise11
             LuminTaskSourceCore<int>.TrySetResult(self._core, index);
         }
     }
-    static void TryInvokeContinuationT6(WhenAnyPromise11 self, in LuminTaskAwaiter awaiter, int index)
+    static void TryInvokeContinuationT6(WhenAnyPromise11 self, in LuminTask awaiter, int index)
     {
         try
         {
@@ -7878,7 +7878,7 @@ public sealed unsafe class WhenAnyPromise11
             LuminTaskSourceCore<int>.TrySetResult(self._core, index);
         }
     }
-    static void TryInvokeContinuationT7(WhenAnyPromise11 self, in LuminTaskAwaiter awaiter, int index)
+    static void TryInvokeContinuationT7(WhenAnyPromise11 self, in LuminTask awaiter, int index)
     {
         try
         {
@@ -7898,7 +7898,7 @@ public sealed unsafe class WhenAnyPromise11
             LuminTaskSourceCore<int>.TrySetResult(self._core, index);
         }
     }
-    static void TryInvokeContinuationT8(WhenAnyPromise11 self, in LuminTaskAwaiter awaiter, int index)
+    static void TryInvokeContinuationT8(WhenAnyPromise11 self, in LuminTask awaiter, int index)
     {
         try
         {
@@ -7918,7 +7918,7 @@ public sealed unsafe class WhenAnyPromise11
             LuminTaskSourceCore<int>.TrySetResult(self._core, index);
         }
     }
-    static void TryInvokeContinuationT9(WhenAnyPromise11 self, in LuminTaskAwaiter awaiter, int index)
+    static void TryInvokeContinuationT9(WhenAnyPromise11 self, in LuminTask awaiter, int index)
     {
         try
         {
@@ -7938,7 +7938,7 @@ public sealed unsafe class WhenAnyPromise11
             LuminTaskSourceCore<int>.TrySetResult(self._core, index);
         }
     }
-    static void TryInvokeContinuationT10(WhenAnyPromise11 self, in LuminTaskAwaiter awaiter, int index)
+    static void TryInvokeContinuationT10(WhenAnyPromise11 self, in LuminTask awaiter, int index)
     {
         try
         {
@@ -7958,7 +7958,7 @@ public sealed unsafe class WhenAnyPromise11
             LuminTaskSourceCore<int>.TrySetResult(self._core, index);
         }
     }
-    static void TryInvokeContinuationT11(WhenAnyPromise11 self, in LuminTaskAwaiter awaiter, int index)
+    static void TryInvokeContinuationT11(WhenAnyPromise11 self, in LuminTask awaiter, int index)
     {
         try
         {
@@ -8002,13 +8002,13 @@ public sealed unsafe class WhenAnyPromise12
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise12, LuminTaskAwaiter, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise12, LuminTask, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT1(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, index));
+                }, StateTuple.Create((this, awaiter, index)));
             }
         }
         {
@@ -8022,13 +8022,13 @@ public sealed unsafe class WhenAnyPromise12
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise12, LuminTaskAwaiter, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise12, LuminTask, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT2(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, index));
+                }, StateTuple.Create((this, awaiter, index)));
             }
         }
         {
@@ -8042,13 +8042,13 @@ public sealed unsafe class WhenAnyPromise12
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise12, LuminTaskAwaiter, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise12, LuminTask, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT3(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, index));
+                }, StateTuple.Create((this, awaiter, index)));
             }
         }
         {
@@ -8062,13 +8062,13 @@ public sealed unsafe class WhenAnyPromise12
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise12, LuminTaskAwaiter, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise12, LuminTask, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT4(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, index));
+                }, StateTuple.Create((this, awaiter, index)));
             }
         }
         {
@@ -8082,13 +8082,13 @@ public sealed unsafe class WhenAnyPromise12
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise12, LuminTaskAwaiter, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise12, LuminTask, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT5(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, index));
+                }, StateTuple.Create((this, awaiter, index)));
             }
         }
         {
@@ -8102,13 +8102,13 @@ public sealed unsafe class WhenAnyPromise12
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise12, LuminTaskAwaiter, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise12, LuminTask, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT6(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, index));
+                }, StateTuple.Create((this, awaiter, index)));
             }
         }
         {
@@ -8122,13 +8122,13 @@ public sealed unsafe class WhenAnyPromise12
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise12, LuminTaskAwaiter, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise12, LuminTask, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT7(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, index));
+                }, StateTuple.Create((this, awaiter, index)));
             }
         }
         {
@@ -8142,13 +8142,13 @@ public sealed unsafe class WhenAnyPromise12
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise12, LuminTaskAwaiter, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise12, LuminTask, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT8(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, index));
+                }, StateTuple.Create((this, awaiter, index)));
             }
         }
         {
@@ -8162,13 +8162,13 @@ public sealed unsafe class WhenAnyPromise12
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise12, LuminTaskAwaiter, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise12, LuminTask, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT9(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, index));
+                }, StateTuple.Create((this, awaiter, index)));
             }
         }
         {
@@ -8182,13 +8182,13 @@ public sealed unsafe class WhenAnyPromise12
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise12, LuminTaskAwaiter, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise12, LuminTask, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT10(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, index));
+                }, StateTuple.Create((this, awaiter, index)));
             }
         }
         {
@@ -8202,13 +8202,13 @@ public sealed unsafe class WhenAnyPromise12
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise12, LuminTaskAwaiter, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise12, LuminTask, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT11(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, index));
+                }, StateTuple.Create((this, awaiter, index)));
             }
         }
         {
@@ -8222,18 +8222,18 @@ public sealed unsafe class WhenAnyPromise12
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise12, LuminTaskAwaiter, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise12, LuminTask, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT12(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, index));
+                }, StateTuple.Create((this, awaiter, index)));
             }
         }
     }
 
-    static void TryInvokeContinuationT1(WhenAnyPromise12 self, in LuminTaskAwaiter awaiter, int index)
+    static void TryInvokeContinuationT1(WhenAnyPromise12 self, in LuminTask awaiter, int index)
     {
         try
         {
@@ -8253,7 +8253,7 @@ public sealed unsafe class WhenAnyPromise12
             LuminTaskSourceCore<int>.TrySetResult(self._core, index);
         }
     }
-    static void TryInvokeContinuationT2(WhenAnyPromise12 self, in LuminTaskAwaiter awaiter, int index)
+    static void TryInvokeContinuationT2(WhenAnyPromise12 self, in LuminTask awaiter, int index)
     {
         try
         {
@@ -8273,7 +8273,7 @@ public sealed unsafe class WhenAnyPromise12
             LuminTaskSourceCore<int>.TrySetResult(self._core, index);
         }
     }
-    static void TryInvokeContinuationT3(WhenAnyPromise12 self, in LuminTaskAwaiter awaiter, int index)
+    static void TryInvokeContinuationT3(WhenAnyPromise12 self, in LuminTask awaiter, int index)
     {
         try
         {
@@ -8293,7 +8293,7 @@ public sealed unsafe class WhenAnyPromise12
             LuminTaskSourceCore<int>.TrySetResult(self._core, index);
         }
     }
-    static void TryInvokeContinuationT4(WhenAnyPromise12 self, in LuminTaskAwaiter awaiter, int index)
+    static void TryInvokeContinuationT4(WhenAnyPromise12 self, in LuminTask awaiter, int index)
     {
         try
         {
@@ -8313,7 +8313,7 @@ public sealed unsafe class WhenAnyPromise12
             LuminTaskSourceCore<int>.TrySetResult(self._core, index);
         }
     }
-    static void TryInvokeContinuationT5(WhenAnyPromise12 self, in LuminTaskAwaiter awaiter, int index)
+    static void TryInvokeContinuationT5(WhenAnyPromise12 self, in LuminTask awaiter, int index)
     {
         try
         {
@@ -8333,7 +8333,7 @@ public sealed unsafe class WhenAnyPromise12
             LuminTaskSourceCore<int>.TrySetResult(self._core, index);
         }
     }
-    static void TryInvokeContinuationT6(WhenAnyPromise12 self, in LuminTaskAwaiter awaiter, int index)
+    static void TryInvokeContinuationT6(WhenAnyPromise12 self, in LuminTask awaiter, int index)
     {
         try
         {
@@ -8353,7 +8353,7 @@ public sealed unsafe class WhenAnyPromise12
             LuminTaskSourceCore<int>.TrySetResult(self._core, index);
         }
     }
-    static void TryInvokeContinuationT7(WhenAnyPromise12 self, in LuminTaskAwaiter awaiter, int index)
+    static void TryInvokeContinuationT7(WhenAnyPromise12 self, in LuminTask awaiter, int index)
     {
         try
         {
@@ -8373,7 +8373,7 @@ public sealed unsafe class WhenAnyPromise12
             LuminTaskSourceCore<int>.TrySetResult(self._core, index);
         }
     }
-    static void TryInvokeContinuationT8(WhenAnyPromise12 self, in LuminTaskAwaiter awaiter, int index)
+    static void TryInvokeContinuationT8(WhenAnyPromise12 self, in LuminTask awaiter, int index)
     {
         try
         {
@@ -8393,7 +8393,7 @@ public sealed unsafe class WhenAnyPromise12
             LuminTaskSourceCore<int>.TrySetResult(self._core, index);
         }
     }
-    static void TryInvokeContinuationT9(WhenAnyPromise12 self, in LuminTaskAwaiter awaiter, int index)
+    static void TryInvokeContinuationT9(WhenAnyPromise12 self, in LuminTask awaiter, int index)
     {
         try
         {
@@ -8413,7 +8413,7 @@ public sealed unsafe class WhenAnyPromise12
             LuminTaskSourceCore<int>.TrySetResult(self._core, index);
         }
     }
-    static void TryInvokeContinuationT10(WhenAnyPromise12 self, in LuminTaskAwaiter awaiter, int index)
+    static void TryInvokeContinuationT10(WhenAnyPromise12 self, in LuminTask awaiter, int index)
     {
         try
         {
@@ -8433,7 +8433,7 @@ public sealed unsafe class WhenAnyPromise12
             LuminTaskSourceCore<int>.TrySetResult(self._core, index);
         }
     }
-    static void TryInvokeContinuationT11(WhenAnyPromise12 self, in LuminTaskAwaiter awaiter, int index)
+    static void TryInvokeContinuationT11(WhenAnyPromise12 self, in LuminTask awaiter, int index)
     {
         try
         {
@@ -8453,7 +8453,7 @@ public sealed unsafe class WhenAnyPromise12
             LuminTaskSourceCore<int>.TrySetResult(self._core, index);
         }
     }
-    static void TryInvokeContinuationT12(WhenAnyPromise12 self, in LuminTaskAwaiter awaiter, int index)
+    static void TryInvokeContinuationT12(WhenAnyPromise12 self, in LuminTask awaiter, int index)
     {
         try
         {
@@ -8497,13 +8497,13 @@ public sealed unsafe class WhenAnyPromise13
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise13, LuminTaskAwaiter, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise13, LuminTask, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT1(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, index));
+                }, StateTuple.Create((this, awaiter, index)));
             }
         }
         {
@@ -8517,13 +8517,13 @@ public sealed unsafe class WhenAnyPromise13
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise13, LuminTaskAwaiter, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise13, LuminTask, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT2(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, index));
+                }, StateTuple.Create((this, awaiter, index)));
             }
         }
         {
@@ -8537,13 +8537,13 @@ public sealed unsafe class WhenAnyPromise13
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise13, LuminTaskAwaiter, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise13, LuminTask, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT3(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, index));
+                }, StateTuple.Create((this, awaiter, index)));
             }
         }
         {
@@ -8557,13 +8557,13 @@ public sealed unsafe class WhenAnyPromise13
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise13, LuminTaskAwaiter, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise13, LuminTask, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT4(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, index));
+                }, StateTuple.Create((this, awaiter, index)));
             }
         }
         {
@@ -8577,13 +8577,13 @@ public sealed unsafe class WhenAnyPromise13
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise13, LuminTaskAwaiter, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise13, LuminTask, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT5(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, index));
+                }, StateTuple.Create((this, awaiter, index)));
             }
         }
         {
@@ -8597,13 +8597,13 @@ public sealed unsafe class WhenAnyPromise13
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise13, LuminTaskAwaiter, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise13, LuminTask, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT6(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, index));
+                }, StateTuple.Create((this, awaiter, index)));
             }
         }
         {
@@ -8617,13 +8617,13 @@ public sealed unsafe class WhenAnyPromise13
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise13, LuminTaskAwaiter, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise13, LuminTask, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT7(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, index));
+                }, StateTuple.Create((this, awaiter, index)));
             }
         }
         {
@@ -8637,13 +8637,13 @@ public sealed unsafe class WhenAnyPromise13
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise13, LuminTaskAwaiter, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise13, LuminTask, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT8(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, index));
+                }, StateTuple.Create((this, awaiter, index)));
             }
         }
         {
@@ -8657,13 +8657,13 @@ public sealed unsafe class WhenAnyPromise13
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise13, LuminTaskAwaiter, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise13, LuminTask, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT9(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, index));
+                }, StateTuple.Create((this, awaiter, index)));
             }
         }
         {
@@ -8677,13 +8677,13 @@ public sealed unsafe class WhenAnyPromise13
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise13, LuminTaskAwaiter, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise13, LuminTask, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT10(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, index));
+                }, StateTuple.Create((this, awaiter, index)));
             }
         }
         {
@@ -8697,13 +8697,13 @@ public sealed unsafe class WhenAnyPromise13
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise13, LuminTaskAwaiter, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise13, LuminTask, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT11(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, index));
+                }, StateTuple.Create((this, awaiter, index)));
             }
         }
         {
@@ -8717,13 +8717,13 @@ public sealed unsafe class WhenAnyPromise13
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise13, LuminTaskAwaiter, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise13, LuminTask, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT12(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, index));
+                }, StateTuple.Create((this, awaiter, index)));
             }
         }
         {
@@ -8737,18 +8737,18 @@ public sealed unsafe class WhenAnyPromise13
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise13, LuminTaskAwaiter, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise13, LuminTask, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT13(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, index));
+                }, StateTuple.Create((this, awaiter, index)));
             }
         }
     }
 
-    static void TryInvokeContinuationT1(WhenAnyPromise13 self, in LuminTaskAwaiter awaiter, int index)
+    static void TryInvokeContinuationT1(WhenAnyPromise13 self, in LuminTask awaiter, int index)
     {
         try
         {
@@ -8768,7 +8768,7 @@ public sealed unsafe class WhenAnyPromise13
             LuminTaskSourceCore<int>.TrySetResult(self._core, index);
         }
     }
-    static void TryInvokeContinuationT2(WhenAnyPromise13 self, in LuminTaskAwaiter awaiter, int index)
+    static void TryInvokeContinuationT2(WhenAnyPromise13 self, in LuminTask awaiter, int index)
     {
         try
         {
@@ -8788,7 +8788,7 @@ public sealed unsafe class WhenAnyPromise13
             LuminTaskSourceCore<int>.TrySetResult(self._core, index);
         }
     }
-    static void TryInvokeContinuationT3(WhenAnyPromise13 self, in LuminTaskAwaiter awaiter, int index)
+    static void TryInvokeContinuationT3(WhenAnyPromise13 self, in LuminTask awaiter, int index)
     {
         try
         {
@@ -8808,7 +8808,7 @@ public sealed unsafe class WhenAnyPromise13
             LuminTaskSourceCore<int>.TrySetResult(self._core, index);
         }
     }
-    static void TryInvokeContinuationT4(WhenAnyPromise13 self, in LuminTaskAwaiter awaiter, int index)
+    static void TryInvokeContinuationT4(WhenAnyPromise13 self, in LuminTask awaiter, int index)
     {
         try
         {
@@ -8828,7 +8828,7 @@ public sealed unsafe class WhenAnyPromise13
             LuminTaskSourceCore<int>.TrySetResult(self._core, index);
         }
     }
-    static void TryInvokeContinuationT5(WhenAnyPromise13 self, in LuminTaskAwaiter awaiter, int index)
+    static void TryInvokeContinuationT5(WhenAnyPromise13 self, in LuminTask awaiter, int index)
     {
         try
         {
@@ -8848,7 +8848,7 @@ public sealed unsafe class WhenAnyPromise13
             LuminTaskSourceCore<int>.TrySetResult(self._core, index);
         }
     }
-    static void TryInvokeContinuationT6(WhenAnyPromise13 self, in LuminTaskAwaiter awaiter, int index)
+    static void TryInvokeContinuationT6(WhenAnyPromise13 self, in LuminTask awaiter, int index)
     {
         try
         {
@@ -8868,7 +8868,7 @@ public sealed unsafe class WhenAnyPromise13
             LuminTaskSourceCore<int>.TrySetResult(self._core, index);
         }
     }
-    static void TryInvokeContinuationT7(WhenAnyPromise13 self, in LuminTaskAwaiter awaiter, int index)
+    static void TryInvokeContinuationT7(WhenAnyPromise13 self, in LuminTask awaiter, int index)
     {
         try
         {
@@ -8888,7 +8888,7 @@ public sealed unsafe class WhenAnyPromise13
             LuminTaskSourceCore<int>.TrySetResult(self._core, index);
         }
     }
-    static void TryInvokeContinuationT8(WhenAnyPromise13 self, in LuminTaskAwaiter awaiter, int index)
+    static void TryInvokeContinuationT8(WhenAnyPromise13 self, in LuminTask awaiter, int index)
     {
         try
         {
@@ -8908,7 +8908,7 @@ public sealed unsafe class WhenAnyPromise13
             LuminTaskSourceCore<int>.TrySetResult(self._core, index);
         }
     }
-    static void TryInvokeContinuationT9(WhenAnyPromise13 self, in LuminTaskAwaiter awaiter, int index)
+    static void TryInvokeContinuationT9(WhenAnyPromise13 self, in LuminTask awaiter, int index)
     {
         try
         {
@@ -8928,7 +8928,7 @@ public sealed unsafe class WhenAnyPromise13
             LuminTaskSourceCore<int>.TrySetResult(self._core, index);
         }
     }
-    static void TryInvokeContinuationT10(WhenAnyPromise13 self, in LuminTaskAwaiter awaiter, int index)
+    static void TryInvokeContinuationT10(WhenAnyPromise13 self, in LuminTask awaiter, int index)
     {
         try
         {
@@ -8948,7 +8948,7 @@ public sealed unsafe class WhenAnyPromise13
             LuminTaskSourceCore<int>.TrySetResult(self._core, index);
         }
     }
-    static void TryInvokeContinuationT11(WhenAnyPromise13 self, in LuminTaskAwaiter awaiter, int index)
+    static void TryInvokeContinuationT11(WhenAnyPromise13 self, in LuminTask awaiter, int index)
     {
         try
         {
@@ -8968,7 +8968,7 @@ public sealed unsafe class WhenAnyPromise13
             LuminTaskSourceCore<int>.TrySetResult(self._core, index);
         }
     }
-    static void TryInvokeContinuationT12(WhenAnyPromise13 self, in LuminTaskAwaiter awaiter, int index)
+    static void TryInvokeContinuationT12(WhenAnyPromise13 self, in LuminTask awaiter, int index)
     {
         try
         {
@@ -8988,7 +8988,7 @@ public sealed unsafe class WhenAnyPromise13
             LuminTaskSourceCore<int>.TrySetResult(self._core, index);
         }
     }
-    static void TryInvokeContinuationT13(WhenAnyPromise13 self, in LuminTaskAwaiter awaiter, int index)
+    static void TryInvokeContinuationT13(WhenAnyPromise13 self, in LuminTask awaiter, int index)
     {
         try
         {
@@ -9032,13 +9032,13 @@ public sealed unsafe class WhenAnyPromise14
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise14, LuminTaskAwaiter, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise14, LuminTask, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT1(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, index));
+                }, StateTuple.Create((this, awaiter, index)));
             }
         }
         {
@@ -9052,13 +9052,13 @@ public sealed unsafe class WhenAnyPromise14
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise14, LuminTaskAwaiter, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise14, LuminTask, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT2(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, index));
+                }, StateTuple.Create((this, awaiter, index)));
             }
         }
         {
@@ -9072,13 +9072,13 @@ public sealed unsafe class WhenAnyPromise14
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise14, LuminTaskAwaiter, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise14, LuminTask, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT3(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, index));
+                }, StateTuple.Create((this, awaiter, index)));
             }
         }
         {
@@ -9092,13 +9092,13 @@ public sealed unsafe class WhenAnyPromise14
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise14, LuminTaskAwaiter, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise14, LuminTask, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT4(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, index));
+                }, StateTuple.Create((this, awaiter, index)));
             }
         }
         {
@@ -9112,13 +9112,13 @@ public sealed unsafe class WhenAnyPromise14
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise14, LuminTaskAwaiter, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise14, LuminTask, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT5(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, index));
+                }, StateTuple.Create((this, awaiter, index)));
             }
         }
         {
@@ -9132,13 +9132,13 @@ public sealed unsafe class WhenAnyPromise14
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise14, LuminTaskAwaiter, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise14, LuminTask, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT6(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, index));
+                }, StateTuple.Create((this, awaiter, index)));
             }
         }
         {
@@ -9152,13 +9152,13 @@ public sealed unsafe class WhenAnyPromise14
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise14, LuminTaskAwaiter, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise14, LuminTask, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT7(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, index));
+                }, StateTuple.Create((this, awaiter, index)));
             }
         }
         {
@@ -9172,13 +9172,13 @@ public sealed unsafe class WhenAnyPromise14
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise14, LuminTaskAwaiter, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise14, LuminTask, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT8(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, index));
+                }, StateTuple.Create((this, awaiter, index)));
             }
         }
         {
@@ -9192,13 +9192,13 @@ public sealed unsafe class WhenAnyPromise14
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise14, LuminTaskAwaiter, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise14, LuminTask, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT9(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, index));
+                }, StateTuple.Create((this, awaiter, index)));
             }
         }
         {
@@ -9212,13 +9212,13 @@ public sealed unsafe class WhenAnyPromise14
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise14, LuminTaskAwaiter, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise14, LuminTask, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT10(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, index));
+                }, StateTuple.Create((this, awaiter, index)));
             }
         }
         {
@@ -9232,13 +9232,13 @@ public sealed unsafe class WhenAnyPromise14
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise14, LuminTaskAwaiter, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise14, LuminTask, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT11(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, index));
+                }, StateTuple.Create((this, awaiter, index)));
             }
         }
         {
@@ -9252,13 +9252,13 @@ public sealed unsafe class WhenAnyPromise14
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise14, LuminTaskAwaiter, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise14, LuminTask, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT12(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, index));
+                }, StateTuple.Create((this, awaiter, index)));
             }
         }
         {
@@ -9272,13 +9272,13 @@ public sealed unsafe class WhenAnyPromise14
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise14, LuminTaskAwaiter, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise14, LuminTask, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT13(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, index));
+                }, StateTuple.Create((this, awaiter, index)));
             }
         }
         {
@@ -9292,18 +9292,18 @@ public sealed unsafe class WhenAnyPromise14
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise14, LuminTaskAwaiter, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise14, LuminTask, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT14(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, index));
+                }, StateTuple.Create((this, awaiter, index)));
             }
         }
     }
 
-    static void TryInvokeContinuationT1(WhenAnyPromise14 self, in LuminTaskAwaiter awaiter, int index)
+    static void TryInvokeContinuationT1(WhenAnyPromise14 self, in LuminTask awaiter, int index)
     {
         try
         {
@@ -9323,7 +9323,7 @@ public sealed unsafe class WhenAnyPromise14
             LuminTaskSourceCore<int>.TrySetResult(self._core, index);
         }
     }
-    static void TryInvokeContinuationT2(WhenAnyPromise14 self, in LuminTaskAwaiter awaiter, int index)
+    static void TryInvokeContinuationT2(WhenAnyPromise14 self, in LuminTask awaiter, int index)
     {
         try
         {
@@ -9343,7 +9343,7 @@ public sealed unsafe class WhenAnyPromise14
             LuminTaskSourceCore<int>.TrySetResult(self._core, index);
         }
     }
-    static void TryInvokeContinuationT3(WhenAnyPromise14 self, in LuminTaskAwaiter awaiter, int index)
+    static void TryInvokeContinuationT3(WhenAnyPromise14 self, in LuminTask awaiter, int index)
     {
         try
         {
@@ -9363,7 +9363,7 @@ public sealed unsafe class WhenAnyPromise14
             LuminTaskSourceCore<int>.TrySetResult(self._core, index);
         }
     }
-    static void TryInvokeContinuationT4(WhenAnyPromise14 self, in LuminTaskAwaiter awaiter, int index)
+    static void TryInvokeContinuationT4(WhenAnyPromise14 self, in LuminTask awaiter, int index)
     {
         try
         {
@@ -9383,7 +9383,7 @@ public sealed unsafe class WhenAnyPromise14
             LuminTaskSourceCore<int>.TrySetResult(self._core, index);
         }
     }
-    static void TryInvokeContinuationT5(WhenAnyPromise14 self, in LuminTaskAwaiter awaiter, int index)
+    static void TryInvokeContinuationT5(WhenAnyPromise14 self, in LuminTask awaiter, int index)
     {
         try
         {
@@ -9403,7 +9403,7 @@ public sealed unsafe class WhenAnyPromise14
             LuminTaskSourceCore<int>.TrySetResult(self._core, index);
         }
     }
-    static void TryInvokeContinuationT6(WhenAnyPromise14 self, in LuminTaskAwaiter awaiter, int index)
+    static void TryInvokeContinuationT6(WhenAnyPromise14 self, in LuminTask awaiter, int index)
     {
         try
         {
@@ -9423,7 +9423,7 @@ public sealed unsafe class WhenAnyPromise14
             LuminTaskSourceCore<int>.TrySetResult(self._core, index);
         }
     }
-    static void TryInvokeContinuationT7(WhenAnyPromise14 self, in LuminTaskAwaiter awaiter, int index)
+    static void TryInvokeContinuationT7(WhenAnyPromise14 self, in LuminTask awaiter, int index)
     {
         try
         {
@@ -9443,7 +9443,7 @@ public sealed unsafe class WhenAnyPromise14
             LuminTaskSourceCore<int>.TrySetResult(self._core, index);
         }
     }
-    static void TryInvokeContinuationT8(WhenAnyPromise14 self, in LuminTaskAwaiter awaiter, int index)
+    static void TryInvokeContinuationT8(WhenAnyPromise14 self, in LuminTask awaiter, int index)
     {
         try
         {
@@ -9463,7 +9463,7 @@ public sealed unsafe class WhenAnyPromise14
             LuminTaskSourceCore<int>.TrySetResult(self._core, index);
         }
     }
-    static void TryInvokeContinuationT9(WhenAnyPromise14 self, in LuminTaskAwaiter awaiter, int index)
+    static void TryInvokeContinuationT9(WhenAnyPromise14 self, in LuminTask awaiter, int index)
     {
         try
         {
@@ -9483,7 +9483,7 @@ public sealed unsafe class WhenAnyPromise14
             LuminTaskSourceCore<int>.TrySetResult(self._core, index);
         }
     }
-    static void TryInvokeContinuationT10(WhenAnyPromise14 self, in LuminTaskAwaiter awaiter, int index)
+    static void TryInvokeContinuationT10(WhenAnyPromise14 self, in LuminTask awaiter, int index)
     {
         try
         {
@@ -9503,7 +9503,7 @@ public sealed unsafe class WhenAnyPromise14
             LuminTaskSourceCore<int>.TrySetResult(self._core, index);
         }
     }
-    static void TryInvokeContinuationT11(WhenAnyPromise14 self, in LuminTaskAwaiter awaiter, int index)
+    static void TryInvokeContinuationT11(WhenAnyPromise14 self, in LuminTask awaiter, int index)
     {
         try
         {
@@ -9523,7 +9523,7 @@ public sealed unsafe class WhenAnyPromise14
             LuminTaskSourceCore<int>.TrySetResult(self._core, index);
         }
     }
-    static void TryInvokeContinuationT12(WhenAnyPromise14 self, in LuminTaskAwaiter awaiter, int index)
+    static void TryInvokeContinuationT12(WhenAnyPromise14 self, in LuminTask awaiter, int index)
     {
         try
         {
@@ -9543,7 +9543,7 @@ public sealed unsafe class WhenAnyPromise14
             LuminTaskSourceCore<int>.TrySetResult(self._core, index);
         }
     }
-    static void TryInvokeContinuationT13(WhenAnyPromise14 self, in LuminTaskAwaiter awaiter, int index)
+    static void TryInvokeContinuationT13(WhenAnyPromise14 self, in LuminTask awaiter, int index)
     {
         try
         {
@@ -9563,7 +9563,7 @@ public sealed unsafe class WhenAnyPromise14
             LuminTaskSourceCore<int>.TrySetResult(self._core, index);
         }
     }
-    static void TryInvokeContinuationT14(WhenAnyPromise14 self, in LuminTaskAwaiter awaiter, int index)
+    static void TryInvokeContinuationT14(WhenAnyPromise14 self, in LuminTask awaiter, int index)
     {
         try
         {
@@ -9607,13 +9607,13 @@ public sealed unsafe class WhenAnyPromise15
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise15, LuminTaskAwaiter, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise15, LuminTask, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT1(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, index));
+                }, StateTuple.Create((this, awaiter, index)));
             }
         }
         {
@@ -9627,13 +9627,13 @@ public sealed unsafe class WhenAnyPromise15
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise15, LuminTaskAwaiter, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise15, LuminTask, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT2(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, index));
+                }, StateTuple.Create((this, awaiter, index)));
             }
         }
         {
@@ -9647,13 +9647,13 @@ public sealed unsafe class WhenAnyPromise15
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise15, LuminTaskAwaiter, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise15, LuminTask, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT3(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, index));
+                }, StateTuple.Create((this, awaiter, index)));
             }
         }
         {
@@ -9667,13 +9667,13 @@ public sealed unsafe class WhenAnyPromise15
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise15, LuminTaskAwaiter, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise15, LuminTask, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT4(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, index));
+                }, StateTuple.Create((this, awaiter, index)));
             }
         }
         {
@@ -9687,13 +9687,13 @@ public sealed unsafe class WhenAnyPromise15
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise15, LuminTaskAwaiter, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise15, LuminTask, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT5(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, index));
+                }, StateTuple.Create((this, awaiter, index)));
             }
         }
         {
@@ -9707,13 +9707,13 @@ public sealed unsafe class WhenAnyPromise15
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise15, LuminTaskAwaiter, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise15, LuminTask, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT6(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, index));
+                }, StateTuple.Create((this, awaiter, index)));
             }
         }
         {
@@ -9727,13 +9727,13 @@ public sealed unsafe class WhenAnyPromise15
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise15, LuminTaskAwaiter, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise15, LuminTask, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT7(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, index));
+                }, StateTuple.Create((this, awaiter, index)));
             }
         }
         {
@@ -9747,13 +9747,13 @@ public sealed unsafe class WhenAnyPromise15
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise15, LuminTaskAwaiter, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise15, LuminTask, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT8(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, index));
+                }, StateTuple.Create((this, awaiter, index)));
             }
         }
         {
@@ -9767,13 +9767,13 @@ public sealed unsafe class WhenAnyPromise15
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise15, LuminTaskAwaiter, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise15, LuminTask, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT9(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, index));
+                }, StateTuple.Create((this, awaiter, index)));
             }
         }
         {
@@ -9787,13 +9787,13 @@ public sealed unsafe class WhenAnyPromise15
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise15, LuminTaskAwaiter, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise15, LuminTask, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT10(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, index));
+                }, StateTuple.Create((this, awaiter, index)));
             }
         }
         {
@@ -9807,13 +9807,13 @@ public sealed unsafe class WhenAnyPromise15
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise15, LuminTaskAwaiter, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise15, LuminTask, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT11(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, index));
+                }, StateTuple.Create((this, awaiter, index)));
             }
         }
         {
@@ -9827,13 +9827,13 @@ public sealed unsafe class WhenAnyPromise15
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise15, LuminTaskAwaiter, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise15, LuminTask, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT12(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, index));
+                }, StateTuple.Create((this, awaiter, index)));
             }
         }
         {
@@ -9847,13 +9847,13 @@ public sealed unsafe class WhenAnyPromise15
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise15, LuminTaskAwaiter, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise15, LuminTask, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT13(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, index));
+                }, StateTuple.Create((this, awaiter, index)));
             }
         }
         {
@@ -9867,13 +9867,13 @@ public sealed unsafe class WhenAnyPromise15
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise15, LuminTaskAwaiter, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise15, LuminTask, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT14(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, index));
+                }, StateTuple.Create((this, awaiter, index)));
             }
         }
         {
@@ -9887,18 +9887,18 @@ public sealed unsafe class WhenAnyPromise15
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var t = (StateTuple<WhenAnyPromise15, LuminTaskAwaiter, int>)state;
-                    var owner = t.Item1;
-                    var awaiter = t.Item2;
-                    var index = t.Item3;
+                    var t = (StateTuple<(WhenAnyPromise15, LuminTask, int)>)state;
+                    var owner = t.Item.Item1;
+                    var awaiter = t.Item.Item2;
+                    var index = t.Item.Item3;
                     t.Dispose();
                     TryInvokeContinuationT15(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, index));
+                }, StateTuple.Create((this, awaiter, index)));
             }
         }
     }
 
-    static void TryInvokeContinuationT1(WhenAnyPromise15 self, in LuminTaskAwaiter awaiter, int index)
+    static void TryInvokeContinuationT1(WhenAnyPromise15 self, in LuminTask awaiter, int index)
     {
         try
         {
@@ -9918,7 +9918,7 @@ public sealed unsafe class WhenAnyPromise15
             LuminTaskSourceCore<int>.TrySetResult(self._core, index);
         }
     }
-    static void TryInvokeContinuationT2(WhenAnyPromise15 self, in LuminTaskAwaiter awaiter, int index)
+    static void TryInvokeContinuationT2(WhenAnyPromise15 self, in LuminTask awaiter, int index)
     {
         try
         {
@@ -9938,7 +9938,7 @@ public sealed unsafe class WhenAnyPromise15
             LuminTaskSourceCore<int>.TrySetResult(self._core, index);
         }
     }
-    static void TryInvokeContinuationT3(WhenAnyPromise15 self, in LuminTaskAwaiter awaiter, int index)
+    static void TryInvokeContinuationT3(WhenAnyPromise15 self, in LuminTask awaiter, int index)
     {
         try
         {
@@ -9958,7 +9958,7 @@ public sealed unsafe class WhenAnyPromise15
             LuminTaskSourceCore<int>.TrySetResult(self._core, index);
         }
     }
-    static void TryInvokeContinuationT4(WhenAnyPromise15 self, in LuminTaskAwaiter awaiter, int index)
+    static void TryInvokeContinuationT4(WhenAnyPromise15 self, in LuminTask awaiter, int index)
     {
         try
         {
@@ -9978,7 +9978,7 @@ public sealed unsafe class WhenAnyPromise15
             LuminTaskSourceCore<int>.TrySetResult(self._core, index);
         }
     }
-    static void TryInvokeContinuationT5(WhenAnyPromise15 self, in LuminTaskAwaiter awaiter, int index)
+    static void TryInvokeContinuationT5(WhenAnyPromise15 self, in LuminTask awaiter, int index)
     {
         try
         {
@@ -9998,7 +9998,7 @@ public sealed unsafe class WhenAnyPromise15
             LuminTaskSourceCore<int>.TrySetResult(self._core, index);
         }
     }
-    static void TryInvokeContinuationT6(WhenAnyPromise15 self, in LuminTaskAwaiter awaiter, int index)
+    static void TryInvokeContinuationT6(WhenAnyPromise15 self, in LuminTask awaiter, int index)
     {
         try
         {
@@ -10018,7 +10018,7 @@ public sealed unsafe class WhenAnyPromise15
             LuminTaskSourceCore<int>.TrySetResult(self._core, index);
         }
     }
-    static void TryInvokeContinuationT7(WhenAnyPromise15 self, in LuminTaskAwaiter awaiter, int index)
+    static void TryInvokeContinuationT7(WhenAnyPromise15 self, in LuminTask awaiter, int index)
     {
         try
         {
@@ -10038,7 +10038,7 @@ public sealed unsafe class WhenAnyPromise15
             LuminTaskSourceCore<int>.TrySetResult(self._core, index);
         }
     }
-    static void TryInvokeContinuationT8(WhenAnyPromise15 self, in LuminTaskAwaiter awaiter, int index)
+    static void TryInvokeContinuationT8(WhenAnyPromise15 self, in LuminTask awaiter, int index)
     {
         try
         {
@@ -10058,7 +10058,7 @@ public sealed unsafe class WhenAnyPromise15
             LuminTaskSourceCore<int>.TrySetResult(self._core, index);
         }
     }
-    static void TryInvokeContinuationT9(WhenAnyPromise15 self, in LuminTaskAwaiter awaiter, int index)
+    static void TryInvokeContinuationT9(WhenAnyPromise15 self, in LuminTask awaiter, int index)
     {
         try
         {
@@ -10078,7 +10078,7 @@ public sealed unsafe class WhenAnyPromise15
             LuminTaskSourceCore<int>.TrySetResult(self._core, index);
         }
     }
-    static void TryInvokeContinuationT10(WhenAnyPromise15 self, in LuminTaskAwaiter awaiter, int index)
+    static void TryInvokeContinuationT10(WhenAnyPromise15 self, in LuminTask awaiter, int index)
     {
         try
         {
@@ -10098,7 +10098,7 @@ public sealed unsafe class WhenAnyPromise15
             LuminTaskSourceCore<int>.TrySetResult(self._core, index);
         }
     }
-    static void TryInvokeContinuationT11(WhenAnyPromise15 self, in LuminTaskAwaiter awaiter, int index)
+    static void TryInvokeContinuationT11(WhenAnyPromise15 self, in LuminTask awaiter, int index)
     {
         try
         {
@@ -10118,7 +10118,7 @@ public sealed unsafe class WhenAnyPromise15
             LuminTaskSourceCore<int>.TrySetResult(self._core, index);
         }
     }
-    static void TryInvokeContinuationT12(WhenAnyPromise15 self, in LuminTaskAwaiter awaiter, int index)
+    static void TryInvokeContinuationT12(WhenAnyPromise15 self, in LuminTask awaiter, int index)
     {
         try
         {
@@ -10138,7 +10138,7 @@ public sealed unsafe class WhenAnyPromise15
             LuminTaskSourceCore<int>.TrySetResult(self._core, index);
         }
     }
-    static void TryInvokeContinuationT13(WhenAnyPromise15 self, in LuminTaskAwaiter awaiter, int index)
+    static void TryInvokeContinuationT13(WhenAnyPromise15 self, in LuminTask awaiter, int index)
     {
         try
         {
@@ -10158,7 +10158,7 @@ public sealed unsafe class WhenAnyPromise15
             LuminTaskSourceCore<int>.TrySetResult(self._core, index);
         }
     }
-    static void TryInvokeContinuationT14(WhenAnyPromise15 self, in LuminTaskAwaiter awaiter, int index)
+    static void TryInvokeContinuationT14(WhenAnyPromise15 self, in LuminTask awaiter, int index)
     {
         try
         {
@@ -10178,7 +10178,7 @@ public sealed unsafe class WhenAnyPromise15
             LuminTaskSourceCore<int>.TrySetResult(self._core, index);
         }
     }
-    static void TryInvokeContinuationT15(WhenAnyPromise15 self, in LuminTaskAwaiter awaiter, int index)
+    static void TryInvokeContinuationT15(WhenAnyPromise15 self, in LuminTask awaiter, int index)
     {
         try
         {
@@ -10242,18 +10242,18 @@ public sealed unsafe class WhenAnyPromise
             {
                 awaiter.SourceOnCompleted(static state =>
                 {
-                    var tuple = (StateTuple<WhenAnyPromise, LuminTaskAwaiter, int>)state;
-                    var owner = tuple.Item1;
-                    var awaiter = tuple.Item2;
-                    var index = tuple.Item3;
+                    var tuple = (StateTuple<(WhenAnyPromise, LuminTask, int)>)state;
+                    var owner = tuple.Item.Item1;
+                    var awaiter = tuple.Item.Item2;
+                    var index = tuple.Item.Item3;
                     tuple.Dispose();
                     TryInvokeContinuation(owner, awaiter, index);
-                }, StateTuple.Create(this, awaiter, index));
+                }, StateTuple.Create((this, awaiter, index)));
             }
         }
     }
 
-    static void TryInvokeContinuation(WhenAnyPromise self, in LuminTaskAwaiter awaiter, int index)
+    static void TryInvokeContinuation(WhenAnyPromise self, in LuminTask awaiter, int index)
     {
         try
         {

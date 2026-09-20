@@ -38,7 +38,7 @@ public unsafe struct WaitUntilValueChangedPromise<TTarget, TValue>
         var currentValue = monitorFunction(target);
         var comparer = equalityComparer;
 
-        var stateTuple = StateTuple.Create(target, currentValue, comparer);
+        var stateTuple = StateTuple.Create((target, currentValue, comparer));
 
         PlayerLoopHelper.AddAction(timing, new LuminTaskState(core, cancellationToken, monitorFunction, stateTuple), MoveNext, &MoveNext);
 
@@ -78,8 +78,8 @@ public unsafe struct WaitUntilValueChangedPromise<TTarget, TValue>
     private static bool MoveNext(in LuminTaskState state)
     {
         Func<TTarget, TValue> func = Unsafe.As<Func<TTarget, TValue>>(state.State);
-        StateTuple<TTarget, TValue, IEqualityComparer<TValue>> stateTuple =
-            Unsafe.As<StateTuple<TTarget, TValue, IEqualityComparer<TValue>>>(state.StateTuple);
+        StateTuple<(TTarget, TValue, IEqualityComparer<TValue>)> stateTuple =
+            Unsafe.As<StateTuple<(TTarget, TValue, IEqualityComparer<TValue>)>>(state.StateTuple);
 
         if (state.CancellationToken.IsCancellationRequested)
         {
@@ -91,8 +91,8 @@ public unsafe struct WaitUntilValueChangedPromise<TTarget, TValue>
 
         try
         {
-            var nextValue = func(stateTuple.Item1);
-            if (stateTuple.Item3.Equals(stateTuple.Item2, nextValue))
+            var nextValue = func(stateTuple.Item.Item1);
+            if (stateTuple.Item.Item3.Equals(stateTuple.Item.Item2, nextValue))
             {
                 return true;
             }

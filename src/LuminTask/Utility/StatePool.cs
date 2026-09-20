@@ -7,36 +7,36 @@ namespace LuminThread.Utility;
 public static class StateTuple
 {
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static StateTuple<T1> Create<T1>(in T1 item1)
+    public static StateTuple<T> Create<T>(in T item)
     {
-        return StatePool<T1>.Create(item1);
+        return StatePool<T>.Create(item);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static StateTuple<T1, T2> Create<T1, T2>(in T1 item1, in T2 item2)
+    public static StateTuple<(T1, T2)> Create<T1, T2>(in T1 item1, in T2 item2)
     {
-        return StatePool<T1, T2>.Create(item1, item2);
+        return StatePool<(T1, T2)>.Create((item1, item2));
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static StateTuple<T1, T2, T3> Create<T1, T2, T3>(in T1 item1, in T2 item2, in T3 item3)
+    public static StateTuple<(T1, T2, T3)> Create<T1, T2, T3>(in T1 item1, in T2 item2, in T3 item3)
     {
-        return StatePool<T1, T2, T3>.Create(item1, item2, item3);
+        return StatePool<(T1, T2, T3)>.Create((item1, item2, item3));
     }
 }
 
-public class StateTuple<T1> : IDisposable
+public class StateTuple<T> : IDisposable
 #if NET8_0_OR_GREATER
-    , IPooledObjectPolicy<StateTuple<T1>>
+    , IPooledObjectPolicy<StateTuple<T>>
 #endif
 {
-    public T1 Item1;
+    public T Item;
     private int _disposed; // 0 = 可用, 1 = 已归还/Dispose 中
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public void Deconstruct(out T1 item1)
+    public void Deconstruct(out T item)
     {
-        item1 = this.Item1;
+        item = Item;
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -45,7 +45,7 @@ public class StateTuple<T1> : IDisposable
         if (Interlocked.Exchange(ref _disposed, 1) != 0)
             return;
 
-        StatePool<T1>.Return(this);
+        StatePool<T>.Return(this);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -53,199 +53,45 @@ public class StateTuple<T1> : IDisposable
 
 #if NET8_0_OR_GREATER
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    static StateTuple<T1> IPooledObjectPolicy<StateTuple<T1>>.Create() => new();
+    static StateTuple<T> IPooledObjectPolicy<StateTuple<T>>.Create() => new();
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    static bool IPooledObjectPolicy<StateTuple<T1>>.Return(StateTuple<T1> obj) => true;
+    static bool IPooledObjectPolicy<StateTuple<T>>.Return(StateTuple<T> obj) => true;
 #endif
 }
 
-public static class StatePool<T1>
+public static class StatePool<T>
 {
 #if NET8_0_OR_GREATER
-    private static readonly ObjectPool<StateTuple<T1>> _pool = new ();
+    private static readonly ObjectPool<StateTuple<T>> _pool = new();
 #else
-    private static readonly ObjectPool<StateTuple<T1>> _pool = new (new StateTuplePoolPolicy());
+    private static readonly ObjectPool<StateTuple<T>> _pool = new(new StateTuplePoolPolicy());
 #endif
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static StateTuple<T1> Create(in T1 item1)
+    public static StateTuple<T> Create(in T item)
     {
-        var obj = _pool.Rent();
-        obj.Reset();
-        obj.Item1 = item1;
-        return obj;
+        var tuple = _pool.Rent();
+        tuple.Reset();
+        tuple.Item = item;
+        return tuple;
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static void Return(StateTuple<T1> tuple)
+    public static void Return(StateTuple<T> tuple)
     {
-        tuple.Item1 = default;
+        tuple.Item = default;
         _pool.Return(tuple);
     }
 
 #if NETSTANDARD2_1
-    private sealed class StateTuplePoolPolicy : IPooledObjectPolicy<StateTuple<T1>>
+    private sealed class StateTuplePoolPolicy : IPooledObjectPolicy<StateTuple<T>>
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        StateTuple<T1> IPooledObjectPolicy<StateTuple<T1>>.Create() => new();
+        StateTuple<T> IPooledObjectPolicy<StateTuple<T>>.Create() => new();
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        bool IPooledObjectPolicy<StateTuple<T1>>.Return(StateTuple<T1> obj) => true;
-    }
-#endif
-}
-
-public class StateTuple<T1, T2> : IDisposable
-#if NET8_0_OR_GREATER
-    , IPooledObjectPolicy<StateTuple<T1, T2>>
-#endif
-{
-    public T1 Item1;
-    public T2 Item2;
-    private int _disposed;
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public void Deconstruct(out T1 item1, out T2 item2)
-    {
-        item1 = this.Item1;
-        item2 = this.Item2;
-    }
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public void Dispose()
-    {
-        if (Interlocked.Exchange(ref _disposed, 1) != 0)
-            return;
-
-        StatePool<T1, T2>.Return(this);
-    }
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal void Reset() => _disposed = 0;
-
-#if NET8_0_OR_GREATER
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    static StateTuple<T1, T2> IPooledObjectPolicy<StateTuple<T1, T2>>.Create() => new();
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    static bool IPooledObjectPolicy<StateTuple<T1, T2>>.Return(StateTuple<T1, T2> obj) => true;
-#endif
-}
-
-public static class StatePool<T1, T2>
-{
-#if NET8_0_OR_GREATER
-    private static readonly ObjectPool<StateTuple<T1, T2>> _pool = new ();
-#else
-    private static readonly ObjectPool<StateTuple<T1, T2>> _pool = new (new StateTuplePoolPolicy());
-#endif
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static StateTuple<T1, T2> Create(in T1 item1, in T2 item2)
-    {
-        var obj = _pool.Rent();
-        obj.Reset();
-        obj.Item1 = item1;
-        obj.Item2 = item2;
-        return obj;
-    }
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static void Return(StateTuple<T1, T2> tuple)
-    {
-        tuple.Item1 = default;
-        tuple.Item2 = default;
-        _pool.Return(tuple);
-    }
-
-#if NETSTANDARD2_1
-    private sealed class StateTuplePoolPolicy : IPooledObjectPolicy<StateTuple<T1, T2>>
-    {
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        StateTuple<T1, T2> IPooledObjectPolicy<StateTuple<T1, T2>>.Create() => new();
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        bool IPooledObjectPolicy<StateTuple<T1, T2>>.Return(StateTuple<T1, T2> obj) => true;
-    }
-#endif
-}
-
-public class StateTuple<T1, T2, T3> : IDisposable
-#if NET8_0_OR_GREATER
-    , IPooledObjectPolicy<StateTuple<T1, T2, T3>>
-#endif
-{
-    public T1 Item1;
-    public T2 Item2;
-    public T3 Item3;
-    private int _disposed;
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public void Deconstruct(out T1 item1, out T2 item2, out T3 item3)
-    {
-        item1 = this.Item1;
-        item2 = this.Item2;
-        item3 = this.Item3;
-    }
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public void Dispose()
-    {
-        if (Interlocked.Exchange(ref _disposed, 1) != 0)
-            return;
-
-        StatePool<T1, T2, T3>.Return(this);
-    }
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal void Reset() => _disposed = 0;
-
-#if NET8_0_OR_GREATER
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    static StateTuple<T1, T2, T3> IPooledObjectPolicy<StateTuple<T1, T2, T3>>.Create() => new();
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    static bool IPooledObjectPolicy<StateTuple<T1, T2, T3>>.Return(StateTuple<T1, T2, T3> obj) => true;
-#endif
-}
-
-public static class StatePool<T1, T2, T3>
-{
-#if NET8_0_OR_GREATER
-    private static readonly ObjectPool<StateTuple<T1, T2, T3>> _pool = new ();
-#else
-    private static readonly ObjectPool<StateTuple<T1, T2, T3>> _pool = new (new StateTuplePoolPolicy());
-#endif
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static StateTuple<T1, T2, T3> Create(in T1 item1, in T2 item2, in T3 item3)
-    {
-        var obj = _pool.Rent();
-        obj.Reset();
-        obj.Item1 = item1;
-        obj.Item2 = item2;
-        obj.Item3 = item3;
-        return obj;
-    }
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static void Return(StateTuple<T1, T2, T3> tuple)
-    {
-        tuple.Item1 = default;
-        tuple.Item2 = default;
-        tuple.Item3 = default;
-        _pool.Return(tuple);
-    }
-
-#if NETSTANDARD2_1
-    private sealed class StateTuplePoolPolicy : IPooledObjectPolicy<StateTuple<T1, T2, T3>>
-    {
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        StateTuple<T1, T2, T3> IPooledObjectPolicy<StateTuple<T1, T2, T3>>.Create() => new();
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        bool IPooledObjectPolicy<StateTuple<T1, T2, T3>>.Return(StateTuple<T1, T2, T3> obj) => true;
+        bool IPooledObjectPolicy<StateTuple<T>>.Return(StateTuple<T> obj) => true;
     }
 #endif
 }

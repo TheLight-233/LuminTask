@@ -274,7 +274,7 @@ public unsafe struct WaitWhilePromise<TState, TResult>
 
         try
         {
-            if (!predicate(stateTuple.Item1))
+            if (!predicate(stateTuple.Item))
             {
                 return true;
             }

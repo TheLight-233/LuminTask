@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
@@ -19,11 +19,32 @@ public interface IAsyncWaitQueue<T>
     void CancelAll(CancellationToken cancellationToken);
 }
 
+/// <summary>非泛型拥有者抽象：共享节点池的取消回调经此分发回具体泛型队列。</summary>
+internal interface IWaitNodeOwner
+{
+    void OnNodeCanceled(WaitNode node);
+}
+
 /// <summary>
-/// 侵入式等待队列：等待节点自身携带 Next/Previous 链接，队列与对象池零容器分配。
-/// 节点的 Next 指针同时充当池的空闲链；批量完成在锁外执行。
+/// 等待节点：字段全部非泛型，可在不同 T 的队列间共享同一池，避免每封闭 T 各留一份空闲链。
 /// </summary>
-internal sealed unsafe class DefaultAsyncWaitQueue<T> : IAsyncWaitQueue<T>
+internal sealed class WaitNode
+{
+    internal WaitNode? Next;
+    internal WaitNode? Previous;
+    internal IWaitNodeOwner? Owner;
+    internal IntPtr CorePtr;
+    internal CancellationTokenRegistration Registration;
+    internal CancellationToken CancellationToken;
+    internal bool HasRegistration;
+    internal bool IsQueued;
+}
+
+/// <summary>
+/// 非泛型节点池：WaitNode 不被任一 T 绑定，所有封闭队列共享同一套空闲链，
+/// 消除"每封闭 T 各持一份有界池"造成的重复驻留。
+/// </summary>
+internal static class WaitNodePool
 {
     private static readonly Action<object> s_cancellationCallback = CancellationCallback;
 
@@ -34,24 +55,10 @@ internal sealed unsafe class DefaultAsyncWaitQueue<T> : IAsyncWaitQueue<T>
     private static readonly int s_maxRetainedNodes = Math.Max(16, Environment.ProcessorCount * 4);
     private static readonly object s_poolGate = new();
 
-    private WaitNode? _head;
-    private WaitNode? _tail;
-    private readonly object _queueLock = new();
-
-    private sealed class WaitNode
-    {
-        public WaitNode? Next;
-        public WaitNode? Previous;
-        public DefaultAsyncWaitQueue<T>? Owner;
-        public IntPtr CorePtr;
-        public CancellationTokenRegistration Registration;
-        public CancellationToken CancellationToken;
-        public bool HasRegistration;
-        public bool IsQueued;
-    }
+    internal static Action<object> CancellationCallbackDelegate => s_cancellationCallback;
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static WaitNode RentNode(DefaultAsyncWaitQueue<T> owner, void* core)
+    internal static WaitNode Rent()
     {
         var node = Interlocked.Exchange(ref s_fastNode, null);
         if (node == null)
@@ -68,16 +75,11 @@ internal sealed unsafe class DefaultAsyncWaitQueue<T> : IAsyncWaitQueue<T>
             }
         }
 
-        node ??= new WaitNode();
-
-        node.Owner = owner;
-        node.CorePtr = new IntPtr(core);
-        node.IsQueued = true;
-        return node;
+        return node ?? new WaitNode();
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static void ReturnNode(WaitNode node)
+    internal static void Return(WaitNode node)
     {
         node.Owner = null;
         node.CorePtr = IntPtr.Zero;
@@ -101,6 +103,23 @@ internal sealed unsafe class DefaultAsyncWaitQueue<T> : IAsyncWaitQueue<T>
         }
     }
 
+    private static void CancellationCallback(object state)
+    {
+        var node = (WaitNode)state;
+        node.Owner?.OnNodeCanceled(node);
+    }
+}
+
+/// <summary>
+/// 侵入式等待队列：等待节点自身携带 Next/Previous 链接，队列与对象池零容器分配。
+/// 节点的 Next 指针同时充当池的空闲链；批量完成在锁外执行。等待节点与空闲链均非泛型共享。
+/// </summary>
+internal sealed unsafe class DefaultAsyncWaitQueue<T> : IAsyncWaitQueue<T>, IWaitNodeOwner
+{
+    private WaitNode? _head;
+    private WaitNode? _tail;
+    private readonly object _queueLock = new();
+
     /// <summary>释放注册：优先非阻塞 Unregister；仅回调已在途时回退到阻塞的 Dispose 保证安全。</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static void ReleaseRegistration(WaitNode node)
@@ -112,13 +131,7 @@ internal sealed unsafe class DefaultAsyncWaitQueue<T> : IAsyncWaitQueue<T>
         node.HasRegistration = false;
     }
 
-    private static void CancellationCallback(object state)
-    {
-        var node = (WaitNode)state;
-        node.Owner?.CancelFromCallback(node);
-    }
-
-    private void CancelFromCallback(WaitNode node)
+    void IWaitNodeOwner.OnNodeCanceled(WaitNode node)
     {
         lock (_queueLock)
         {
@@ -160,7 +173,10 @@ internal sealed unsafe class DefaultAsyncWaitQueue<T> : IAsyncWaitQueue<T>
         lock (_queueLock)
         {
             var core = LuminTaskSourceCore<T>.Create();
-            var node = RentNode(this, core);
+            var node = WaitNodePool.Rent();
+            node.Owner = this;
+            node.CorePtr = new IntPtr(core);
+            node.IsQueued = true;
             AppendLocked(node);
             return new LuminTask<T>(LuminTaskSourceCore<T>.MethodTableAutoDisposePtr, core, core->Id);
         }
@@ -289,7 +305,7 @@ internal sealed unsafe class DefaultAsyncWaitQueue<T> : IAsyncWaitQueue<T>
         ReleaseRegistration(node);
         var ptr = node.CorePtr.ToPointer();
         LuminTaskSourceCore<T>.TrySetCanceled(ptr, cancellationToken);
-        ReturnNode(node);
+        WaitNodePool.Return(node);
         return true;
     }
 
@@ -307,7 +323,7 @@ internal sealed unsafe class DefaultAsyncWaitQueue<T> : IAsyncWaitQueue<T>
             ReleaseRegistration(node);
             var ptr = node.CorePtr.ToPointer();
             LuminTaskSourceCore<T>.TrySetCanceled(ptr, cancellationToken);
-            ReturnNode(node);
+            WaitNodePool.Return(node);
             node = next;
         }
     }
@@ -318,7 +334,7 @@ internal sealed unsafe class DefaultAsyncWaitQueue<T> : IAsyncWaitQueue<T>
         ReleaseRegistration(node);
         var ptr = node.CorePtr.ToPointer();
         LuminTaskSourceCore<T>.TrySetResult(ptr, result);
-        ReturnNode(node);
+        WaitNodePool.Return(node);
     }
 
     public LuminTask<T> EnqueueWithCancellation(CancellationToken cancellationToken)
@@ -334,7 +350,10 @@ internal sealed unsafe class DefaultAsyncWaitQueue<T> : IAsyncWaitQueue<T>
         lock (_queueLock)
         {
             var core = LuminTaskSourceCore<T>.Create();
-            node = RentNode(this, core);
+            node = WaitNodePool.Rent();
+            node.Owner = this;
+            node.CorePtr = new IntPtr(core);
+            node.IsQueued = true;
             AppendLocked(node);
             task = new LuminTask<T>(LuminTaskSourceCore<T>.MethodTableAutoDisposePtr, core, core->Id);
 
@@ -342,7 +361,7 @@ internal sealed unsafe class DefaultAsyncWaitQueue<T> : IAsyncWaitQueue<T>
             {
                 node.CancellationToken = cancellationToken;
                 var registration = cancellationToken.RegisterWithoutCaptureExecutionContext(
-                    s_cancellationCallback,
+                    WaitNodePool.CancellationCallbackDelegate,
                     node);
 
                 if (node.IsQueued)

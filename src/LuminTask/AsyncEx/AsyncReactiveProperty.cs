@@ -318,9 +318,9 @@ internal sealed unsafe class AsyncReactivePropertyAwaiter<T>
         _registration = cancellationToken.Register(
             static state =>
             {
-                var tuple = (StateTuple<AsyncReactivePropertyAwaiter<T>, ReactivePropertyState<T>>)state!;
-                tuple.Item2.TryRemoveAwaiter(tuple.Item1);
-                tuple.Item1.TrySetCanceled();
+                var tuple = (StateTuple<(AsyncReactivePropertyAwaiter<T>, ReactivePropertyState<T>)>)state!;
+                tuple.Item.Item2.TryRemoveAwaiter(tuple.Item.Item1);
+                tuple.Item.Item1.TrySetCanceled();
                 tuple.Dispose();
             },
             state);

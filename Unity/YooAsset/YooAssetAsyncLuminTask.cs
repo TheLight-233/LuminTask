@@ -13,7 +13,7 @@ namespace LuminThread.Unity
     {
         #region HandleBase (基类，无返回值)
 
-        public static LuminTaskAwaiter GetAwaiter(this HandleBase handle)
+        public static LuminTask GetAwaiter(this HandleBase handle)
         {
             return ToLuminTask(handle).GetAwaiter();
         }
@@ -85,19 +85,19 @@ struct PromiseState
                 // 添加取消注册
                 if (cancellationToken.CanBeCanceled)
                 {
-                    stateTuple.Item1.Registration = cancellationToken.Register(static s =>
+                    stateTuple.Item.Item1.Registration = cancellationToken.Register(static s =>
                     {
                         var taskState = (LuminTaskState)s;
-                        var tuple = Unsafe.As<StateTuple<PromiseState, HandleBase, IProgress<float>>>(taskState.StateTuple);
+                        var tuple = Unsafe.As<StateTuple<(PromiseState, HandleBase, IProgress<float>)>>(taskState.StateTuple);
 
-                        if (tuple.Item1.AutoReleaseWhenCanceled && tuple.Item2.IsValid)
+                        if (tuple.Item.Item1.AutoReleaseWhenCanceled && tuple.Item.Item2.IsValid)
                         {
-                            tuple.Item2.Release();
+                            tuple.Item.Item2.Release();
                         }
                         LuminTaskSourceCore<AsyncUnit>.TrySetCanceled(taskState.Source);
                         
                         // 回调自身在途：仅清引用，避免 Dispose 自己造成死锁；释放交给 MoveNext 完成路径。
-                        tuple.Item1.Registration = default;
+                        tuple.Item.Item1.Registration = default;
                         tuple.Dispose();
                         LuminTaskSourceCore<AsyncUnit>.Dispose(taskState.Source);
                     }, state);
@@ -110,9 +110,9 @@ struct PromiseState
 
             public static bool MoveNext(in LuminTaskState state)
             {
-                var tuple = Unsafe.As<StateTuple<PromiseState, HandleBase, IProgress<float>>>(state.StateTuple);
+                var tuple = Unsafe.As<StateTuple<(PromiseState, HandleBase, IProgress<float>)>>(state.StateTuple);
 
-                if (tuple.Item1.Completed)
+                if (tuple.Item.Item1.Completed)
                 {
                     tuple.Dispose();
                     return false;
@@ -120,42 +120,42 @@ struct PromiseState
 
                 if (state.CancellationToken.IsCancellationRequested)
                 {
-                    tuple.Item1.Completed = true;
-                    if (tuple.Item1.AutoReleaseWhenCanceled && tuple.Item2.IsValid)
+                    tuple.Item.Item1.Completed = true;
+                    if (tuple.Item.Item1.AutoReleaseWhenCanceled && tuple.Item.Item2.IsValid)
                     {
-                        tuple.Item2.Release();
+                        tuple.Item.Item2.Release();
                     }
                     LuminTaskSourceCore<AsyncUnit>.TrySetCanceled(state.Source);
-                    tuple.Item1.Registration.Dispose();
+                    tuple.Item.Item1.Registration.Dispose();
                     tuple.Dispose();
                     LuminTaskSourceCore<AsyncUnit>.Dispose(state.Source);
                     return false;
                 }
 
                 // 检查是否完成
-                if (tuple.Item2.IsDone)
+                if (tuple.Item.Item2.IsDone)
                 {
-                    tuple.Item1.Completed = true;
+                    tuple.Item.Item1.Completed = true;
                     
-                    if (tuple.Item2.Status == EOperationStatus.Failed)
+                    if (tuple.Item.Item2.Status == EOperationStatus.Failed)
                     {
-                        LuminTaskSourceCore<AsyncUnit>.TrySetException(state.Source, new Exception(tuple.Item2.LastError));
+                        LuminTaskSourceCore<AsyncUnit>.TrySetException(state.Source, new Exception(tuple.Item.Item2.LastError));
                     }
                     else
                     {
                         LuminTaskSourceCore<AsyncUnit>.TrySetResult(state.Source);
                     }
                     
-                    tuple.Item1.Registration.Dispose();
+                    tuple.Item.Item1.Registration.Dispose();
                     tuple.Dispose();
                     LuminTaskSourceCore<AsyncUnit>.Dispose(state.Source);
                     return false;
                 }
 
                 // 报告进度
-                if (tuple.Item3 != null && tuple.Item2.IsValid)
+                if (tuple.Item.Item3 != null && tuple.Item.Item2.IsValid)
                 {
-                    tuple.Item3.Report(tuple.Item2.Progress);
+                    tuple.Item.Item3.Report(tuple.Item.Item2.Progress);
                 }
 
                 return true;
@@ -166,7 +166,7 @@ struct PromiseState
 
         #region AssetHandle (资源加载)
 
-        public static LuminTaskAwaiter<AssetHandle> GetAwaiter(this AssetHandle handle)
+        public static LuminTask<AssetHandle> GetAwaiter(this AssetHandle handle)
         {
             return ToLuminTask(handle).GetAwaiter();
         }
@@ -238,19 +238,19 @@ public unsafe struct AssetHandleLuminTaskConfiguredSource
                 // 添加取消注册
                 if (cancellationToken.CanBeCanceled)
                 {
-                    stateTuple.Item1.Registration = cancellationToken.Register(static s =>
+                    stateTuple.Item.Item1.Registration = cancellationToken.Register(static s =>
                     {
                         var taskState = (LuminTaskState)s;
-                        var tuple = Unsafe.As<StateTuple<PromiseState, AssetHandle, IProgress<float>>>(taskState.StateTuple);
+                        var tuple = Unsafe.As<StateTuple<(PromiseState, AssetHandle, IProgress<float>)>>(taskState.StateTuple);
 
-                        if (tuple.Item1.AutoReleaseWhenCanceled && tuple.Item2.IsValid)
+                        if (tuple.Item.Item1.AutoReleaseWhenCanceled && tuple.Item.Item2.IsValid)
                         {
-                            tuple.Item2.Release();
+                            tuple.Item.Item2.Release();
                         }
                         LuminTaskSourceCore<AssetHandle>.TrySetCanceled(taskState.Source);
                         
                         // 回调自身在途：仅清引用，避免 Dispose 自己造成死锁；释放交给 MoveNext 完成路径。
-                        tuple.Item1.Registration = default;
+                        tuple.Item.Item1.Registration = default;
                         tuple.Dispose();
                         LuminTaskSourceCore<AssetHandle>.Dispose(taskState.Source);
                     }, state);
@@ -263,9 +263,9 @@ public unsafe struct AssetHandleLuminTaskConfiguredSource
 
             public static bool MoveNext(in LuminTaskState state)
             {
-                var tuple = Unsafe.As<StateTuple<PromiseState, AssetHandle, IProgress<float>>>(state.StateTuple);
+                var tuple = Unsafe.As<StateTuple<(PromiseState, AssetHandle, IProgress<float>)>>(state.StateTuple);
 
-                if (tuple.Item1.Completed)
+                if (tuple.Item.Item1.Completed)
                 {
                     tuple.Dispose();
                     return false;
@@ -273,42 +273,42 @@ public unsafe struct AssetHandleLuminTaskConfiguredSource
 
                 if (state.CancellationToken.IsCancellationRequested)
                 {
-                    tuple.Item1.Completed = true;
-                    if (tuple.Item1.AutoReleaseWhenCanceled && tuple.Item2.IsValid)
+                    tuple.Item.Item1.Completed = true;
+                    if (tuple.Item.Item1.AutoReleaseWhenCanceled && tuple.Item.Item2.IsValid)
                     {
-                        tuple.Item2.Release();
+                        tuple.Item.Item2.Release();
                     }
                     LuminTaskSourceCore<AssetHandle>.TrySetCanceled(state.Source);
-                    tuple.Item1.Registration.Dispose();
+                    tuple.Item.Item1.Registration.Dispose();
                     tuple.Dispose();
                     LuminTaskSourceCore<AssetHandle>.Dispose(state.Source);
                     return false;
                 }
 
                 // 检查是否完成
-                if (tuple.Item2.IsDone)
+                if (tuple.Item.Item2.IsDone)
                 {
-                    tuple.Item1.Completed = true;
+                    tuple.Item.Item1.Completed = true;
                     
-                    if (tuple.Item2.Status == EOperationStatus.Failed)
+                    if (tuple.Item.Item2.Status == EOperationStatus.Failed)
                     {
-                        LuminTaskSourceCore<AssetHandle>.TrySetException(state.Source, new Exception(tuple.Item2.LastError));
+                        LuminTaskSourceCore<AssetHandle>.TrySetException(state.Source, new Exception(tuple.Item.Item2.LastError));
                     }
                     else
                     {
-                        LuminTaskSourceCore<AssetHandle>.TrySetResult(state.Source, tuple.Item2);
+                        LuminTaskSourceCore<AssetHandle>.TrySetResult(state.Source, tuple.Item.Item2);
                     }
                     
-                    tuple.Item1.Registration.Dispose();
+                    tuple.Item.Item1.Registration.Dispose();
                     tuple.Dispose();
                     LuminTaskSourceCore<AssetHandle>.Dispose(state.Source);
                     return false;
                 }
 
                 // 报告进度
-                if (tuple.Item3 != null && tuple.Item2.IsValid)
+                if (tuple.Item.Item3 != null && tuple.Item.Item2.IsValid)
                 {
-                    tuple.Item3.Report(tuple.Item2.Progress);
+                    tuple.Item.Item3.Report(tuple.Item.Item2.Progress);
                 }
 
                 return true;
@@ -319,7 +319,7 @@ public unsafe struct AssetHandleLuminTaskConfiguredSource
 
         #region SceneHandle (场景加载)
 
-        public static LuminTaskAwaiter<SceneHandle> GetAwaiter(this SceneHandle handle)
+        public static LuminTask<SceneHandle> GetAwaiter(this SceneHandle handle)
         {
             return ToLuminTask(handle).GetAwaiter();
         }
@@ -391,19 +391,19 @@ public unsafe struct SceneHandleLuminTaskConfiguredSource
                 // 添加取消注册
                 if (cancellationToken.CanBeCanceled)
                 {
-                    stateTuple.Item1.Registration = cancellationToken.Register(static s =>
+                    stateTuple.Item.Item1.Registration = cancellationToken.Register(static s =>
                     {
                         var taskState = (LuminTaskState)s;
-                        var tuple = Unsafe.As<StateTuple<PromiseState, SceneHandle, IProgress<float>>>(taskState.StateTuple);
+                        var tuple = Unsafe.As<StateTuple<(PromiseState, SceneHandle, IProgress<float>)>>(taskState.StateTuple);
 
-                        if (tuple.Item1.AutoReleaseWhenCanceled && tuple.Item2.IsValid)
+                        if (tuple.Item.Item1.AutoReleaseWhenCanceled && tuple.Item.Item2.IsValid)
                         {
-                            tuple.Item2.Release();
+                            tuple.Item.Item2.Release();
                         }
                         LuminTaskSourceCore<SceneHandle>.TrySetCanceled(taskState.Source);
                         
                         // 回调自身在途：仅清引用，避免 Dispose 自己造成死锁；释放交给 MoveNext 完成路径。
-                        tuple.Item1.Registration = default;
+                        tuple.Item.Item1.Registration = default;
                         tuple.Dispose();
                         LuminTaskSourceCore<SceneHandle>.Dispose(taskState.Source);
                     }, state);
@@ -416,9 +416,9 @@ public unsafe struct SceneHandleLuminTaskConfiguredSource
 
             public static bool MoveNext(in LuminTaskState state)
             {
-                var tuple = Unsafe.As<StateTuple<PromiseState, SceneHandle, IProgress<float>>>(state.StateTuple);
+                var tuple = Unsafe.As<StateTuple<(PromiseState, SceneHandle, IProgress<float>)>>(state.StateTuple);
 
-                if (tuple.Item1.Completed)
+                if (tuple.Item.Item1.Completed)
                 {
                     tuple.Dispose();
                     return false;
@@ -426,42 +426,42 @@ public unsafe struct SceneHandleLuminTaskConfiguredSource
 
                 if (state.CancellationToken.IsCancellationRequested)
                 {
-                    tuple.Item1.Completed = true;
-                    if (tuple.Item1.AutoReleaseWhenCanceled && tuple.Item2.IsValid)
+                    tuple.Item.Item1.Completed = true;
+                    if (tuple.Item.Item1.AutoReleaseWhenCanceled && tuple.Item.Item2.IsValid)
                     {
-                        tuple.Item2.Release();
+                        tuple.Item.Item2.Release();
                     }
                     LuminTaskSourceCore<SceneHandle>.TrySetCanceled(state.Source);
-                    tuple.Item1.Registration.Dispose();
+                    tuple.Item.Item1.Registration.Dispose();
                     tuple.Dispose();
                     LuminTaskSourceCore<SceneHandle>.Dispose(state.Source);
                     return false;
                 }
 
                 // 检查是否完成
-                if (tuple.Item2.IsDone)
+                if (tuple.Item.Item2.IsDone)
                 {
-                    tuple.Item1.Completed = true;
+                    tuple.Item.Item1.Completed = true;
                     
-                    if (tuple.Item2.Status == EOperationStatus.Failed)
+                    if (tuple.Item.Item2.Status == EOperationStatus.Failed)
                     {
-                        LuminTaskSourceCore<SceneHandle>.TrySetException(state.Source, new Exception(tuple.Item2.LastError));
+                        LuminTaskSourceCore<SceneHandle>.TrySetException(state.Source, new Exception(tuple.Item.Item2.LastError));
                     }
                     else
                     {
-                        LuminTaskSourceCore<SceneHandle>.TrySetResult(state.Source, tuple.Item2);
+                        LuminTaskSourceCore<SceneHandle>.TrySetResult(state.Source, tuple.Item.Item2);
                     }
                     
-                    tuple.Item1.Registration.Dispose();
+                    tuple.Item.Item1.Registration.Dispose();
                     tuple.Dispose();
                     LuminTaskSourceCore<SceneHandle>.Dispose(state.Source);
                     return false;
                 }
 
                 // 报告进度
-                if (tuple.Item3 != null && tuple.Item2.IsValid)
+                if (tuple.Item.Item3 != null && tuple.Item.Item2.IsValid)
                 {
-                    tuple.Item3.Report(tuple.Item2.Progress);
+                    tuple.Item.Item3.Report(tuple.Item.Item2.Progress);
                 }
 
                 return true;
@@ -472,7 +472,7 @@ public unsafe struct SceneHandleLuminTaskConfiguredSource
 
         #region RawFileHandle (原生文件)
 
-        public static LuminTaskAwaiter<RawFileHandle> GetAwaiter(this RawFileHandle handle)
+        public static LuminTask<RawFileHandle> GetAwaiter(this RawFileHandle handle)
         {
             return ToLuminTask(handle).GetAwaiter();
         }
@@ -544,19 +544,19 @@ public unsafe struct RawFileHandleLuminTaskConfiguredSource
                 // 添加取消注册
                 if (cancellationToken.CanBeCanceled)
                 {
-                    stateTuple.Item1.Registration = cancellationToken.Register(static s =>
+                    stateTuple.Item.Item1.Registration = cancellationToken.Register(static s =>
                     {
                         var taskState = (LuminTaskState)s;
-                        var tuple = Unsafe.As<StateTuple<PromiseState, RawFileHandle, IProgress<float>>>(taskState.StateTuple);
+                        var tuple = Unsafe.As<StateTuple<(PromiseState, RawFileHandle, IProgress<float>)>>(taskState.StateTuple);
 
-                        if (tuple.Item1.AutoReleaseWhenCanceled && tuple.Item2.IsValid)
+                        if (tuple.Item.Item1.AutoReleaseWhenCanceled && tuple.Item.Item2.IsValid)
                         {
-                            tuple.Item2.Release();
+                            tuple.Item.Item2.Release();
                         }
                         LuminTaskSourceCore<RawFileHandle>.TrySetCanceled(taskState.Source);
                         
                         // 回调自身在途：仅清引用，避免 Dispose 自己造成死锁；释放交给 MoveNext 完成路径。
-                        tuple.Item1.Registration = default;
+                        tuple.Item.Item1.Registration = default;
                         tuple.Dispose();
                         LuminTaskSourceCore<RawFileHandle>.Dispose(taskState.Source);
                     }, state);
@@ -569,9 +569,9 @@ public unsafe struct RawFileHandleLuminTaskConfiguredSource
 
             public static bool MoveNext(in LuminTaskState state)
             {
-                var tuple = Unsafe.As<StateTuple<PromiseState, RawFileHandle, IProgress<float>>>(state.StateTuple);
+                var tuple = Unsafe.As<StateTuple<(PromiseState, RawFileHandle, IProgress<float>)>>(state.StateTuple);
 
-                if (tuple.Item1.Completed)
+                if (tuple.Item.Item1.Completed)
                 {
                     tuple.Dispose();
                     return false;
@@ -579,42 +579,42 @@ public unsafe struct RawFileHandleLuminTaskConfiguredSource
 
                 if (state.CancellationToken.IsCancellationRequested)
                 {
-                    tuple.Item1.Completed = true;
-                    if (tuple.Item1.AutoReleaseWhenCanceled && tuple.Item2.IsValid)
+                    tuple.Item.Item1.Completed = true;
+                    if (tuple.Item.Item1.AutoReleaseWhenCanceled && tuple.Item.Item2.IsValid)
                     {
-                        tuple.Item2.Release();
+                        tuple.Item.Item2.Release();
                     }
                     LuminTaskSourceCore<RawFileHandle>.TrySetCanceled(state.Source);
-                    tuple.Item1.Registration.Dispose();
+                    tuple.Item.Item1.Registration.Dispose();
                     tuple.Dispose();
                     LuminTaskSourceCore<RawFileHandle>.Dispose(state.Source);
                     return false;
                 }
 
                 // 检查是否完成
-                if (tuple.Item2.IsDone)
+                if (tuple.Item.Item2.IsDone)
                 {
-                    tuple.Item1.Completed = true;
+                    tuple.Item.Item1.Completed = true;
                     
-                    if (tuple.Item2.Status == EOperationStatus.Failed)
+                    if (tuple.Item.Item2.Status == EOperationStatus.Failed)
                     {
-                        LuminTaskSourceCore<RawFileHandle>.TrySetException(state.Source, new Exception(tuple.Item2.LastError));
+                        LuminTaskSourceCore<RawFileHandle>.TrySetException(state.Source, new Exception(tuple.Item.Item2.LastError));
                     }
                     else
                     {
-                        LuminTaskSourceCore<RawFileHandle>.TrySetResult(state.Source, tuple.Item2);
+                        LuminTaskSourceCore<RawFileHandle>.TrySetResult(state.Source, tuple.Item.Item2);
                     }
                     
-                    tuple.Item1.Registration.Dispose();
+                    tuple.Item.Item1.Registration.Dispose();
                     tuple.Dispose();
                     LuminTaskSourceCore<RawFileHandle>.Dispose(state.Source);
                     return false;
                 }
 
                 // 报告进度
-                if (tuple.Item3 != null && tuple.Item2.IsValid)
+                if (tuple.Item.Item3 != null && tuple.Item.Item2.IsValid)
                 {
-                    tuple.Item3.Report(tuple.Item2.Progress);
+                    tuple.Item.Item3.Report(tuple.Item.Item2.Progress);
                 }
 
                 return true;
@@ -625,7 +625,7 @@ public unsafe struct RawFileHandleLuminTaskConfiguredSource
 
         #region SubAssetsHandle (子资源加载)
 
-        public static LuminTaskAwaiter<SubAssetsHandle> GetAwaiter(this SubAssetsHandle handle)
+        public static LuminTask<SubAssetsHandle> GetAwaiter(this SubAssetsHandle handle)
         {
             return ToLuminTask(handle).GetAwaiter();
         }
@@ -697,19 +697,19 @@ public unsafe struct SubAssetsHandleLuminTaskConfiguredSource
                 // 添加取消注册
                 if (cancellationToken.CanBeCanceled)
                 {
-                    stateTuple.Item1.Registration = cancellationToken.Register(static s =>
+                    stateTuple.Item.Item1.Registration = cancellationToken.Register(static s =>
                     {
                         var taskState = (LuminTaskState)s;
-                        var tuple = Unsafe.As<StateTuple<PromiseState, SubAssetsHandle, IProgress<float>>>(taskState.StateTuple);
+                        var tuple = Unsafe.As<StateTuple<(PromiseState, SubAssetsHandle, IProgress<float>)>>(taskState.StateTuple);
 
-                        if (tuple.Item1.AutoReleaseWhenCanceled && tuple.Item2.IsValid)
+                        if (tuple.Item.Item1.AutoReleaseWhenCanceled && tuple.Item.Item2.IsValid)
                         {
-                            tuple.Item2.Release();
+                            tuple.Item.Item2.Release();
                         }
                         LuminTaskSourceCore<SubAssetsHandle>.TrySetCanceled(taskState.Source);
                         
                         // 回调自身在途：仅清引用，避免 Dispose 自己造成死锁；释放交给 MoveNext 完成路径。
-                        tuple.Item1.Registration = default;
+                        tuple.Item.Item1.Registration = default;
                         tuple.Dispose();
                         LuminTaskSourceCore<SubAssetsHandle>.Dispose(taskState.Source);
                     }, state);
@@ -722,9 +722,9 @@ public unsafe struct SubAssetsHandleLuminTaskConfiguredSource
 
             public static bool MoveNext(in LuminTaskState state)
             {
-                var tuple = Unsafe.As<StateTuple<PromiseState, SubAssetsHandle, IProgress<float>>>(state.StateTuple);
+                var tuple = Unsafe.As<StateTuple<(PromiseState, SubAssetsHandle, IProgress<float>)>>(state.StateTuple);
 
-                if (tuple.Item1.Completed)
+                if (tuple.Item.Item1.Completed)
                 {
                     tuple.Dispose();
                     return false;
@@ -732,42 +732,42 @@ public unsafe struct SubAssetsHandleLuminTaskConfiguredSource
 
                 if (state.CancellationToken.IsCancellationRequested)
                 {
-                    tuple.Item1.Completed = true;
-                    if (tuple.Item1.AutoReleaseWhenCanceled && tuple.Item2.IsValid)
+                    tuple.Item.Item1.Completed = true;
+                    if (tuple.Item.Item1.AutoReleaseWhenCanceled && tuple.Item.Item2.IsValid)
                     {
-                        tuple.Item2.Release();
+                        tuple.Item.Item2.Release();
                     }
                     LuminTaskSourceCore<SubAssetsHandle>.TrySetCanceled(state.Source);
-                    tuple.Item1.Registration.Dispose();
+                    tuple.Item.Item1.Registration.Dispose();
                     tuple.Dispose();
                     LuminTaskSourceCore<SubAssetsHandle>.Dispose(state.Source);
                     return false;
                 }
 
                 // 检查是否完成
-                if (tuple.Item2.IsDone)
+                if (tuple.Item.Item2.IsDone)
                 {
-                    tuple.Item1.Completed = true;
+                    tuple.Item.Item1.Completed = true;
                     
-                    if (tuple.Item2.Status == EOperationStatus.Failed)
+                    if (tuple.Item.Item2.Status == EOperationStatus.Failed)
                     {
-                        LuminTaskSourceCore<SubAssetsHandle>.TrySetException(state.Source, new Exception(tuple.Item2.LastError));
+                        LuminTaskSourceCore<SubAssetsHandle>.TrySetException(state.Source, new Exception(tuple.Item.Item2.LastError));
                     }
                     else
                     {
-                        LuminTaskSourceCore<SubAssetsHandle>.TrySetResult(state.Source, tuple.Item2);
+                        LuminTaskSourceCore<SubAssetsHandle>.TrySetResult(state.Source, tuple.Item.Item2);
                     }
                     
-                    tuple.Item1.Registration.Dispose();
+                    tuple.Item.Item1.Registration.Dispose();
                     tuple.Dispose();
                     LuminTaskSourceCore<SubAssetsHandle>.Dispose(state.Source);
                     return false;
                 }
 
                 // 报告进度
-                if (tuple.Item3 != null && tuple.Item2.IsValid)
+                if (tuple.Item.Item3 != null && tuple.Item.Item2.IsValid)
                 {
-                    tuple.Item3.Report(tuple.Item2.Progress);
+                    tuple.Item.Item3.Report(tuple.Item.Item2.Progress);
                 }
 
                 return true;

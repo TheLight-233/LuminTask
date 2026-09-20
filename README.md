@@ -202,6 +202,16 @@ Release 构建默认关闭 token 生命周期校验以保持低开销。需要�
 
 库内部使用非托管内存和 `unsafe` 代码，但普通调用方不需要在业务代码中开启 `unsafe`。
 
+## 🤖 AI 使用技能（`skills/lumintask`）
+
+仓库附带一个面向 AI 编程助手（Trae、Cursor、Claude Code 等支持 Agent Skills 的环境）的**使用说明书式**技能，帮助 AI 正确使用 LuminTask 的 API、遵守单次消费契约并快速写出可运行的示例代码。
+
+* 位置：[`skills/lumintask/`](skills/lumintask/)
+* `SKILL.md` —— 技能主文档：基础用法、工厂方法、使用规则（await/Forget 单次消费契约）、组合子、延时与帧等待、异步流（`await foreach`）、Unity 集成、AsyncEx、与 `Task`/`ValueTask` 互操作、性能提示与常见陷阱
+* `references/api-surface.md` —— 按需加载的完整 API 速查表
+
+在支持 Agent Skills 的 IDE 中打开本项目时，AI 会自动加载该技能；也可以把 `skills/lumintask/` 安装为 IDE 的全局技能（例如 Trae 的 `~/.trae/skills/`），或在其他环境中直接拷贝使用。
+
 ## ⚡ 性能与基准测试
 
 仓库包含独立的 BenchmarkDotNet 项目。基准结果会受到处理器、操作系统、.NET 版本和编译配置影响，因此不在 README 中固定展示未经统一环境复现的数据。
@@ -241,6 +251,8 @@ LuminTask/
 ├── benchmarks/
 │   └── LuminTask.Benchmarks/  # BenchmarkDotNet 基准测试
 ├── Unity/                     # 可选 Unity 集成扩展
+├── skills/
+│   └── lumintask/             # AI 使用说明书技能（SKILL.md + API 速查表）
 ├── LuminTask.sln              # Visual Studio / dotnet 解决方案（含 LuminTask / Tests / Benchmarks）
 ├── global.json                # .NET SDK 版本约束
 ├── LICENSE

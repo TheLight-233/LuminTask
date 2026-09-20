@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -91,9 +91,9 @@ namespace LuminThread
 
         private static void CompleteTaskConversion<T>(Task<T> task, object? boxedState)
         {
-            var state = (StateTuple<IntPtr, CancellationToken>)boxedState!;
-            var core = (LuminTaskSourceCore<T>*)state.Item1.ToPointer();
-            var fallbackToken = state.Item2;
+            var state = (StateTuple<(IntPtr, CancellationToken)>)boxedState!;
+            var core = (LuminTaskSourceCore<T>*)state.Item.Item1.ToPointer();
+            var fallbackToken = state.Item.Item2;
             state.Dispose();
 
             try
@@ -112,9 +112,9 @@ namespace LuminThread
 
         private static void CompleteTaskConversion(Task task, object? boxedState)
         {
-            var state = (StateTuple<IntPtr, CancellationToken>)boxedState!;
-            var core = (LuminTaskSourceCore<AsyncUnit>*)state.Item1.ToPointer();
-            var fallbackToken = state.Item2;
+            var state = (StateTuple<(IntPtr, CancellationToken)>)boxedState!;
+            var core = (LuminTaskSourceCore<AsyncUnit>*)state.Item.Item1.ToPointer();
+            var fallbackToken = state.Item.Item2;
             state.Dispose();
 
             try
@@ -167,7 +167,7 @@ namespace LuminThread
 
             awaiter.SourceOnCompleted(static state =>
             {
-                var pendingAwaiter = (LuminTaskAwaiter)state;
+                var pendingAwaiter = (LuminTask)state;
                 try { pendingAwaiter.GetResult(); }
                 catch (Exception) { }
             }, awaiter);
@@ -185,7 +185,7 @@ namespace LuminThread
 
             awaiter.SourceOnCompleted(static state =>
             {
-                var pendingAwaiter = (LuminTaskAwaiter<T>)state;
+                var pendingAwaiter = (LuminTask<T>)state;
                 try { pendingAwaiter.GetResult(); }
                 catch (Exception) { }
             }, awaiter);
@@ -538,7 +538,7 @@ namespace LuminThread
                 var stateTuple = Unsafe.As<StateTuple<TimeoutStateData>>(state.StateTuple);
                 if (stateTuple == null) return false;
 
-                var data = stateTuple.Item1;
+                var data = stateTuple.Item;
 
                 if (state.CancellationToken.IsCancellationRequested)
                 {
@@ -608,7 +608,7 @@ namespace LuminThread
                 var stateTuple = Unsafe.As<StateTuple<TimeoutStateData>>(state.StateTuple);
                 if (stateTuple == null) return false;
 
-                var data = stateTuple.Item1;
+                var data = stateTuple.Item;
 
                 if (state.CancellationToken.IsCancellationRequested)
                 {
@@ -789,7 +789,7 @@ namespace LuminThread
                 try
                 {
                     var result = innerTask.GetAwaiter().GetResult();
-                    continuation.Item1(result);
+                    continuation.Item(result);
                     LuminTaskSourceCore<AsyncUnit>.TrySetResult(state.Source);
                 }
                 catch (Exception ex)
@@ -826,7 +826,7 @@ namespace LuminThread
                 try
                 {
                     var result = innerTask.GetAwaiter().GetResult();
-                    var continuationResult = continuation.Item1(result);
+                    var continuationResult = continuation.Item(result);
                     LuminTaskSourceCore<TR>.TrySetResult(state.Source, continuationResult);
                 }
                 catch (Exception ex)
@@ -869,7 +869,7 @@ namespace LuminThread
             {
                 var innerTask = (LuminTask<T>)state.State;
                 var stateTuple = Unsafe.As<StateTuple<StateData>>(state.StateTuple);
-                ref var data = ref stateTuple.Item1;
+                ref var data = ref stateTuple.Item;
 
                 if (!data.WaitingForContinuation)
                 {
@@ -950,7 +950,7 @@ namespace LuminThread
             {
                 var innerTask = (LuminTask<T>)state.State;
                 var stateTuple = Unsafe.As<StateTuple<StateData>>(state.StateTuple);
-                ref var data = ref stateTuple.Item1;
+                ref var data = ref stateTuple.Item;
 
                 if (!data.WaitingForContinuation)
                 {
@@ -1025,7 +1025,7 @@ namespace LuminThread
                 try
                 {
                     innerTask.GetAwaiter().GetResult();
-                    continuation.Item1();
+                    continuation.Item();
                     LuminTaskSourceCore<AsyncUnit>.TrySetResult(state.Source);
                 }
                 catch (Exception ex)
@@ -1062,7 +1062,7 @@ namespace LuminThread
                 try
                 {
                     innerTask.GetAwaiter().GetResult();
-                    var result = continuation.Item1();
+                    var result = continuation.Item();
                     LuminTaskSourceCore<T>.TrySetResult(state.Source, result);
                 }
                 catch (Exception ex)
@@ -1105,7 +1105,7 @@ namespace LuminThread
             {
                 var innerTask = (LuminTask)state.State;
                 var stateTuple = Unsafe.As<StateTuple<StateData>>(state.StateTuple);
-                ref var data = ref stateTuple.Item1;
+                ref var data = ref stateTuple.Item;
 
                 if (!data.WaitingForContinuation)
                 {
@@ -1186,7 +1186,7 @@ namespace LuminThread
             {
                 var innerTask = (LuminTask)state.State;
                 var stateTuple = Unsafe.As<StateTuple<StateData>>(state.StateTuple);
-                ref var data = ref stateTuple.Item1;
+                ref var data = ref stateTuple.Item;
 
                 if (!data.WaitingForContinuation)
                 {
@@ -1349,162 +1349,162 @@ namespace LuminThread
 
         #endregion
 
-        public static LuminTaskAwaiter GetAwaiter(this LuminTask[] tasks)
+        public static LuminTask GetAwaiter(this LuminTask[] tasks)
         {
             return LuminTask.WhenAll(tasks).GetAwaiter();
         }
 
-        public static LuminTaskAwaiter GetAwaiter(this IEnumerable<LuminTask> tasks)
+        public static LuminTask GetAwaiter(this IEnumerable<LuminTask> tasks)
         {
             return LuminTask.WhenAll(tasks).GetAwaiter();
         }
 
-        public static LuminTaskAwaiter<T[]> GetAwaiter<T>(this LuminTask<T>[] tasks)
+        public static LuminTask<T[]> GetAwaiter<T>(this LuminTask<T>[] tasks)
         {
             return LuminTask.WhenAll(tasks).GetAwaiter();
         }
 
-        public static LuminTaskAwaiter<T[]> GetAwaiter<T>(this IEnumerable<LuminTask<T>> tasks)
+        public static LuminTask<T[]> GetAwaiter<T>(this IEnumerable<LuminTask<T>> tasks)
         {
             return LuminTask.WhenAll(tasks).GetAwaiter();
         }
 
-        public static LuminTaskAwaiter<(T1, T2)> GetAwaiter<T1, T2>(this (LuminTask<T1> task1, LuminTask<T2> task2) tasks)
+        public static LuminTask<(T1, T2)> GetAwaiter<T1, T2>(this (LuminTask<T1> task1, LuminTask<T2> task2) tasks)
         {
             return LuminTask.WhenAll(tasks.task1, tasks.task2).GetAwaiter();
         }
 
-        public static LuminTaskAwaiter<(T1, T2, T3)> GetAwaiter<T1, T2, T3>(this (LuminTask<T1> task1, LuminTask<T2> task2, LuminTask<T3> task3) tasks)
+        public static LuminTask<(T1, T2, T3)> GetAwaiter<T1, T2, T3>(this (LuminTask<T1> task1, LuminTask<T2> task2, LuminTask<T3> task3) tasks)
         {
             return LuminTask.WhenAll(tasks.task1, tasks.task2, tasks.task3).GetAwaiter();
         }
 
-        public static LuminTaskAwaiter<(T1, T2, T3, T4)> GetAwaiter<T1, T2, T3, T4>(this (LuminTask<T1> task1, LuminTask<T2> task2, LuminTask<T3> task3, LuminTask<T4> task4) tasks)
+        public static LuminTask<(T1, T2, T3, T4)> GetAwaiter<T1, T2, T3, T4>(this (LuminTask<T1> task1, LuminTask<T2> task2, LuminTask<T3> task3, LuminTask<T4> task4) tasks)
         {
             return LuminTask.WhenAll(tasks.task1, tasks.task2, tasks.task3, tasks.task4).GetAwaiter();
         }
 
-        public static LuminTaskAwaiter<(T1, T2, T3, T4, T5)> GetAwaiter<T1, T2, T3, T4, T5>(this (LuminTask<T1> task1, LuminTask<T2> task2, LuminTask<T3> task3, LuminTask<T4> task4, LuminTask<T5> task5) tasks)
+        public static LuminTask<(T1, T2, T3, T4, T5)> GetAwaiter<T1, T2, T3, T4, T5>(this (LuminTask<T1> task1, LuminTask<T2> task2, LuminTask<T3> task3, LuminTask<T4> task4, LuminTask<T5> task5) tasks)
         {
             return LuminTask.WhenAll(tasks.task1, tasks.task2, tasks.task3, tasks.task4, tasks.task5).GetAwaiter();
         }
 
-        public static LuminTaskAwaiter<(T1, T2, T3, T4, T5, T6)> GetAwaiter<T1, T2, T3, T4, T5, T6>(this (LuminTask<T1> task1, LuminTask<T2> task2, LuminTask<T3> task3, LuminTask<T4> task4, LuminTask<T5> task5, LuminTask<T6> task6) tasks)
+        public static LuminTask<(T1, T2, T3, T4, T5, T6)> GetAwaiter<T1, T2, T3, T4, T5, T6>(this (LuminTask<T1> task1, LuminTask<T2> task2, LuminTask<T3> task3, LuminTask<T4> task4, LuminTask<T5> task5, LuminTask<T6> task6) tasks)
         {
             return LuminTask.WhenAll(tasks.task1, tasks.task2, tasks.task3, tasks.task4, tasks.task5, tasks.task6).GetAwaiter();
         }
 
-        public static LuminTaskAwaiter<(T1, T2, T3, T4, T5, T6, T7)> GetAwaiter<T1, T2, T3, T4, T5, T6, T7>(this (LuminTask<T1> task1, LuminTask<T2> task2, LuminTask<T3> task3, LuminTask<T4> task4, LuminTask<T5> task5, LuminTask<T6> task6, LuminTask<T7> task7) tasks)
+        public static LuminTask<(T1, T2, T3, T4, T5, T6, T7)> GetAwaiter<T1, T2, T3, T4, T5, T6, T7>(this (LuminTask<T1> task1, LuminTask<T2> task2, LuminTask<T3> task3, LuminTask<T4> task4, LuminTask<T5> task5, LuminTask<T6> task6, LuminTask<T7> task7) tasks)
         {
             return LuminTask.WhenAll(tasks.task1, tasks.task2, tasks.task3, tasks.task4, tasks.task5, tasks.task6, tasks.task7).GetAwaiter();
         }
 
-        public static LuminTaskAwaiter<(T1, T2, T3, T4, T5, T6, T7, T8)> GetAwaiter<T1, T2, T3, T4, T5, T6, T7, T8>(this (LuminTask<T1> task1, LuminTask<T2> task2, LuminTask<T3> task3, LuminTask<T4> task4, LuminTask<T5> task5, LuminTask<T6> task6, LuminTask<T7> task7, LuminTask<T8> task8) tasks)
+        public static LuminTask<(T1, T2, T3, T4, T5, T6, T7, T8)> GetAwaiter<T1, T2, T3, T4, T5, T6, T7, T8>(this (LuminTask<T1> task1, LuminTask<T2> task2, LuminTask<T3> task3, LuminTask<T4> task4, LuminTask<T5> task5, LuminTask<T6> task6, LuminTask<T7> task7, LuminTask<T8> task8) tasks)
         {
             return LuminTask.WhenAll(tasks.task1, tasks.task2, tasks.task3, tasks.task4, tasks.task5, tasks.task6, tasks.task7, tasks.task8).GetAwaiter();
         }
 
-        public static LuminTaskAwaiter<(T1, T2, T3, T4, T5, T6, T7, T8, T9)> GetAwaiter<T1, T2, T3, T4, T5, T6, T7, T8, T9>(this (LuminTask<T1> task1, LuminTask<T2> task2, LuminTask<T3> task3, LuminTask<T4> task4, LuminTask<T5> task5, LuminTask<T6> task6, LuminTask<T7> task7, LuminTask<T8> task8, LuminTask<T9> task9) tasks)
+        public static LuminTask<(T1, T2, T3, T4, T5, T6, T7, T8, T9)> GetAwaiter<T1, T2, T3, T4, T5, T6, T7, T8, T9>(this (LuminTask<T1> task1, LuminTask<T2> task2, LuminTask<T3> task3, LuminTask<T4> task4, LuminTask<T5> task5, LuminTask<T6> task6, LuminTask<T7> task7, LuminTask<T8> task8, LuminTask<T9> task9) tasks)
         {
             return LuminTask.WhenAll(tasks.task1, tasks.task2, tasks.task3, tasks.task4, tasks.task5, tasks.task6, tasks.task7, tasks.task8, tasks.task9).GetAwaiter();
         }
 
-        public static LuminTaskAwaiter<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10)> GetAwaiter<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10>(this (LuminTask<T1> task1, LuminTask<T2> task2, LuminTask<T3> task3, LuminTask<T4> task4, LuminTask<T5> task5, LuminTask<T6> task6, LuminTask<T7> task7, LuminTask<T8> task8, LuminTask<T9> task9, LuminTask<T10> task10) tasks)
+        public static LuminTask<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10)> GetAwaiter<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10>(this (LuminTask<T1> task1, LuminTask<T2> task2, LuminTask<T3> task3, LuminTask<T4> task4, LuminTask<T5> task5, LuminTask<T6> task6, LuminTask<T7> task7, LuminTask<T8> task8, LuminTask<T9> task9, LuminTask<T10> task10) tasks)
         {
             return LuminTask.WhenAll(tasks.task1, tasks.task2, tasks.task3, tasks.task4, tasks.task5, tasks.task6, tasks.task7, tasks.task8, tasks.task9, tasks.task10).GetAwaiter();
         }
 
-        public static LuminTaskAwaiter<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11)> GetAwaiter<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11>(this (LuminTask<T1> task1, LuminTask<T2> task2, LuminTask<T3> task3, LuminTask<T4> task4, LuminTask<T5> task5, LuminTask<T6> task6, LuminTask<T7> task7, LuminTask<T8> task8, LuminTask<T9> task9, LuminTask<T10> task10, LuminTask<T11> task11) tasks)
+        public static LuminTask<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11)> GetAwaiter<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11>(this (LuminTask<T1> task1, LuminTask<T2> task2, LuminTask<T3> task3, LuminTask<T4> task4, LuminTask<T5> task5, LuminTask<T6> task6, LuminTask<T7> task7, LuminTask<T8> task8, LuminTask<T9> task9, LuminTask<T10> task10, LuminTask<T11> task11) tasks)
         {
             return LuminTask.WhenAll(tasks.task1, tasks.task2, tasks.task3, tasks.task4, tasks.task5, tasks.task6, tasks.task7, tasks.task8, tasks.task9, tasks.task10, tasks.task11).GetAwaiter();
         }
 
-        public static LuminTaskAwaiter<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12)> GetAwaiter<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12>(this (LuminTask<T1> task1, LuminTask<T2> task2, LuminTask<T3> task3, LuminTask<T4> task4, LuminTask<T5> task5, LuminTask<T6> task6, LuminTask<T7> task7, LuminTask<T8> task8, LuminTask<T9> task9, LuminTask<T10> task10, LuminTask<T11> task11, LuminTask<T12> task12) tasks)
+        public static LuminTask<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12)> GetAwaiter<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12>(this (LuminTask<T1> task1, LuminTask<T2> task2, LuminTask<T3> task3, LuminTask<T4> task4, LuminTask<T5> task5, LuminTask<T6> task6, LuminTask<T7> task7, LuminTask<T8> task8, LuminTask<T9> task9, LuminTask<T10> task10, LuminTask<T11> task11, LuminTask<T12> task12) tasks)
         {
             return LuminTask.WhenAll(tasks.task1, tasks.task2, tasks.task3, tasks.task4, tasks.task5, tasks.task6, tasks.task7, tasks.task8, tasks.task9, tasks.task10, tasks.task11, tasks.task12).GetAwaiter();
         }
 
-        public static LuminTaskAwaiter<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13)> GetAwaiter<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13>(this (LuminTask<T1> task1, LuminTask<T2> task2, LuminTask<T3> task3, LuminTask<T4> task4, LuminTask<T5> task5, LuminTask<T6> task6, LuminTask<T7> task7, LuminTask<T8> task8, LuminTask<T9> task9, LuminTask<T10> task10, LuminTask<T11> task11, LuminTask<T12> task12, LuminTask<T13> task13) tasks)
+        public static LuminTask<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13)> GetAwaiter<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13>(this (LuminTask<T1> task1, LuminTask<T2> task2, LuminTask<T3> task3, LuminTask<T4> task4, LuminTask<T5> task5, LuminTask<T6> task6, LuminTask<T7> task7, LuminTask<T8> task8, LuminTask<T9> task9, LuminTask<T10> task10, LuminTask<T11> task11, LuminTask<T12> task12, LuminTask<T13> task13) tasks)
         {
             return LuminTask.WhenAll(tasks.task1, tasks.task2, tasks.task3, tasks.task4, tasks.task5, tasks.task6, tasks.task7, tasks.task8, tasks.task9, tasks.task10, tasks.task11, tasks.task12, tasks.task13).GetAwaiter();
         }
 
-        public static LuminTaskAwaiter<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14)> GetAwaiter<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14>(this (LuminTask<T1> task1, LuminTask<T2> task2, LuminTask<T3> task3, LuminTask<T4> task4, LuminTask<T5> task5, LuminTask<T6> task6, LuminTask<T7> task7, LuminTask<T8> task8, LuminTask<T9> task9, LuminTask<T10> task10, LuminTask<T11> task11, LuminTask<T12> task12, LuminTask<T13> task13, LuminTask<T14> task14) tasks)
+        public static LuminTask<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14)> GetAwaiter<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14>(this (LuminTask<T1> task1, LuminTask<T2> task2, LuminTask<T3> task3, LuminTask<T4> task4, LuminTask<T5> task5, LuminTask<T6> task6, LuminTask<T7> task7, LuminTask<T8> task8, LuminTask<T9> task9, LuminTask<T10> task10, LuminTask<T11> task11, LuminTask<T12> task12, LuminTask<T13> task13, LuminTask<T14> task14) tasks)
         {
             return LuminTask.WhenAll(tasks.task1, tasks.task2, tasks.task3, tasks.task4, tasks.task5, tasks.task6, tasks.task7, tasks.task8, tasks.task9, tasks.task10, tasks.task11, tasks.task12, tasks.task13, tasks.task14).GetAwaiter();
         }
 
-        public static LuminTaskAwaiter<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15)> GetAwaiter<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15>(this (LuminTask<T1> task1, LuminTask<T2> task2, LuminTask<T3> task3, LuminTask<T4> task4, LuminTask<T5> task5, LuminTask<T6> task6, LuminTask<T7> task7, LuminTask<T8> task8, LuminTask<T9> task9, LuminTask<T10> task10, LuminTask<T11> task11, LuminTask<T12> task12, LuminTask<T13> task13, LuminTask<T14> task14, LuminTask<T15> task15) tasks)
+        public static LuminTask<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15)> GetAwaiter<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15>(this (LuminTask<T1> task1, LuminTask<T2> task2, LuminTask<T3> task3, LuminTask<T4> task4, LuminTask<T5> task5, LuminTask<T6> task6, LuminTask<T7> task7, LuminTask<T8> task8, LuminTask<T9> task9, LuminTask<T10> task10, LuminTask<T11> task11, LuminTask<T12> task12, LuminTask<T13> task13, LuminTask<T14> task14, LuminTask<T15> task15) tasks)
         {
             return LuminTask.WhenAll(tasks.task1, tasks.task2, tasks.task3, tasks.task4, tasks.task5, tasks.task6, tasks.task7, tasks.task8, tasks.task9, tasks.task10, tasks.task11, tasks.task12, tasks.task13, tasks.task14, tasks.task15).GetAwaiter();
         }
 
-        public static LuminTaskAwaiter GetAwaiter(this (LuminTask task1, LuminTask task2) tasks)
+        public static LuminTask GetAwaiter(this (LuminTask task1, LuminTask task2) tasks)
         {
             return LuminTask.WhenAll(tasks.task1, tasks.task2).GetAwaiter();
         }
 
-        public static LuminTaskAwaiter GetAwaiter(this (LuminTask task1, LuminTask task2, LuminTask task3) tasks)
+        public static LuminTask GetAwaiter(this (LuminTask task1, LuminTask task2, LuminTask task3) tasks)
         {
             return LuminTask.WhenAll(tasks.task1, tasks.task2, tasks.task3).GetAwaiter();
         }
 
-        public static LuminTaskAwaiter GetAwaiter(this (LuminTask task1, LuminTask task2, LuminTask task3, LuminTask task4) tasks)
+        public static LuminTask GetAwaiter(this (LuminTask task1, LuminTask task2, LuminTask task3, LuminTask task4) tasks)
         {
             return LuminTask.WhenAll(tasks.task1, tasks.task2, tasks.task3, tasks.task4).GetAwaiter();
         }
 
-        public static LuminTaskAwaiter GetAwaiter(this (LuminTask task1, LuminTask task2, LuminTask task3, LuminTask task4, LuminTask task5) tasks)
+        public static LuminTask GetAwaiter(this (LuminTask task1, LuminTask task2, LuminTask task3, LuminTask task4, LuminTask task5) tasks)
         {
             return LuminTask.WhenAll(tasks.task1, tasks.task2, tasks.task3, tasks.task4, tasks.task5).GetAwaiter();
         }
 
-        public static LuminTaskAwaiter GetAwaiter(this (LuminTask task1, LuminTask task2, LuminTask task3, LuminTask task4, LuminTask task5, LuminTask task6) tasks)
+        public static LuminTask GetAwaiter(this (LuminTask task1, LuminTask task2, LuminTask task3, LuminTask task4, LuminTask task5, LuminTask task6) tasks)
         {
             return LuminTask.WhenAll(tasks.task1, tasks.task2, tasks.task3, tasks.task4, tasks.task5, tasks.task6).GetAwaiter();
         }
 
-        public static LuminTaskAwaiter GetAwaiter(this (LuminTask task1, LuminTask task2, LuminTask task3, LuminTask task4, LuminTask task5, LuminTask task6, LuminTask task7) tasks)
+        public static LuminTask GetAwaiter(this (LuminTask task1, LuminTask task2, LuminTask task3, LuminTask task4, LuminTask task5, LuminTask task6, LuminTask task7) tasks)
         {
             return LuminTask.WhenAll(tasks.task1, tasks.task2, tasks.task3, tasks.task4, tasks.task5, tasks.task6, tasks.task7).GetAwaiter();
         }
 
-        public static LuminTaskAwaiter GetAwaiter(this (LuminTask task1, LuminTask task2, LuminTask task3, LuminTask task4, LuminTask task5, LuminTask task6, LuminTask task7, LuminTask task8) tasks)
+        public static LuminTask GetAwaiter(this (LuminTask task1, LuminTask task2, LuminTask task3, LuminTask task4, LuminTask task5, LuminTask task6, LuminTask task7, LuminTask task8) tasks)
         {
             return LuminTask.WhenAll(tasks.task1, tasks.task2, tasks.task3, tasks.task4, tasks.task5, tasks.task6, tasks.task7, tasks.task8).GetAwaiter();
         }
 
-        public static LuminTaskAwaiter GetAwaiter(this (LuminTask task1, LuminTask task2, LuminTask task3, LuminTask task4, LuminTask task5, LuminTask task6, LuminTask task7, LuminTask task8, LuminTask task9) tasks)
+        public static LuminTask GetAwaiter(this (LuminTask task1, LuminTask task2, LuminTask task3, LuminTask task4, LuminTask task5, LuminTask task6, LuminTask task7, LuminTask task8, LuminTask task9) tasks)
         {
             return LuminTask.WhenAll(tasks.task1, tasks.task2, tasks.task3, tasks.task4, tasks.task5, tasks.task6, tasks.task7, tasks.task8, tasks.task9).GetAwaiter();
         }
 
-        public static LuminTaskAwaiter GetAwaiter(this (LuminTask task1, LuminTask task2, LuminTask task3, LuminTask task4, LuminTask task5, LuminTask task6, LuminTask task7, LuminTask task8, LuminTask task9, LuminTask task10) tasks)
+        public static LuminTask GetAwaiter(this (LuminTask task1, LuminTask task2, LuminTask task3, LuminTask task4, LuminTask task5, LuminTask task6, LuminTask task7, LuminTask task8, LuminTask task9, LuminTask task10) tasks)
         {
             return LuminTask.WhenAll(tasks.task1, tasks.task2, tasks.task3, tasks.task4, tasks.task5, tasks.task6, tasks.task7, tasks.task8, tasks.task9, tasks.task10).GetAwaiter();
         }
 
-        public static LuminTaskAwaiter GetAwaiter(this (LuminTask task1, LuminTask task2, LuminTask task3, LuminTask task4, LuminTask task5, LuminTask task6, LuminTask task7, LuminTask task8, LuminTask task9, LuminTask task10, LuminTask task11) tasks)
+        public static LuminTask GetAwaiter(this (LuminTask task1, LuminTask task2, LuminTask task3, LuminTask task4, LuminTask task5, LuminTask task6, LuminTask task7, LuminTask task8, LuminTask task9, LuminTask task10, LuminTask task11) tasks)
         {
             return LuminTask.WhenAll(tasks.task1, tasks.task2, tasks.task3, tasks.task4, tasks.task5, tasks.task6, tasks.task7, tasks.task8, tasks.task9, tasks.task10, tasks.task11).GetAwaiter();
         }
 
-        public static LuminTaskAwaiter GetAwaiter(this (LuminTask task1, LuminTask task2, LuminTask task3, LuminTask task4, LuminTask task5, LuminTask task6, LuminTask task7, LuminTask task8, LuminTask task9, LuminTask task10, LuminTask task11, LuminTask task12) tasks)
+        public static LuminTask GetAwaiter(this (LuminTask task1, LuminTask task2, LuminTask task3, LuminTask task4, LuminTask task5, LuminTask task6, LuminTask task7, LuminTask task8, LuminTask task9, LuminTask task10, LuminTask task11, LuminTask task12) tasks)
         {
             return LuminTask.WhenAll(tasks.task1, tasks.task2, tasks.task3, tasks.task4, tasks.task5, tasks.task6, tasks.task7, tasks.task8, tasks.task9, tasks.task10, tasks.task11, tasks.task12).GetAwaiter();
         }
 
-        public static LuminTaskAwaiter GetAwaiter(this (LuminTask task1, LuminTask task2, LuminTask task3, LuminTask task4, LuminTask task5, LuminTask task6, LuminTask task7, LuminTask task8, LuminTask task9, LuminTask task10, LuminTask task11, LuminTask task12, LuminTask task13) tasks)
+        public static LuminTask GetAwaiter(this (LuminTask task1, LuminTask task2, LuminTask task3, LuminTask task4, LuminTask task5, LuminTask task6, LuminTask task7, LuminTask task8, LuminTask task9, LuminTask task10, LuminTask task11, LuminTask task12, LuminTask task13) tasks)
         {
             return LuminTask.WhenAll(tasks.task1, tasks.task2, tasks.task3, tasks.task4, tasks.task5, tasks.task6, tasks.task7, tasks.task8, tasks.task9, tasks.task10, tasks.task11, tasks.task12, tasks.task13).GetAwaiter();
         }
 
-        public static LuminTaskAwaiter GetAwaiter(this (LuminTask task1, LuminTask task2, LuminTask task3, LuminTask task4, LuminTask task5, LuminTask task6, LuminTask task7, LuminTask task8, LuminTask task9, LuminTask task10, LuminTask task11, LuminTask task12, LuminTask task13, LuminTask task14) tasks)
+        public static LuminTask GetAwaiter(this (LuminTask task1, LuminTask task2, LuminTask task3, LuminTask task4, LuminTask task5, LuminTask task6, LuminTask task7, LuminTask task8, LuminTask task9, LuminTask task10, LuminTask task11, LuminTask task12, LuminTask task13, LuminTask task14) tasks)
         {
             return LuminTask.WhenAll(tasks.task1, tasks.task2, tasks.task3, tasks.task4, tasks.task5, tasks.task6, tasks.task7, tasks.task8, tasks.task9, tasks.task10, tasks.task11, tasks.task12, tasks.task13, tasks.task14).GetAwaiter();
         }
 
-        public static LuminTaskAwaiter GetAwaiter(this (LuminTask task1, LuminTask task2, LuminTask task3, LuminTask task4, LuminTask task5, LuminTask task6, LuminTask task7, LuminTask task8, LuminTask task9, LuminTask task10, LuminTask task11, LuminTask task12, LuminTask task13, LuminTask task14, LuminTask task15) tasks)
+        public static LuminTask GetAwaiter(this (LuminTask task1, LuminTask task2, LuminTask task3, LuminTask task4, LuminTask task5, LuminTask task6, LuminTask task7, LuminTask task8, LuminTask task9, LuminTask task10, LuminTask task11, LuminTask task12, LuminTask task13, LuminTask task14, LuminTask task15) tasks)
         {
             return LuminTask.WhenAll(tasks.task1, tasks.task2, tasks.task3, tasks.task4, tasks.task5, tasks.task6, tasks.task7, tasks.task8, tasks.task9, tasks.task10, tasks.task11, tasks.task12, tasks.task13, tasks.task14, tasks.task15).GetAwaiter();
         }

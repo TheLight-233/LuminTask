@@ -25,7 +25,7 @@ public static unsafe class EnumeratorAsyncLuminTask
     }
     
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static LuminTaskAwaiter GetAwaiter<T>(this T enumerator)
+    public static LuminTask GetAwaiter<T>(this T enumerator)
         where T : IEnumerator
     {
         var e = (IEnumerator)enumerator;
@@ -108,9 +108,9 @@ public static unsafe class EnumeratorAsyncLuminTask
             IEnumerator innerEnumerator = Unsafe.As<IEnumerator>(state.State);
             StateTuple<InfoWarp> infos = Unsafe.As<StateTuple<InfoWarp>>(state.StateTuple);
             
-            if (infos.Item1.CalledGetResult)
+            if (infos.Item.CalledGetResult)
             {
-                infos.Item1.LoopRunning = false;
+                infos.Item.LoopRunning = false;
                 Dispose(ref stateRef);
                 return false;
             }
@@ -122,22 +122,22 @@ public static unsafe class EnumeratorAsyncLuminTask
 
             if (state.CancellationToken.IsCancellationRequested)
             {
-                infos.Item1.LoopRunning = false;
+                infos.Item.LoopRunning = false;
                 LuminTaskSourceCore<AsyncUnit>.TrySetCanceled(state.Source);
                 infos.Dispose();
                 Dispose(ref stateRef);
                 return false;
             }
 
-            if (infos.Item1.InitialFrame == -1)
+            if (infos.Item.InitialFrame == -1)
             {
                 // Time can not touch in threadpool.
                 if (PlayerLoopHelper.IsMainThread)
                 {
-                    infos.Item1.InitialFrame = Time.frameCount;
+                    infos.Item.InitialFrame = Time.frameCount;
                 }
             }
-            else if (infos.Item1.InitialFrame == Time.frameCount)
+            else if (infos.Item.InitialFrame == Time.frameCount)
             {
                 return true; // already executed in first frame, skip.
             }
@@ -151,14 +151,14 @@ public static unsafe class EnumeratorAsyncLuminTask
             }
             catch (Exception ex)
             {
-                infos.Item1.LoopRunning = false;
+                infos.Item.LoopRunning = false;
                 LuminTaskSourceCore<AsyncUnit>.TrySetException(state.Source, ex);
                 infos.Dispose();
                 Dispose(ref stateRef);
                 return false;
             }
 
-            infos.Item1.LoopRunning = false;
+            infos.Item.LoopRunning = false;
             LuminTaskSourceCore<AsyncUnit>.TrySetResult(state.Source);
             infos.Dispose();
             Dispose(ref stateRef);

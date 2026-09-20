@@ -209,12 +209,12 @@ namespace LuminThread.Unity
                 // Register cancellation
                 if (cancellationToken.CanBeCanceled)
                 {
-                    stateTuple.Item1.Registration = cancellationToken.Register(static s =>
+                    stateTuple.Item.Item1.Registration = cancellationToken.Register(static s =>
                     {
                         var taskState = (LuminTaskState)s;
-                        var tuple = Unsafe.As<StateTuple<PromiseState, (Tween, TweenLuminTaskCancelBehaviour, CallbackType, TweenCallback)>>(taskState.StateTuple);
+                        var tuple = Unsafe.As<StateTuple<(PromiseState, (Tween, TweenLuminTaskCancelBehaviour, CallbackType, TweenCallback))>>(taskState.StateTuple);
                         
-                        var (tween, cancelBehaviour, callbackType, originalCallback) = tuple.Item2;
+                        var (tween, cancelBehaviour, callbackType, originalCallback) = tuple.Item.Item2;
                         
                         switch (cancelBehaviour)
                         {
@@ -223,28 +223,28 @@ namespace LuminThread.Unity
                                 tween.Kill(false);
                                 break;
                             case TweenLuminTaskCancelBehaviour.KillAndCancelAwait:
-                                tuple.Item1.Canceled = true;
+                                tuple.Item.Item1.Canceled = true;
                                 tween.Kill(false);
                                 break;
                             case TweenLuminTaskCancelBehaviour.KillWithCompleteCallback:
                                 tween.Kill(true);
                                 break;
                             case TweenLuminTaskCancelBehaviour.KillWithCompleteCallbackAndCancelAwait:
-                                tuple.Item1.Canceled = true;
+                                tuple.Item.Item1.Canceled = true;
                                 tween.Kill(true);
                                 break;
                             case TweenLuminTaskCancelBehaviour.Complete:
                                 tween.Complete(false);
                                 break;
                             case TweenLuminTaskCancelBehaviour.CompleteAndCancelAwait:
-                                tuple.Item1.Canceled = true;
+                                tuple.Item.Item1.Canceled = true;
                                 tween.Complete(false);
                                 break;
                             case TweenLuminTaskCancelBehaviour.CompleteWithSequenceCallback:
                                 tween.Complete(true);
                                 break;
                             case TweenLuminTaskCancelBehaviour.CompleteWithSequenceCallbackAndCancelAwait:
-                                tuple.Item1.Canceled = true;
+                                tuple.Item.Item1.Canceled = true;
                                 tween.Complete(true);
                                 break;
                             case TweenLuminTaskCancelBehaviour.CancelAwait:
@@ -254,7 +254,7 @@ namespace LuminThread.Unity
                         }
 
                         // 回调自身在途：仅清引用，释放交给 OnCompleted。
-                        tuple.Item1.Registration = default;
+                        tuple.Item.Item1.Registration = default;
                     }, state);
                 }
 
@@ -263,9 +263,9 @@ namespace LuminThread.Unity
 
             static void OnCompleted(LuminTaskState state)
             {
-                var tuple = Unsafe.As<StateTuple<PromiseState, (Tween, TweenLuminTaskCancelBehaviour, CallbackType, TweenCallback)>>(state.StateTuple);
+                var tuple = Unsafe.As<StateTuple<(PromiseState, (Tween, TweenLuminTaskCancelBehaviour, CallbackType, TweenCallback))>>(state.StateTuple);
                 
-                var (tween, cancelBehaviour, callbackType, originalCallback) = tuple.Item2;
+                var (tween, cancelBehaviour, callbackType, originalCallback) = tuple.Item.Item2;
                 
                 if (state.CancellationToken.IsCancellationRequested)
                 {
@@ -275,11 +275,11 @@ namespace LuminThread.Unity
                         || cancelBehaviour == TweenLuminTaskCancelBehaviour.CompleteWithSequenceCallbackAndCancelAwait
                         || cancelBehaviour == TweenLuminTaskCancelBehaviour.CancelAwait)
                     {
-                        tuple.Item1.Canceled = true;
+                        tuple.Item.Item1.Canceled = true;
                     }
                 }
                 
-                if (tuple.Item1.Canceled)
+                if (tuple.Item.Item1.Canceled)
                 {
                     LuminTaskSourceCore<AsyncUnit>.TrySetCanceled(state.Source);
                 }
@@ -290,7 +290,7 @@ namespace LuminThread.Unity
                 }
                 
                 RestoreOriginalCallback(tween, callbackType, originalCallback);
-                tuple.Item1.Registration.Dispose();
+                tuple.Item.Item1.Registration.Dispose();
                 tuple.Dispose();
                 LuminTaskSourceCore<AsyncUnit>.Dispose(state.Source);
             }

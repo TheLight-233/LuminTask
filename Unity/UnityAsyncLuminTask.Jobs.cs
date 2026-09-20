@@ -13,7 +13,7 @@ namespace LuminThread.Unity
 {
     public static partial class UnityAsyncLuminTask
     {
-        public static LuminTaskAwaiter GetAwaiter(this JobHandle jobHandle)
+        public static LuminTask GetAwaiter(this JobHandle jobHandle)
         {
             return JobHandlePromise.Create(jobHandle, PlayerLoopTiming.Update, CancellationToken.None).GetAwaiter();
         }
