@@ -8,6 +8,12 @@ namespace LuminThread.TaskSource;
 // to the global LuminTaskCoreSource. The token is part of the ValueTask protocol shape; the
 // handle's own generation already carries the validation duty, so it is ignored here.
 //
+// The generic operator LuminTask<T> -> ValueTask<T> was removed on purpose: IL2CPP materialises
+// every method of every closed generic type, so that implicit operator alone instantiated
+// ValueTaskSource<T> once per LuminTask<T> (152 closures in the bench build) and dragged
+// IValueTaskSource<T> along with it. The ToValueTask capability stays reachable through the
+// explicit AsValueTask<T>() extension, which only pays the cost where it is actually called.
+//
 // LuminTaskStatus matches ValueTaskSourceStatus value for value
 // (Pending / Succeeded / Faulted / Canceled = 0 / 1 / 2 / 3), so the projection is a plain cast.
 public sealed class ValueTaskSource : IValueTaskSource

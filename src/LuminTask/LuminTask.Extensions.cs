@@ -18,7 +18,42 @@ namespace LuminThread
         public static ValueTask AsValueTask(this LuminTask task) => task;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static ValueTask<T> AsValueTask<T>(this LuminTask<T> task) => task;
+        public static ValueTask<T> AsValueTask<T>(this LuminTask<T> task)
+        {
+            // Same wiring as the `in`-ref overload: kept explicit so IL2CPP does not instantiate
+            // ValueTaskSource<T> for every closed LuminTask<T>.
+            if (task._handle.IsNull())
+            {
+                return new ValueTask<T>(task._result!);
+            }
+
+            return new ValueTask<T>(new ValueTaskSource<T>(task._handle), 0);
+        }
+
+        // ----------------------------------------------------------------------------------
+        // LuminTask<T> member-lowering. `Id` and `SourceOnCompleted` touch nothing but the handle,
+        // so they used to live on the closed type and were therefore materialised for every
+        // LuminTask<T> closure (a few hundred of them). As generic extension methods they are
+        // instantiated per T only at the call sites that actually use them instead. `Status` stays
+        // an instance member: it is called from dozens of places, so lowering it would only move
+        // the instantiation from the type table to the generic method table.
+        // ----------------------------------------------------------------------------------
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static short GetId<T>(this in LuminTask<T> task) => (short)(task._handle.SlotRaw() - 1);
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static void SourceOnCompleted<T>(this in LuminTask<T> task, Action<object> continuation, object state)
+        {
+            if (task._handle.IsNull())
+            {
+                continuation(state);
+            }
+            else
+            {
+                LuminTaskCoreSource.OnCompleted(task._handle, continuation, state);
+            }
+        }
 
         #region Task conversion
 

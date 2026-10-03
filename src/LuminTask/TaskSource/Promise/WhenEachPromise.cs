@@ -4,7 +4,6 @@ using System.Linq;
 using System.Runtime.ExceptionServices;
 using System.Threading;
 using LuminThread.Interface;
-using LuminThread.Utility;
 
 namespace LuminThread.TaskSource.Promise;
 
@@ -104,7 +103,7 @@ internal sealed class WhenEachPromise<T> : ILuminTaskAsyncEnumerable<WhenEachRes
         private readonly LuminTask<T>[] _tasks;
         private readonly int _taskCount;
         private readonly CancellationToken _cancellationToken;
-        private readonly LuminChannel<WhenEachResult<T>> _channel;
+        private readonly WhenEachQueue<WhenEachResult<T>> _queue;
         private int _remainingTasks;
         private bool _disposed;
         private WhenEachResult<T> _current;
@@ -122,7 +121,7 @@ internal sealed class WhenEachPromise<T> : ILuminTaskAsyncEnumerable<WhenEachRes
             _remainingTasks = taskCount;
             _cancellationToken = cancellationToken;
 
-            _channel = LuminChannel.CreateSingleConsumerUnbounded<WhenEachResult<T>>();
+            _queue = new WhenEachQueue<WhenEachResult<T>>();
 
             StartAllTasks();
         }
@@ -152,7 +151,7 @@ internal sealed class WhenEachPromise<T> : ILuminTaskAsyncEnumerable<WhenEachRes
         {
             if (_disposed) return;
 
-            _channel.Writer.TryWrite(result);
+            _queue.TryWrite(result);
 
             var remaining = Interlocked.Decrement(ref _remainingTasks);
             if (remaining <= 0)
@@ -164,7 +163,7 @@ internal sealed class WhenEachPromise<T> : ILuminTaskAsyncEnumerable<WhenEachRes
         private void OnAllTasksCompleted()
         {
             _allTasksCompleted = true;
-            _channel.Writer.TryComplete();
+            _queue.TryComplete();
         }
 
         public async LuminTask<bool> MoveNextAsync()
@@ -176,7 +175,7 @@ internal sealed class WhenEachPromise<T> : ILuminTaskAsyncEnumerable<WhenEachRes
 
             if (_allTasksCompleted)
             {
-                if (_channel.Reader.TryRead(out var result))
+                if (_queue.TryRead(out var result))
                 {
                     _current = result;
                     return true;
@@ -184,9 +183,9 @@ internal sealed class WhenEachPromise<T> : ILuminTaskAsyncEnumerable<WhenEachRes
                 return false;
             }
 
-            if (await _channel.Reader.WaitToReadAsync(_cancellationToken))
+            if (await _queue.WaitToReadAsync(_cancellationToken))
             {
-                if (_channel.Reader.TryRead(out var result))
+                if (_queue.TryRead(out var result))
                 {
                     _current = result;
                     return true;
@@ -203,7 +202,7 @@ internal sealed class WhenEachPromise<T> : ILuminTaskAsyncEnumerable<WhenEachRes
 
             _disposed = true;
 
-            _channel.Writer.TryComplete();
+            _queue.TryComplete();
 
             return LuminTask.CompletedTask();
         }

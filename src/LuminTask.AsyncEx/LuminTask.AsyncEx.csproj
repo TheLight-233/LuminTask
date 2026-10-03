@@ -1,0 +1,36 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <Nullable>enable</Nullable>
+        <LangVersion>13</LangVersion>
+        <TargetFrameworks>netstandard2.1;net8.0;net9.0;net10.0</TargetFrameworks>
+        <!-- 库自身实现不受面向使用方的单次消费契约约束，与主项目一致屏蔽 LUM 诊断。 -->
+        <NoWarn>$(NoWarn);CS1591;CA2255;LUM1001;LUM1002;LUM1003;LUM1004;LUM1005;LUM1006;LUM1007;LUM1008;LUM9999</NoWarn>
+        <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+        <PackageId>LuminTask.AsyncEx</PackageId>
+        <Version>1.0.7</Version>
+        <Authors>TheLight233</Authors>
+        <Description>Optional async synchronization primitives for LuminTask (AsyncLock, AsyncSemaphore, AsyncLazy, async events, ...). Also bundled inside the LuminTask package.</Description>
+        <PackageTags>async;asyncex;luminTask;synchronization;zero-allocation</PackageTags>
+        <PackageProjectUrl>https://github.com/TheLight-233/LuminTask</PackageProjectUrl>
+        <RepositoryUrl>https://github.com/TheLight-233/LuminTask.git</RepositoryUrl>
+        <RepositoryType>git</RepositoryType>
+        <PackageLicenseExpression>MIT</PackageLicenseExpression>
+        <IncludeSymbols>true</IncludeSymbols>
+        <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="..\LuminTask\LuminTask.csproj" />
+        <PackageReference Include="System.Runtime.CompilerServices.Unsafe" Version="6.1.2" />
+        <!-- LuminTaskHandle 在主项目里是全局别名，global using 不跨程序集，此处重新声明。 -->
+        <Using Include="System.UInt64" Alias="LuminTaskHandle" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <!-- 与主项目一致：构建期对被检查代码做单次消费契约 dogfooding，不传递给引用方。 -->
+        <ProjectReference Include="..\..\analyzer\LuminTask.Analyzer\LuminTask.Analyzer.csproj"
+                          OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+    </ItemGroup>
+
+</Project>

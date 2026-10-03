@@ -18,7 +18,6 @@ for (int i = 2; i <= 4; i++)
 {
     var typeParams = string.Join(", ", Enumerable.Range(1, i).Select(n => $"T{n}"));
     var taskParams = string.Join(", ", Enumerable.Range(1, i).Select(n => $"LuminTask<T{n}> task{n}"));
-    var createParams = string.Join(", ", Enumerable.Range(1, i).Select(n => $"task{n}"));
     var resultTuple = string.Join(", ", Enumerable.Range(1, i).Select(n => $"self.t{n}"));
 #>
 internal sealed class WhenAllPromise<<#= typeParams #>> : CombinerNode
@@ -29,11 +28,6 @@ internal sealed class WhenAllPromise<<#= typeParams #>> : CombinerNode
 <# for (int j = 1; j <= i; j++) { #>
     private LuminTask<T<#= j #>> _task<#= j #>;
 <# } #>
-
-    public static WhenAllPromise<<#= typeParams #>> Create(<#= taskParams #>)
-    {
-        return new WhenAllPromise<<#= typeParams #>>(<#= createParams #>);
-    }
 
     public WhenAllPromise(<#= taskParams #>)
     {
@@ -46,10 +40,20 @@ internal sealed class WhenAllPromise<<#= typeParams #>> : CombinerNode
             }
             else
             {
-                task<#= j #>.SourceOnCompleted(static state => TryInvokeContinuationT<#= j #>((WhenAllPromise<<#= typeParams #>>)state), this);
+                task<#= j #>.SourceOnCompleted(ChildContinuation<#= j - 1 #>, this);
             }
         }
 <# } #>
+    }
+
+    internal override void OnChildCompleted(int index)
+    {
+        switch (index)
+        {
+<# for (int j = 1; j <= i; j++) { #>
+            <#= (j == i) ? "default" : ("case " + (j - 1)) #>: TryInvokeContinuationT<#= j #>(this); break;
+<# } #>
+        }
     }
 
 <# for (int j = 1; j <= i; j++) { #>
@@ -100,10 +104,20 @@ internal sealed class WhenAllPromise<#= i #> : CombinerNode
             }
             else
             {
-                task<#= j #>.SourceOnCompleted(static state => TryInvokeContinuationT<#= j #>((WhenAllPromise<#= i #>)state), this);
+                task<#= j #>.SourceOnCompleted(ChildContinuation<#= j - 1 #>, this);
             }
         }
 <# } #>
+    }
+
+    internal override void OnChildCompleted(int index)
+    {
+        switch (index)
+        {
+<# for (int j = 1; j <= i; j++) { #>
+            <#= (j == i) ? "default" : ("case " + (j - 1)) #>: TryInvokeContinuationT<#= j #>(this); break;
+<# } #>
+        }
     }
 
 <# for (int j = 1; j <= i; j++) { #>
@@ -132,16 +146,6 @@ internal sealed class WhenAllPromise<T> : CombinerNode
 {
     private T[] _results;
     private int _totalCount;
-
-    public static WhenAllPromise<T> Create(params LuminTask<T>[] tasks)
-    {
-        return new WhenAllPromise<T>(tasks);
-    }
-
-    public static WhenAllPromise<T> Create(IEnumerable<LuminTask<T>> tasks)
-    {
-        return new WhenAllPromise<T>(tasks.ToArray());
-    }
 
     public WhenAllPromise(LuminTask<T>[]? tasks)
     {
@@ -201,16 +205,6 @@ internal sealed class WhenAllPromise<T> : CombinerNode
 internal sealed class WhenAllPromise : CombinerNode
 {
     private int _totalCount;
-
-    public static WhenAllPromise Create(params LuminTask[] tasks)
-    {
-        return new WhenAllPromise(tasks);
-    }
-
-    public static WhenAllPromise Create(IEnumerable<LuminTask> tasks)
-    {
-        return new WhenAllPromise(tasks.ToArray());
-    }
 
     public WhenAllPromise(LuminTask[]? tasks)
     {

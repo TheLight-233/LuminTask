@@ -26,17 +26,28 @@
     </ItemGroup>
 
     <ItemGroup>
-        <!-- 契约分析器：
-             1) ProjectReference(OutputItemType=Analyzer) 让库自身构建时被检查（dogfooding），
-                只作用于本项目的编译，不会传递给 ProjectReference 引用方；
-             2) None Include 把分析器 dll 直接打进 LuminTask 的 NuGet 包（analyzers/dotnet/cs），
-                消费者只需安装 LuminTask 一个包，分析器即自动生效（报告 LUM1001~LUM1006）。
-             库内部实现（PlayerLoop 轮询延迟消费、三元表达式转移等）不受面向使用方的
-             契约约束，因此在本项目 NoWarn 中屏蔽 LUM 诊断。 -->
+        <!-- AsyncEx 拆分为独立程序集后，需要访问句柄驱动的内部桥接
+             （RentSlot / LuminTaskCoreSource / LuminTaskResultBridge / 句柄字段）。
+             用 InternalsVisibleTo 定向开放，避免把这些成员提升为公开 API。 -->
+        <InternalsVisibleTo Include="LuminTask.AsyncEx" />
+    </ItemGroup>
+
+    <ItemGroup>
         <ProjectReference Include="..\..\analyzer\LuminTask.Analyzer\LuminTask.Analyzer.csproj"
                           OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
         <None Include="..\..\analyzer\LuminTask.Analyzer\bin\$(Configuration)\netstandard2.0\LuminTask.Analyzer.dll"
               Pack="true" PackagePath="analyzers/dotnet/cs" Visible="false" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <None Include="..\LuminTask.AsyncEx\bin\$(Configuration)\netstandard2.1\LuminTask.AsyncEx.dll"
+              Pack="true" PackagePath="lib\netstandard2.1" Visible="false" />
+        <None Include="..\LuminTask.AsyncEx\bin\$(Configuration)\net8.0\LuminTask.AsyncEx.dll"
+              Pack="true" PackagePath="lib\net8.0" Visible="false" />
+        <None Include="..\LuminTask.AsyncEx\bin\$(Configuration)\net9.0\LuminTask.AsyncEx.dll"
+              Pack="true" PackagePath="lib\net9.0" Visible="false" />
+        <None Include="..\LuminTask.AsyncEx\bin\$(Configuration)\net10.0\LuminTask.AsyncEx.dll"
+              Pack="true" PackagePath="lib\net10.0" Visible="false" />
     </ItemGroup>
 
     <ItemGroup>

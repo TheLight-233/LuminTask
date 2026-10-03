@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
     <PropertyGroup>
         <OutputType>Exe</OutputType>
@@ -13,6 +13,8 @@
 
     <ItemGroup>
       <ProjectReference Include="..\..\src\LuminTask\LuminTask.csproj" />
+      <!-- AsyncEx 已拆分为独立程序集，使用其原语的测试需要显式引用 -->
+      <ProjectReference Include="..\..\src\LuminTask.AsyncEx\LuminTask.AsyncEx.csproj" />
       <!-- 契约分析器作用于测试工程本身的编译（dogfooding） -->
       <ProjectReference Include="..\..\analyzer\LuminTask.Analyzer\LuminTask.Analyzer.csproj"
                         OutputItemType="Analyzer" ReferenceOutputAssembly="false" />

@@ -221,8 +221,6 @@ public unsafe partial struct LuminTask<T> : ICriticalNotifyCompletion
 
     internal static readonly bool IsValueType = typeof(T).IsValueType;
 
-    public readonly short Id => (short)(_handle.SlotRaw() - 1);
-
     public readonly T? Result => _handle.IsNull()
         ? _result
         : throw new InvalidOperationException(
@@ -278,20 +276,6 @@ public unsafe partial struct LuminTask<T> : ICriticalNotifyCompletion
         }
     }
 
-    [DebuggerHidden]
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public readonly void SourceOnCompleted(Action<object> continuation, object state)
-    {
-        if (_handle.IsNull())
-        {
-            continuation(state);
-        }
-        else
-        {
-            LuminTaskCoreSource.OnCompleted(_handle, continuation, state);
-        }
-    }
-
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public readonly void UnsafeOnCompleted(Action continuation) => OnCompleted(continuation);
 
@@ -311,17 +295,6 @@ public unsafe partial struct LuminTask<T> : ICriticalNotifyCompletion
         }
 
         return new LuminTask(self._handle);
-    }
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static implicit operator ValueTask<T>(LuminTask<T> self)
-    {
-        if (self._handle.IsNull())
-        {
-            return new ValueTask<T>(self._result!);
-        }
-
-        return new ValueTask<T>(new ValueTaskSource<T>(self._handle), 0);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]

@@ -1,4 +1,4 @@
-﻿
+
 Microsoft Visual Studio Solution File, Format Version 12.00
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LuminTask", "src\LuminTask\LuminTask.csproj", "{1FF8E6D8-6D77-4371-ADB4-89B4103A5F2E}"
 EndProject
@@ -7,6 +7,8 @@ EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LuminTask.Benchmarks", "benchmarks\LuminTask.Benchmarks\LuminTask.Benchmarks.csproj", "{C7F1F41E-4BA5-4C64-9FB9-9B0FECAB2C8D}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LuminTask.Analyzer", "analyzer\LuminTask.Analyzer\LuminTask.Analyzer.csproj", "{EA388A2E-A93C-4303-A107-39AE2F044A6F}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LuminTask.AsyncEx", "src\LuminTask.AsyncEx\LuminTask.AsyncEx.csproj", "{A7A5CF5B-8332-4725-B56F-27E80E7392E6}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -66,6 +68,18 @@ Global
 		{EA388A2E-A93C-4303-A107-39AE2F044A6F}.Release|x64.Build.0 = Release|Any CPU
 		{EA388A2E-A93C-4303-A107-39AE2F044A6F}.Release|x86.ActiveCfg = Release|Any CPU
 		{EA388A2E-A93C-4303-A107-39AE2F044A6F}.Release|x86.Build.0 = Release|Any CPU
+		{A7A5CF5B-8332-4725-B56F-27E80E7392E6}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A7A5CF5B-8332-4725-B56F-27E80E7392E6}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A7A5CF5B-8332-4725-B56F-27E80E7392E6}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{A7A5CF5B-8332-4725-B56F-27E80E7392E6}.Debug|x64.Build.0 = Debug|Any CPU
+		{A7A5CF5B-8332-4725-B56F-27E80E7392E6}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{A7A5CF5B-8332-4725-B56F-27E80E7392E6}.Debug|x86.Build.0 = Debug|Any CPU
+		{A7A5CF5B-8332-4725-B56F-27E80E7392E6}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A7A5CF5B-8332-4725-B56F-27E80E7392E6}.Release|Any CPU.Build.0 = Release|Any CPU
+		{A7A5CF5B-8332-4725-B56F-27E80E7392E6}.Release|x64.ActiveCfg = Release|Any CPU
+		{A7A5CF5B-8332-4725-B56F-27E80E7392E6}.Release|x64.Build.0 = Release|Any CPU
+		{A7A5CF5B-8332-4725-B56F-27E80E7392E6}.Release|x86.ActiveCfg = Release|Any CPU
+		{A7A5CF5B-8332-4725-B56F-27E80E7392E6}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

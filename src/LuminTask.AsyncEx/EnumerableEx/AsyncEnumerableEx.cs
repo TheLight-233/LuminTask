@@ -86,7 +86,7 @@ public static class AsyncEnumerableExtensions
 
             public ValueTask<bool> MoveNextAsync()
             {
-                return enumerator.MoveNextAsync();
+                return LuminTaskValueTaskExtensions.AsValueTask(enumerator.MoveNextAsync());
             }
         }
     }

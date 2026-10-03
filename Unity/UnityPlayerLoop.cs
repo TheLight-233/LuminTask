@@ -33,6 +33,9 @@ namespace LuminThread.Unity
     /// </summary>
     internal sealed class UnityMainThreadPlayLoopStrategy : IPlayLoopStrategy
     {
+        // 排空后保留的小额常驻容量（低于它不收缩，避免每帧重复扩容）。
+        private const int IdleActiveTasksCapacity = 64;
+
         private readonly struct ScheduledAction
         {
             internal readonly LuminTaskState State;
@@ -131,6 +134,13 @@ namespace LuminThread.Unity
 
             if (writeIndex < count)
                 _activeTasks.RemoveRange(writeIndex, count - writeIndex);
+
+            // 与核心 StandardPlayLoopStrategy 一致：峰值排空后释放多余容量，只用小额下限
+            // 兜住常规负载，避免每帧归零后反复扩容。
+            if (_activeTasks.Count == 0 && _activeTasks.Capacity > IdleActiveTasksCapacity)
+            {
+                _activeTasks.Capacity = IdleActiveTasksCapacity;
+            }
         }
 
         private void ThrowIfDisposed()

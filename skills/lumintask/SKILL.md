@@ -161,6 +161,9 @@ await new WaitForSeconds(1f);                           // 通过 GetAwaiter 扩
 
 ## 8. Async 同步原语（AsyncEx）
 
+AsyncEx 位于独立程序集 `LuminTask.AsyncEx.dll`（随 LuminTask 包一起发布），使用前需 `using LuminThread.AsyncEx;`。
+它不依赖核心库的使用方式，Unity 工程若不需要同步原语，可删除该 dll 以减小包体。
+
 线程安全、零分配的异步原语，替代 lock/ManualResetEvent 的 async 版本：
 
 ```csharp

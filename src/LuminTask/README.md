@@ -8,26 +8,26 @@ LuminTask 是一款面向 .NET 与 Unity 的高性能 async/await 库。用 `Lum
 
 ## 📊 与 UniTask 的对比
 
-对比对象为 UniTask 2.5.10。两臂使用同一份同构负载源码（仅机械替换库名），在同一台机器上以 IL2CPP + StandaloneWindows64 做 clean build，运行时数据交错运行 3 次取中位数。
+对比对象为 UniTask 2.5.10。两臂使用同一份同构负载源码（仅机械替换库名），在同一台机器上以 IL2CPP + StandaloneWindows64 做 clean build；两臂在同一次会话内重新构建，运行时数据交错运行 3 次取中位数。
 
 | 构建产物 | LuminTask | UniTask | 差异 |
 | --- | ---: | ---: | ---: |
-| `global-metadata.dat` | 2.75 MB | 4.64 MB | **−40.8%** |
-| `GameAssembly.dll` | 16.20 MB | 39.80 MB | **−59.3%** |
-| 随包总体积（22 个文件） | 70.75 MB | 96.27 MB | **−26.5%** |
-| clean build 耗时 | 52.0 s | 100.6 s | **−48.3%** |
+| `global-metadata.dat` | 2.67 MB | 4.86 MB | **−45.1%** |
+| `GameAssembly.dll` | 13.85 MB | 41.14 MB | **−66.3%** |
+| 随包总体积（22 个文件） | 68.31 MB | 97.81 MB | **−30.2%** |
+| clean build 耗时 | 47.9 s | 105.9 s | **−54.8%** |
 
 | 运行时 | LuminTask | UniTask | 差异 |
 | --- | ---: | ---: | ---: |
-| 进程保留内存 | 135.1 MB | 151.9 MB | **−11.0%** |
-| 进程已分配内存 | 53.87 MB | 61.00 MB | **−11.7%** |
-| 运行期净 GC 分配 | 3.39 MB | 4.66 MB | **−27.4%** |
-| 托管堆存活（full GC 后） | 991 KB | 991 KB | 持平 |
-| 负载 pipeline 耗时 | 1594.0 ms | 1674.4 ms | −4.8% |
+| 进程保留内存 | 135.1 MB | 151.9 MB | **−11.1%** |
+| 进程已分配内存 | 52.95 MB | 61.36 MB | **−13.7%** |
+| 运行期净 GC 分配 | 2.80 MB | 4.80 MB | **−41.7%** |
+| 托管堆存活（full GC 后） | 975 KB | 995 KB | −2.1% |
+| 负载 pipeline 耗时 | 1612.0 ms | 1668.9 ms | −3.4% |
 
 > 进程内存取自 `Profiler.GetTotalReservedMemoryLong` / `GetTotalAllocatedMemoryLong`；托管堆取自 `GC.GetTotalMemory(true)`。
 
-优势集中在静态产物规模与分配流量上；托管堆存量持平，因为 LuminTask 把每次操作的分配换成了有界的池化驻留，换来一条预热后零分配的热路径。
+优势集中在静态产物规模与分配流量上；托管堆存量接近持平，因为 LuminTask 把每次操作的分配换成了有界的池化驻留，换来一条预热后零分配的热路径。
 
 ## ✨ 主要特性
 
@@ -50,7 +50,7 @@ LuminTask 是一款面向 .NET 与 Unity 的高性能 async/await 库。用 `Lum
 dotnet add package LuminTask
 ```
 
-契约分析器随主包发布（包内 `analyzers/dotnet/cs/`），安装后自动生效，无需额外引用。Unity 项目需启用 .NET Standard 2.1 兼容级别。
+契约分析器与 AsyncEx 均随主包发布（包内 `analyzers/dotnet/cs/` 与 `lib/<tfm>/LuminTask.AsyncEx.dll`），安装后自动生效，无需额外引用。AsyncEx 是独立程序集且与核心库无依赖，不需要的工程可直接删除该 dll。Unity 项目需启用 .NET Standard 2.1 兼容级别。
 
 ## 快速开始
 

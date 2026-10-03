@@ -109,6 +109,9 @@ namespace LuminThread
             private const int MaxTasksPerFrame = 1000;
             private const int ActivePollIntervalMilliseconds = 1;
 
+            // 排空后保留的小额常驻容量（低于它不收缩，避免每帧重复扩容）。
+            private const int IdleActiveTasksCapacity = 64;
+
             private readonly ConcurrentQueue<(LuminTaskState, MoveNext)> _incomingTasks = new();
             private readonly List<(LuminTaskState, MoveNext)> _activeTasks = new();
             private readonly ConcurrentQueue<Action> _continuations = new();
@@ -248,6 +251,13 @@ namespace LuminThread
                 }
 
                 _activeTasks.RemoveRange(writeIndex, _activeTasks.Count - writeIndex);
+
+                // 峰值（例如一帧涌入上万任务）过后列表会长期持有整块容量。排空时把超出
+                // 小额下限的容量还给 GC；下限本身避免“每帧归零 → 立刻重新扩容”的抖动。
+                if (_activeTasks.Count == 0 && _activeTasks.Capacity > IdleActiveTasksCapacity)
+                {
+                    _activeTasks.Capacity = IdleActiveTasksCapacity;
+                }
             }
 
             private void ProcessContinuations()

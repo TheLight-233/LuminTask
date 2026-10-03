@@ -14,11 +14,6 @@ internal sealed class WhenAnyPromise<T1, T2> : CombinerNode
     private LuminTask<T1> _task1;
     private LuminTask<T2> _task2;
 
-    public static WhenAnyPromise<T1, T2> Create(LuminTask<T1> task1, LuminTask<T2> task2)
-    {
-        return new WhenAnyPromise<T1, T2>(task1, task2);
-    }
-
     public WhenAnyPromise(LuminTask<T1> task1, LuminTask<T2> task2)
     {
         {
@@ -29,7 +24,7 @@ internal sealed class WhenAnyPromise<T1, T2> : CombinerNode
             }
             else
             {
-                task1.SourceOnCompleted(static state => TryInvokeContinuationT1((WhenAnyPromise<T1, T2>)state), this);
+                task1.SourceOnCompleted(ChildContinuation0, this);
             }
         }
         {
@@ -40,8 +35,17 @@ internal sealed class WhenAnyPromise<T1, T2> : CombinerNode
             }
             else
             {
-                task2.SourceOnCompleted(static state => TryInvokeContinuationT2((WhenAnyPromise<T1, T2>)state), this);
+                task2.SourceOnCompleted(ChildContinuation1, this);
             }
+        }
+    }
+
+    internal override void OnChildCompleted(int index)
+    {
+        switch (index)
+        {
+            case 0: TryInvokeContinuationT1(this); break;
+            default: TryInvokeContinuationT2(this); break;
         }
     }
 
@@ -104,11 +108,6 @@ internal sealed class WhenAnyPromise<T1, T2, T3> : CombinerNode
     private LuminTask<T2> _task2;
     private LuminTask<T3> _task3;
 
-    public static WhenAnyPromise<T1, T2, T3> Create(LuminTask<T1> task1, LuminTask<T2> task2, LuminTask<T3> task3)
-    {
-        return new WhenAnyPromise<T1, T2, T3>(task1, task2, task3);
-    }
-
     public WhenAnyPromise(LuminTask<T1> task1, LuminTask<T2> task2, LuminTask<T3> task3)
     {
         {
@@ -119,7 +118,7 @@ internal sealed class WhenAnyPromise<T1, T2, T3> : CombinerNode
             }
             else
             {
-                task1.SourceOnCompleted(static state => TryInvokeContinuationT1((WhenAnyPromise<T1, T2, T3>)state), this);
+                task1.SourceOnCompleted(ChildContinuation0, this);
             }
         }
         {
@@ -130,7 +129,7 @@ internal sealed class WhenAnyPromise<T1, T2, T3> : CombinerNode
             }
             else
             {
-                task2.SourceOnCompleted(static state => TryInvokeContinuationT2((WhenAnyPromise<T1, T2, T3>)state), this);
+                task2.SourceOnCompleted(ChildContinuation1, this);
             }
         }
         {
@@ -141,8 +140,18 @@ internal sealed class WhenAnyPromise<T1, T2, T3> : CombinerNode
             }
             else
             {
-                task3.SourceOnCompleted(static state => TryInvokeContinuationT3((WhenAnyPromise<T1, T2, T3>)state), this);
+                task3.SourceOnCompleted(ChildContinuation2, this);
             }
+        }
+    }
+
+    internal override void OnChildCompleted(int index)
+    {
+        switch (index)
+        {
+            case 0: TryInvokeContinuationT1(this); break;
+            case 1: TryInvokeContinuationT2(this); break;
+            default: TryInvokeContinuationT3(this); break;
         }
     }
 
@@ -231,11 +240,6 @@ internal sealed class WhenAnyPromise<T1, T2, T3, T4> : CombinerNode
     private LuminTask<T3> _task3;
     private LuminTask<T4> _task4;
 
-    public static WhenAnyPromise<T1, T2, T3, T4> Create(LuminTask<T1> task1, LuminTask<T2> task2, LuminTask<T3> task3, LuminTask<T4> task4)
-    {
-        return new WhenAnyPromise<T1, T2, T3, T4>(task1, task2, task3, task4);
-    }
-
     public WhenAnyPromise(LuminTask<T1> task1, LuminTask<T2> task2, LuminTask<T3> task3, LuminTask<T4> task4)
     {
         {
@@ -246,7 +250,7 @@ internal sealed class WhenAnyPromise<T1, T2, T3, T4> : CombinerNode
             }
             else
             {
-                task1.SourceOnCompleted(static state => TryInvokeContinuationT1((WhenAnyPromise<T1, T2, T3, T4>)state), this);
+                task1.SourceOnCompleted(ChildContinuation0, this);
             }
         }
         {
@@ -257,7 +261,7 @@ internal sealed class WhenAnyPromise<T1, T2, T3, T4> : CombinerNode
             }
             else
             {
-                task2.SourceOnCompleted(static state => TryInvokeContinuationT2((WhenAnyPromise<T1, T2, T3, T4>)state), this);
+                task2.SourceOnCompleted(ChildContinuation1, this);
             }
         }
         {
@@ -268,7 +272,7 @@ internal sealed class WhenAnyPromise<T1, T2, T3, T4> : CombinerNode
             }
             else
             {
-                task3.SourceOnCompleted(static state => TryInvokeContinuationT3((WhenAnyPromise<T1, T2, T3, T4>)state), this);
+                task3.SourceOnCompleted(ChildContinuation2, this);
             }
         }
         {
@@ -279,8 +283,19 @@ internal sealed class WhenAnyPromise<T1, T2, T3, T4> : CombinerNode
             }
             else
             {
-                task4.SourceOnCompleted(static state => TryInvokeContinuationT4((WhenAnyPromise<T1, T2, T3, T4>)state), this);
+                task4.SourceOnCompleted(ChildContinuation3, this);
             }
+        }
+    }
+
+    internal override void OnChildCompleted(int index)
+    {
+        switch (index)
+        {
+            case 0: TryInvokeContinuationT1(this); break;
+            case 1: TryInvokeContinuationT2(this); break;
+            case 2: TryInvokeContinuationT3(this); break;
+            default: TryInvokeContinuationT4(this); break;
         }
     }
 
@@ -386,16 +401,6 @@ internal sealed class WhenAnyPromise<T> : CombinerNode
 {
     private T[] _results;
 
-    public static WhenAnyPromise<T> Create(params LuminTask<T>[] tasks)
-    {
-        return new WhenAnyPromise<T>(tasks);
-    }
-
-    public static WhenAnyPromise<T> Create(IEnumerable<LuminTask<T>> tasks)
-    {
-        return new WhenAnyPromise<T>(tasks.ToArray());
-    }
-
     public WhenAnyPromise(LuminTask<T>[]? tasks)
     {
         if (tasks == null || tasks.Length == 0)
@@ -471,7 +476,7 @@ internal sealed class WhenAnyPromise2 : CombinerNode
             }
             else
             {
-                task1.SourceOnCompleted(static state => TryInvokeContinuationT1((WhenAnyPromise2)state), this);
+                task1.SourceOnCompleted(ChildContinuation0, this);
             }
         }
         {
@@ -482,8 +487,17 @@ internal sealed class WhenAnyPromise2 : CombinerNode
             }
             else
             {
-                task2.SourceOnCompleted(static state => TryInvokeContinuationT2((WhenAnyPromise2)state), this);
+                task2.SourceOnCompleted(ChildContinuation1, this);
             }
+        }
+    }
+
+    internal override void OnChildCompleted(int index)
+    {
+        switch (index)
+        {
+            case 0: TryInvokeContinuationT1(this); break;
+            default: TryInvokeContinuationT2(this); break;
         }
     }
 
@@ -549,7 +563,7 @@ internal sealed class WhenAnyPromise3 : CombinerNode
             }
             else
             {
-                task1.SourceOnCompleted(static state => TryInvokeContinuationT1((WhenAnyPromise3)state), this);
+                task1.SourceOnCompleted(ChildContinuation0, this);
             }
         }
         {
@@ -560,7 +574,7 @@ internal sealed class WhenAnyPromise3 : CombinerNode
             }
             else
             {
-                task2.SourceOnCompleted(static state => TryInvokeContinuationT2((WhenAnyPromise3)state), this);
+                task2.SourceOnCompleted(ChildContinuation1, this);
             }
         }
         {
@@ -571,8 +585,18 @@ internal sealed class WhenAnyPromise3 : CombinerNode
             }
             else
             {
-                task3.SourceOnCompleted(static state => TryInvokeContinuationT3((WhenAnyPromise3)state), this);
+                task3.SourceOnCompleted(ChildContinuation2, this);
             }
+        }
+    }
+
+    internal override void OnChildCompleted(int index)
+    {
+        switch (index)
+        {
+            case 0: TryInvokeContinuationT1(this); break;
+            case 1: TryInvokeContinuationT2(this); break;
+            default: TryInvokeContinuationT3(this); break;
         }
     }
 
@@ -661,7 +685,7 @@ internal sealed class WhenAnyPromise4 : CombinerNode
             }
             else
             {
-                task1.SourceOnCompleted(static state => TryInvokeContinuationT1((WhenAnyPromise4)state), this);
+                task1.SourceOnCompleted(ChildContinuation0, this);
             }
         }
         {
@@ -672,7 +696,7 @@ internal sealed class WhenAnyPromise4 : CombinerNode
             }
             else
             {
-                task2.SourceOnCompleted(static state => TryInvokeContinuationT2((WhenAnyPromise4)state), this);
+                task2.SourceOnCompleted(ChildContinuation1, this);
             }
         }
         {
@@ -683,7 +707,7 @@ internal sealed class WhenAnyPromise4 : CombinerNode
             }
             else
             {
-                task3.SourceOnCompleted(static state => TryInvokeContinuationT3((WhenAnyPromise4)state), this);
+                task3.SourceOnCompleted(ChildContinuation2, this);
             }
         }
         {
@@ -694,8 +718,19 @@ internal sealed class WhenAnyPromise4 : CombinerNode
             }
             else
             {
-                task4.SourceOnCompleted(static state => TryInvokeContinuationT4((WhenAnyPromise4)state), this);
+                task4.SourceOnCompleted(ChildContinuation3, this);
             }
+        }
+    }
+
+    internal override void OnChildCompleted(int index)
+    {
+        switch (index)
+        {
+            case 0: TryInvokeContinuationT1(this); break;
+            case 1: TryInvokeContinuationT2(this); break;
+            case 2: TryInvokeContinuationT3(this); break;
+            default: TryInvokeContinuationT4(this); break;
         }
     }
 
@@ -791,16 +826,6 @@ internal sealed class WhenAnyPromise4 : CombinerNode
 
 internal sealed class WhenAnyPromise : CombinerNode
 {
-    public static WhenAnyPromise Create(params LuminTask[] tasks)
-    {
-        return new WhenAnyPromise(tasks);
-    }
-
-    public static WhenAnyPromise Create(IEnumerable<LuminTask> tasks)
-    {
-        return new WhenAnyPromise(tasks.ToArray());
-    }
-
     public WhenAnyPromise(LuminTask[]? tasks)
     {
         if (tasks == null || tasks.Length == 0)
