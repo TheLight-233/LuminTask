@@ -8,18 +8,21 @@ using System;
 using System.Runtime.CompilerServices;
 using System.Threading;
 
-public readonly partial struct LuminTask
+public partial struct LuminTask
 {
+    // Yield is a real task, not a bare continuation registration. Renting a slot makes each yield
+    // slightly more expensive, but it deletes YieldAwaitable/.Awaiter - two types, and one more
+    // awaiter dimension for every state machine that yields.
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static YieldAwaitable Yield()
+    public static LuminTask Yield()
     {
-        return new YieldAwaitable(PlayerLoopTiming.DotNet);
+        return Yield(PlayerLoopTiming.DotNet, CancellationToken.None);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static YieldAwaitable Yield(PlayerLoopTiming timing)
+    public static LuminTask Yield(PlayerLoopTiming timing)
     {
-        return new YieldAwaitable(timing);
+        return Yield(timing, CancellationToken.None);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -46,49 +49,4 @@ public readonly partial struct LuminTask
 
         return new LuminTask(handle);
     }
-
-    public readonly struct YieldAwaitable
-    {
-        readonly PlayerLoopTiming timing;
-
-        public YieldAwaitable(PlayerLoopTiming timing)
-        {
-            this.timing = timing;
-        }
-
-        public Awaiter GetAwaiter()
-        {
-            return new Awaiter(timing);
-        }
-
-        public LuminTask ToLuminTask()
-        {
-            return LuminTask.Yield(timing, CancellationToken.None);
-        }
-
-        public readonly struct Awaiter : ICriticalNotifyCompletion
-        {
-            readonly PlayerLoopTiming timing;
-
-            public Awaiter(PlayerLoopTiming timing)
-            {
-                this.timing = timing;
-            }
-
-            public bool IsCompleted => false;
-
-            public void GetResult() { }
-
-            public void OnCompleted(Action continuation)
-            {
-                PlayerLoopHelper.AddContinuation(timing, continuation);
-            }
-
-            public void UnsafeOnCompleted(Action continuation)
-            {
-                PlayerLoopHelper.AddContinuation(timing, continuation);
-            }
-        }
-    }
-
 }

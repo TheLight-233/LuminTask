@@ -5,7 +5,7 @@ using LuminThread.TaskSource.Promise;
 
 namespace LuminThread;
 
-public readonly partial struct LuminTask
+public partial struct LuminTask
 {
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static ILuminTaskAsyncEnumerable<WhenEachResult<T>> WhenEach<T>(LuminTask<T>[] tasks)

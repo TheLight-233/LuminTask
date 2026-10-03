@@ -7,7 +7,7 @@ using LuminThread.Utility;
 
 namespace LuminThread;
 
-public readonly unsafe partial struct LuminTask
+public unsafe partial struct LuminTask
 {
     // Rents a slot from the bag and clears it. Factories, completion sources and suspended async
     // methods all share this single lifecycle, which is why there is no per-source kind any more.
@@ -194,7 +194,7 @@ public readonly unsafe partial struct LuminTask
     }
 }
 
-public readonly partial struct LuminTask<T>
+public partial struct LuminTask<T>
 {
     [DebuggerHidden]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]

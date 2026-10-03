@@ -6,7 +6,7 @@ using LuminThread.Utility;
 
 namespace LuminThread;
 
-public readonly partial struct LuminTask
+public partial struct LuminTask
 {
     /// <summary>Registers the synchronization context that represents the application's main thread.</summary>
     public static void RegisterMainThread(SynchronizationContext synchronizationContext)
@@ -18,40 +18,40 @@ public readonly partial struct LuminTask
 
     [DebuggerHidden]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static SwitchToMainThreadAwaitable SwitchToMainThread(CancellationToken cancellationToken = default)
+    public static SwitchToAwaitable SwitchToMainThread(CancellationToken cancellationToken = default)
     {
 
         var context = PlayerLoopHelper.MainThreadSynchronizationContext;
         if (context != null)
-            return new SwitchToMainThreadAwaitable(context, cancellationToken);
+            return new SwitchToAwaitable(PlayerLoopTiming.DotNet, context, cancellationToken, SwitchToAwaitable.TargetMainThread);
 #if NET8_0_OR_GREATER
         throw new ArgumentException("DotNet has no registered main thread. Call PlayerLoopHelper.RegisterMainThread first.", nameof(PlayerLoopTiming.DotNet));
 #else
-        return new SwitchToMainThreadAwaitable(PlayerLoopTiming.Update, cancellationToken);
+        return new SwitchToAwaitable(PlayerLoopTiming.Update, cancellationToken);
 #endif
     }
 
     [DebuggerHidden]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static SwitchToMainThreadAwaitable SwitchToMainThread(PlayerLoopTiming timing, CancellationToken cancellationToken = default)
+    public static SwitchToAwaitable SwitchToMainThread(PlayerLoopTiming timing, CancellationToken cancellationToken = default)
     {
         if (timing is PlayerLoopTiming.DotNet)
             throw new ArgumentException("DotNet don't have main thread", nameof(timing));
-        return new SwitchToMainThreadAwaitable(timing, cancellationToken);
+        return new SwitchToAwaitable(timing, cancellationToken);
     }
 
     [DebuggerHidden]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static ReturnToMainThread ReturnToMainThread(CancellationToken cancellationToken = default)
+    public static ReturnToAwaitable ReturnToMainThread(CancellationToken cancellationToken = default)
     {
-        return new ReturnToMainThread(PlayerLoopTiming.DotNet, cancellationToken);
+        return new ReturnToAwaitable(PlayerLoopTiming.DotNet, cancellationToken);
     }
 
     [DebuggerHidden]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static ReturnToMainThread ReturnToMainThread(PlayerLoopTiming timing, CancellationToken cancellationToken = default)
+    public static ReturnToAwaitable ReturnToMainThread(PlayerLoopTiming timing, CancellationToken cancellationToken = default)
     {
-        return new ReturnToMainThread(timing, cancellationToken);
+        return new ReturnToAwaitable(timing, cancellationToken);
     }
 
     [DebuggerHidden]
@@ -63,189 +63,146 @@ public readonly partial struct LuminTask
 
     [DebuggerHidden]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static SwitchToThreadPoolAwaitable SwitchToThreadPool()
+    public static SwitchToAwaitable SwitchToThreadPool()
     {
-        return new SwitchToThreadPoolAwaitable();
+        return new SwitchToAwaitable(PlayerLoopTiming.DotNet, null, CancellationToken.None, SwitchToAwaitable.TargetThreadPool);
     }
 
     [DebuggerHidden]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static SwitchToTaskPoolAwaitable SwitchToTaskPool()
+    public static SwitchToAwaitable SwitchToTaskPool()
     {
-        return new SwitchToTaskPoolAwaitable();
+        return new SwitchToAwaitable(PlayerLoopTiming.DotNet, null, CancellationToken.None, SwitchToAwaitable.TargetThreadPool);
     }
 
     [DebuggerHidden]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static SwitchToSynchronizationContextAwaitable SwitchToSynchronizationContext(SynchronizationContext synchronizationContext, CancellationToken cancellationToken = default)
+    public static SwitchToAwaitable SwitchToSynchronizationContext(SynchronizationContext synchronizationContext, CancellationToken cancellationToken = default)
     {
         LuminTaskExceptionHelper.ThrowArgumentNullException(synchronizationContext, nameof(synchronizationContext));
-        return new SwitchToSynchronizationContextAwaitable(synchronizationContext, cancellationToken);
+        return new SwitchToAwaitable(PlayerLoopTiming.DotNet, synchronizationContext, cancellationToken, SwitchToAwaitable.TargetSynchronizationContext);
     }
 
     [DebuggerHidden]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static ReturnToSynchronizationContext ReturnToSynchronizationContext(SynchronizationContext synchronizationContext, CancellationToken cancellationToken = default)
+    public static ReturnToAwaitable ReturnToSynchronizationContext(SynchronizationContext synchronizationContext, CancellationToken cancellationToken = default)
     {
-        return new ReturnToSynchronizationContext(synchronizationContext, false, cancellationToken);
+        return new ReturnToAwaitable(PlayerLoopTiming.DotNet, synchronizationContext, false, cancellationToken);
     }
 
     [DebuggerHidden]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static ReturnToSynchronizationContext ReturnToCurrentSynchronizationContext(bool dontPostWhenSameContext = true, CancellationToken cancellationToken = default)
+    public static ReturnToAwaitable ReturnToCurrentSynchronizationContext(bool dontPostWhenSameContext = true, CancellationToken cancellationToken = default)
     {
-        return new ReturnToSynchronizationContext(SynchronizationContext.Current, dontPostWhenSameContext, cancellationToken);
+        return new ReturnToAwaitable(PlayerLoopTiming.DotNet, SynchronizationContext.Current, dontPostWhenSameContext, cancellationToken);
     }
 }
 
-public readonly struct SwitchToMainThreadAwaitable
+// The one awaiter for every "switch to" target: a player-loop timing / main thread, a specific
+// synchronization context, or the thread pool. The four originals (main thread, thread pool, task
+// pool, synchronization context) each carried a nested awaiter, so merging them removes ten types
+// and - the part that matters for metadata - collapses four awaiter dimensions into one for every
+// state machine that switches threads.
+//
+// The type is its own awaiter (`GetAwaiter` returns `this`), which is what makes the merge possible
+// without a second type per target.
+public readonly struct SwitchToAwaitable : ICriticalNotifyCompletion
 {
-    readonly PlayerLoopTiming playerLoopTiming;
-    readonly CancellationToken cancellationToken;
+    internal const byte TargetMainThread = 0;
+
+    // SwitchToSynchronizationContext always posts, even when it is already on that context - that is
+    // the behaviour of the original awaiter, and SwitchToMainThread keeps its "already there"
+    // short-circuit. A byte discriminator is enough to tell the two apart.
+    internal const byte TargetSynchronizationContext = 1;
+    internal const byte TargetThreadPool = 2;
+
+    static readonly SendOrPostCallback ContextCallback = PostToContext;
+    static readonly WaitCallback PoolCallback = PostToPool;
+
+    readonly PlayerLoopTiming timing;
     readonly SynchronizationContext? synchronizationContext;
-
-    public SwitchToMainThreadAwaitable(PlayerLoopTiming playerLoopTiming, CancellationToken cancellationToken)
-    {
-        this.playerLoopTiming = playerLoopTiming;
-        this.cancellationToken = cancellationToken;
-        synchronizationContext = null;
-    }
-
-    internal SwitchToMainThreadAwaitable(SynchronizationContext synchronizationContext, CancellationToken cancellationToken)
-    {
-        playerLoopTiming = PlayerLoopTiming.DotNet;
-        this.cancellationToken = cancellationToken;
-        this.synchronizationContext = synchronizationContext;
-    }
-
-    public Awaiter GetAwaiter() => new Awaiter(playerLoopTiming, synchronizationContext, cancellationToken);
-
-    public readonly struct Awaiter : ICriticalNotifyCompletion
-    {
-        readonly PlayerLoopTiming playerLoopTiming;
-        readonly SynchronizationContext? synchronizationContext;
-        readonly CancellationToken cancellationToken;
-
-        public Awaiter(PlayerLoopTiming playerLoopTiming, CancellationToken cancellationToken)
-            : this(playerLoopTiming, null, cancellationToken) { }
-
-        internal Awaiter(PlayerLoopTiming playerLoopTiming, SynchronizationContext? synchronizationContext, CancellationToken cancellationToken)
-        {
-            this.playerLoopTiming = playerLoopTiming;
-            this.synchronizationContext = synchronizationContext;
-            this.cancellationToken = cancellationToken;
-        }
-
-        public bool IsCompleted
-        {
-            get
-            {
-                var currentThreadId = System.Threading.Thread.CurrentThread.ManagedThreadId;
-                if (PlayerLoopHelper.MainThreadId == currentThreadId ||
-                    (synchronizationContext != null && SynchronizationContext.Current == synchronizationContext))
-                {
-                    return true;
-                }
-                else
-                {
-                    return false;
-                }
-            }
-        }
-
-        public void GetResult() { cancellationToken.ThrowIfCancellationRequested(); }
-
-        public void OnCompleted(Action continuation)
-        {
-            if (synchronizationContext != null)
-                synchronizationContext.Post(static state => ((Action)state!).Invoke(), continuation);
-            else
-                PlayerLoopHelper.AddContinuation(playerLoopTiming, continuation);
-        }
-
-        public void UnsafeOnCompleted(Action continuation)
-        {
-            OnCompleted(continuation);
-        }
-    }
-}
-
-public readonly struct ReturnToMainThread
-{
-    readonly PlayerLoopTiming playerLoopTiming;
     readonly CancellationToken cancellationToken;
+    readonly byte target;
 
-    public ReturnToMainThread(PlayerLoopTiming playerLoopTiming, CancellationToken cancellationToken)
+    [DebuggerHidden]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public SwitchToAwaitable(PlayerLoopTiming timing, CancellationToken cancellationToken)
     {
-        this.playerLoopTiming = playerLoopTiming;
+        this.timing = timing;
+        synchronizationContext = null;
         this.cancellationToken = cancellationToken;
+        target = TargetMainThread;
     }
 
-    public Awaiter DisposeAsync()
+    [DebuggerHidden]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal SwitchToAwaitable(PlayerLoopTiming timing, SynchronizationContext? synchronizationContext, CancellationToken cancellationToken, byte target)
     {
-        return new Awaiter(playerLoopTiming, cancellationToken);
+        this.timing = timing;
+        this.synchronizationContext = synchronizationContext;
+        this.cancellationToken = cancellationToken;
+        this.target = target;
     }
 
-    public readonly struct Awaiter : ICriticalNotifyCompletion
+    [DebuggerHidden]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public SwitchToAwaitable GetAwaiter() => this;
+
+    public bool IsCompleted
     {
-        readonly PlayerLoopTiming timing;
-        readonly CancellationToken cancellationToken;
-
-        public Awaiter(PlayerLoopTiming timing, CancellationToken cancellationToken)
+        get
         {
-            this.timing = timing;
-            this.cancellationToken = cancellationToken;
-        }
+            if (target == TargetThreadPool || target == TargetSynchronizationContext)
+                return false;
 
-        public Awaiter GetAwaiter() => this;
+            // Main-thread target: already there when the thread or the registered context matches.
+            if (PlayerLoopHelper.MainThreadId == Thread.CurrentThread.ManagedThreadId)
+                return true;
 
-        public bool IsCompleted => PlayerLoopHelper.MainThreadId == System.Threading.Thread.CurrentThread.ManagedThreadId;
-
-        public void GetResult() { cancellationToken.ThrowIfCancellationRequested(); }
-
-        public void OnCompleted(Action continuation)
-        {
-            PlayerLoopHelper.AddContinuation(timing, continuation);
-        }
-
-        public void UnsafeOnCompleted(Action continuation)
-        {
-            PlayerLoopHelper.AddContinuation(timing, continuation);
+            return synchronizationContext != null && ReferenceEquals(SynchronizationContext.Current, synchronizationContext);
         }
     }
-}
 
-public readonly struct SwitchToThreadPoolAwaitable
-{
-    public Awaiter GetAwaiter() => new Awaiter();
+    [DebuggerHidden]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public void GetResult() => cancellationToken.ThrowIfCancellationRequested();
 
-    public readonly struct Awaiter : ICriticalNotifyCompletion
+    public void OnCompleted(Action continuation)
     {
-        static readonly WaitCallback switchToCallback = Callback;
-
-        public bool IsCompleted => false;
-        public void GetResult() { }
-
-        public void OnCompleted(Action continuation)
+        if (target == TargetThreadPool)
         {
-            ThreadPool.QueueUserWorkItem(switchToCallback, continuation);
+            ThreadPool.QueueUserWorkItem(PoolCallback, continuation);
+            return;
         }
 
-        public void UnsafeOnCompleted(Action continuation)
+        var context = synchronizationContext;
+        if (context != null)
+        {
+            context.Post(ContextCallback, continuation);
+            return;
+        }
+
+        PlayerLoopHelper.AddContinuation(timing, continuation);
+    }
+
+    public void UnsafeOnCompleted(Action continuation)
+    {
+        if (target == TargetThreadPool)
         {
 #if NET5_0_OR_GREATER
             ThreadPool.UnsafeQueueUserWorkItem(ThreadPoolWorkItem.Create(continuation), preferLocal: false);
 #else
-            ThreadPool.UnsafeQueueUserWorkItem(switchToCallback, continuation);
+            ThreadPool.UnsafeQueueUserWorkItem(PoolCallback, continuation);
 #endif
+            return;
         }
 
-        static void Callback(object state)
-        {
-            var continuation = (Action)state;
-            continuation();
-        }
+        OnCompleted(continuation);
     }
+
+    static void PostToContext(object? state) => ((Action)state!).Invoke();
+
+    static void PostToPool(object? state) => ((Action)state!).Invoke();
 
 #if NET5_0_OR_GREATER
 
@@ -335,150 +292,75 @@ public readonly struct SwitchToThreadPoolAwaitable
 #endif
 }
 
-public readonly struct SwitchToTaskPoolAwaitable
+// The one awaiter for returning to a context: either the main thread (posted through the player
+// loop timing) or a specific synchronization context. `DisposeAsync` keeps the `await using`
+// shape of the originals, and the type is its own awaiter so the two originals collapse into a
+// single type and a single awaiter dimension.
+public readonly struct ReturnToAwaitable : ICriticalNotifyCompletion
 {
-    public Awaiter GetAwaiter() => new Awaiter();
+    static readonly SendOrPostCallback PostCallback = Post;
 
-    public struct Awaiter : ICriticalNotifyCompletion
-    {
-        static readonly WaitCallback switchToCallback = Callback;
-
-        public bool IsCompleted => false;
-        public void GetResult() { }
-
-        public void OnCompleted(Action continuation)
-        {
-            ThreadPool.QueueUserWorkItem(switchToCallback, continuation);
-        }
-
-        public void UnsafeOnCompleted(Action continuation)
-        {
-            ThreadPool.UnsafeQueueUserWorkItem(switchToCallback, continuation);
-        }
-
-        static void Callback(object? state)
-        {
-            var continuation = (Action)state!;
-            continuation();
-        }
-    }
-}
-
-public readonly struct SwitchToSynchronizationContextAwaitable
-{
-    readonly SynchronizationContext synchronizationContext;
-    readonly CancellationToken cancellationToken;
-
-    public SwitchToSynchronizationContextAwaitable(SynchronizationContext synchronizationContext, CancellationToken cancellationToken)
-    {
-        this.synchronizationContext = synchronizationContext;
-        this.cancellationToken = cancellationToken;
-    }
-
-    public Awaiter GetAwaiter() => new Awaiter(synchronizationContext, cancellationToken);
-
-    public struct Awaiter : ICriticalNotifyCompletion
-    {
-        static readonly SendOrPostCallback switchToCallback = Callback;
-        readonly SynchronizationContext synchronizationContext;
-        readonly CancellationToken cancellationToken;
-
-        public Awaiter(SynchronizationContext synchronizationContext, CancellationToken cancellationToken)
-        {
-            this.synchronizationContext = synchronizationContext;
-            this.cancellationToken = cancellationToken;
-        }
-
-        public bool IsCompleted => false;
-        public void GetResult() { cancellationToken.ThrowIfCancellationRequested(); }
-
-        public void OnCompleted(Action continuation)
-        {
-            synchronizationContext.Post(switchToCallback, continuation);
-        }
-
-        public void UnsafeOnCompleted(Action continuation)
-        {
-            synchronizationContext.Post(switchToCallback, continuation);
-        }
-
-        static void Callback(object state)
-        {
-            var continuation = (Action)state;
-            continuation();
-        }
-    }
-}
-
-public readonly struct ReturnToSynchronizationContext
-{
-    readonly SynchronizationContext syncContext;
+    readonly PlayerLoopTiming timing;
+    readonly SynchronizationContext? synchronizationContext;
     readonly bool dontPostWhenSameContext;
     readonly CancellationToken cancellationToken;
 
-    public ReturnToSynchronizationContext(SynchronizationContext syncContext, bool dontPostWhenSameContext, CancellationToken cancellationToken)
+    [DebuggerHidden]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public ReturnToAwaitable(PlayerLoopTiming timing, CancellationToken cancellationToken)
     {
-        this.syncContext = syncContext;
+        this.timing = timing;
+        synchronizationContext = null;
+        dontPostWhenSameContext = false;
+        this.cancellationToken = cancellationToken;
+    }
+
+    [DebuggerHidden]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal ReturnToAwaitable(PlayerLoopTiming timing, SynchronizationContext? synchronizationContext, bool dontPostWhenSameContext, CancellationToken cancellationToken)
+    {
+        this.timing = timing;
+        this.synchronizationContext = synchronizationContext;
         this.dontPostWhenSameContext = dontPostWhenSameContext;
         this.cancellationToken = cancellationToken;
     }
 
-    public Awaiter DisposeAsync()
+    [DebuggerHidden]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public ReturnToAwaitable GetAwaiter() => this;
+
+    [DebuggerHidden]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public ReturnToAwaitable DisposeAsync() => this;
+
+    public bool IsCompleted
     {
-        return new Awaiter(syncContext, dontPostWhenSameContext, cancellationToken);
+        get
+        {
+            if (synchronizationContext == null)
+                return PlayerLoopHelper.MainThreadId == Thread.CurrentThread.ManagedThreadId;
+
+            return dontPostWhenSameContext && ReferenceEquals(SynchronizationContext.Current, synchronizationContext);
+        }
     }
 
-    public struct Awaiter : ICriticalNotifyCompletion
+    [DebuggerHidden]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public void GetResult() => cancellationToken.ThrowIfCancellationRequested();
+
+    public void OnCompleted(Action continuation)
     {
-        static readonly SendOrPostCallback switchToCallback = Callback;
-
-        readonly SynchronizationContext synchronizationContext;
-        readonly bool dontPostWhenSameContext;
-        readonly CancellationToken cancellationToken;
-
-        public Awaiter(SynchronizationContext synchronizationContext, bool dontPostWhenSameContext, CancellationToken cancellationToken)
+        var context = synchronizationContext;
+        if (context != null)
         {
-            this.synchronizationContext = synchronizationContext;
-            this.dontPostWhenSameContext = dontPostWhenSameContext;
-            this.cancellationToken = cancellationToken;
+            context.Post(PostCallback, continuation);
+            return;
         }
 
-        public Awaiter GetAwaiter() => this;
-
-        public bool IsCompleted
-        {
-            get
-            {
-                if (!dontPostWhenSameContext) return false;
-
-                var current = SynchronizationContext.Current;
-                if (current == synchronizationContext)
-                {
-                    return true;
-                }
-                else
-                {
-                    return false;
-                }
-            }
-        }
-
-        public void GetResult() { cancellationToken.ThrowIfCancellationRequested(); }
-
-        public void OnCompleted(Action continuation)
-        {
-            synchronizationContext.Post(switchToCallback, continuation);
-        }
-
-        public void UnsafeOnCompleted(Action continuation)
-        {
-            synchronizationContext.Post(switchToCallback, continuation);
-        }
-
-        static void Callback(object state)
-        {
-            var continuation = (Action)state;
-            continuation();
-        }
+        PlayerLoopHelper.AddContinuation(timing, continuation);
     }
+
+    public void UnsafeOnCompleted(Action continuation) => OnCompleted(continuation);
+
+    static void Post(object? state) => ((Action)state!).Invoke();
 }

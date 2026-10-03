@@ -2,6 +2,7 @@ using System;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using System.Security;
 using System.Threading;
 using System.Threading.Tasks;
 using LuminThread.CompilerServices;
@@ -17,13 +18,24 @@ namespace LuminThread;
 // unmanaged source block and every per-T vtable, and - most importantly - leaves no raw pointer
 // alive: all operations validate the slot generation before touching the slot, so a stale handle
 // fails fast instead of reading recycled memory.
-[AsyncMethodBuilder(typeof(AsyncLuminTaskMethodBuilder))]
+//
+// The task is also its own async method builder. The two pieces of builder state that used to live
+// in AsyncLuminTaskMethodBuilder[<T>] are parked in the slot instead of in the struct: the state
+// machine box (LuminTaskCoreSource.SetBox / BoxAt, applied by LuminTaskBuilder) and a synchronously
+// raised exception (recorded by renting a slot and completing it faulted). What remains in the
+// struct is the handle - and for LuminTask<T> the inline result of the synchronous path - so the
+// size is unchanged: 8 bytes, and 8 + sizeof(T).
+//
+// `readonly` is applied member by member rather than to the struct, because the builder half has to
+// write the handle. Awaiter-side members are all readonly, so awaiting through a readonly field or
+// an `in` parameter still avoids a defensive copy.
+[AsyncMethodBuilder(typeof(LuminTask))]
 [StructLayout(LayoutKind.Sequential)]
-public readonly unsafe partial struct LuminTask : ICriticalNotifyCompletion
+public unsafe partial struct LuminTask : ICriticalNotifyCompletion
 {
-    internal readonly LuminTaskHandle _handle;
+    internal LuminTaskHandle _handle;
 
-    public short Id => (short)(_handle.SlotRaw() - 1);
+    public readonly short Id => (short)(_handle.SlotRaw() - 1);
 
     [DebuggerHidden]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -34,9 +46,9 @@ public readonly unsafe partial struct LuminTask : ICriticalNotifyCompletion
 
     [DebuggerHidden]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public LuminTask GetAwaiter() => this;
+    public readonly LuminTask GetAwaiter() => this;
 
-    public bool IsCompleted
+    public readonly bool IsCompleted
     {
         [DebuggerHidden]
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -45,7 +57,7 @@ public readonly unsafe partial struct LuminTask : ICriticalNotifyCompletion
 
     [DebuggerHidden]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public void GetResult()
+    public readonly void GetResult()
     {
         if (_handle.IsNull())
             return;
@@ -54,7 +66,7 @@ public readonly unsafe partial struct LuminTask : ICriticalNotifyCompletion
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public void OnCompleted(Action continuation)
+    public readonly void OnCompleted(Action continuation)
     {
         if (_handle.IsNull())
         {
@@ -68,7 +80,7 @@ public readonly unsafe partial struct LuminTask : ICriticalNotifyCompletion
 
     [DebuggerHidden]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public void SourceOnCompleted(Action<object> continuation, object state)
+    public readonly void SourceOnCompleted(Action<object> continuation, object state)
     {
         if (_handle.IsNull())
         {
@@ -81,9 +93,9 @@ public readonly unsafe partial struct LuminTask : ICriticalNotifyCompletion
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public void UnsafeOnCompleted(Action continuation) => OnCompleted(continuation);
+    public readonly void UnsafeOnCompleted(Action continuation) => OnCompleted(continuation);
 
-    public LuminTaskStatus Status
+    public readonly LuminTaskStatus Status
     {
         [DebuggerHidden]
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -102,32 +114,116 @@ public readonly unsafe partial struct LuminTask : ICriticalNotifyCompletion
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public bool Equals(LuminTask other)
+    public readonly bool Equals(LuminTask other)
     {
         return other._handle == _handle;
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public override string? ToString()
+    public readonly override string? ToString()
     {
         return _handle.IsNull() ? "()" : "(" + LuminTaskCoreSource.GetStatus(_handle) + ")";
     }
+
+    // ----------------------------------------------------------------------------------
+    // Async method builder. The compiler asks for exactly these members because
+    // [AsyncMethodBuilder(typeof(LuminTask))] points at this type; none of them is readonly,
+    // they are what writes _handle.
+    // ----------------------------------------------------------------------------------
+
+    [DebuggerHidden]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static LuminTask Create() => default;
+
+    public LuminTask Task
+    {
+        [DebuggerHidden]
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        get => new LuminTask(_handle);
+    }
+
+    [DebuggerHidden]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public void Start<TStateMachine>(ref TStateMachine stateMachine)
+        where TStateMachine : IAsyncStateMachine
+    {
+        stateMachine.MoveNext();
+    }
+
+    [DebuggerHidden]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public void SetStateMachine(IAsyncStateMachine stateMachine) { }
+
+    [DebuggerHidden]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public void SetResult()
+    {
+        LuminTaskHandle handle = _handle;
+
+        // A zero handle means the method never suspended: Task already hands out a completed task.
+        if (handle.IsNull())
+            return;
+
+        // Read everything needed first: returning the box zeroes the state machine that hosts this
+        // builder, so nothing may be read off `this` afterwards.
+        LuminTaskBuilder.ReturnBox(handle);
+        LuminTaskCoreSource.TrySetResult(handle);
+    }
+
+    [DebuggerHidden]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public void SetException(Exception exception)
+    {
+        LuminTaskHandle handle = _handle;
+
+        // Faulted before the first suspension: there is no slot yet, so the exception gets a slot of
+        // its own instead of an Exception field in the struct.
+        if (handle.IsNull())
+            handle = _handle = RentSlot();
+
+        LuminTaskBuilder.ReturnBox(handle);
+        LuminTaskCoreSource.TrySetException(handle, exception);
+    }
+
+    [DebuggerHidden]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public void AwaitOnCompleted<TAwaiter, TStateMachine>(
+        ref TAwaiter awaiter,
+        ref TStateMachine stateMachine)
+        where TAwaiter : INotifyCompletion
+        where TStateMachine : IAsyncStateMachine
+    {
+        awaiter.OnCompleted(LuminTaskBuilder.GetOrCreateBox(ref _handle, ref stateMachine).MoveNextAction);
+    }
+
+    [DebuggerHidden]
+    [SecuritySafeCritical]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public void AwaitUnsafeOnCompleted<TAwaiter, TStateMachine>(
+        ref TAwaiter awaiter,
+        ref TStateMachine stateMachine)
+        where TAwaiter : ICriticalNotifyCompletion
+        where TStateMachine : IAsyncStateMachine
+    {
+        awaiter.UnsafeOnCompleted(LuminTaskBuilder.GetOrCreateBox(ref _handle, ref stateMachine).MoveNextAction);
+    }
 }
 
-[AsyncMethodBuilder(typeof(AsyncLuminTaskMethodBuilder<>))]
+[AsyncMethodBuilder(typeof(LuminTask<>))]
 [StructLayout(LayoutKind.Sequential)]
-public readonly unsafe partial struct LuminTask<T> : ICriticalNotifyCompletion
+public unsafe partial struct LuminTask<T> : ICriticalNotifyCompletion
 {
-    internal readonly LuminTaskHandle _handle;
+    internal LuminTaskHandle _handle;
 
-    // Only meaningful on the synchronous completion path, where no slot exists at all.
-    internal readonly T? _result;
+    // Only meaningful on the synchronous completion path, where no slot exists at all; the builder
+    // writes it with SetResult(T) so a method that never suspends carries its value inline.
+    internal T? _result;
 
     internal static readonly bool IsValueType = typeof(T).IsValueType;
 
-    public short Id => (short)(_handle.SlotRaw() - 1);
+    public readonly short Id => (short)(_handle.SlotRaw() - 1);
 
-    public T? Result => _handle.IsNull()
+    public readonly T? Result => _handle.IsNull()
         ? _result
         : throw new InvalidOperationException(
             "LuminTask<T>.Result is only valid for a synchronously-completed task (e.g. FromResult); " +
@@ -150,9 +246,9 @@ public readonly unsafe partial struct LuminTask<T> : ICriticalNotifyCompletion
 
     [DebuggerHidden]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public LuminTask<T> GetAwaiter() => this;
+    public readonly LuminTask<T> GetAwaiter() => this;
 
-    public bool IsCompleted
+    public readonly bool IsCompleted
     {
         [DebuggerHidden]
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -161,7 +257,7 @@ public readonly unsafe partial struct LuminTask<T> : ICriticalNotifyCompletion
 
     [DebuggerHidden]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public T GetResult()
+    public readonly T GetResult()
     {
         if (_handle.IsNull())
             return _result!;
@@ -170,7 +266,7 @@ public readonly unsafe partial struct LuminTask<T> : ICriticalNotifyCompletion
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public void OnCompleted(Action continuation)
+    public readonly void OnCompleted(Action continuation)
     {
         if (_handle.IsNull())
         {
@@ -184,7 +280,7 @@ public readonly unsafe partial struct LuminTask<T> : ICriticalNotifyCompletion
 
     [DebuggerHidden]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public void SourceOnCompleted(Action<object> continuation, object state)
+    public readonly void SourceOnCompleted(Action<object> continuation, object state)
     {
         if (_handle.IsNull())
         {
@@ -197,9 +293,9 @@ public readonly unsafe partial struct LuminTask<T> : ICriticalNotifyCompletion
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public void UnsafeOnCompleted(Action continuation) => OnCompleted(continuation);
+    public readonly void UnsafeOnCompleted(Action continuation) => OnCompleted(continuation);
 
-    public LuminTaskStatus Status
+    public readonly LuminTaskStatus Status
     {
         [DebuggerHidden]
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -229,21 +325,103 @@ public readonly unsafe partial struct LuminTask<T> : ICriticalNotifyCompletion
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public bool Equals(LuminTask<T> other)
+    public readonly bool Equals(LuminTask<T> other)
     {
         return other._handle == _handle;
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public bool Equals(LuminTask other)
+    public readonly bool Equals(LuminTask other)
     {
         return other._handle == _handle;
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public override string? ToString()
+    public readonly override string? ToString()
     {
         return _handle.IsNull() ? _result?.ToString()
             : "(" + LuminTaskCoreSource.GetStatus(_handle) + ")";
+    }
+
+    // ----------------------------------------------------------------------------------
+    // Async method builder - same shape as the non-generic one, plus the synchronous result.
+    // ----------------------------------------------------------------------------------
+
+    [DebuggerHidden]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static LuminTask<T> Create() => default;
+
+    public LuminTask<T> Task
+    {
+        [DebuggerHidden]
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        get => _handle.IsNull() ? new LuminTask<T>(_result!) : new LuminTask<T>(_handle);
+    }
+
+    [DebuggerHidden]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public void Start<TStateMachine>(ref TStateMachine stateMachine)
+        where TStateMachine : IAsyncStateMachine
+    {
+        stateMachine.MoveNext();
+    }
+
+    [DebuggerHidden]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public void SetStateMachine(IAsyncStateMachine stateMachine) { }
+
+    [DebuggerHidden]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public void SetResult(T result)
+    {
+        LuminTaskHandle handle = _handle;
+
+        // Synchronous completion: the result stays inline in the struct, no slot at all.
+        if (handle.IsNull())
+        {
+            _result = result;
+            return;
+        }
+
+        // `result` is a parameter, so it survives returning the box (which zeroes the state machine
+        // that hosts this builder); the handle is captured before that as well.
+        LuminTaskBuilder.ReturnBox(handle);
+        LuminTaskResultBridge.TrySetResult(handle, in result);
+    }
+
+    [DebuggerHidden]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public void SetException(Exception exception)
+    {
+        LuminTaskHandle handle = _handle;
+
+        if (handle.IsNull())
+            handle = _handle = LuminTask.RentSlot();
+
+        LuminTaskBuilder.ReturnBox(handle);
+        LuminTaskCoreSource.TrySetException(handle, exception);
+    }
+
+    [DebuggerHidden]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public void AwaitOnCompleted<TAwaiter, TStateMachine>(
+        ref TAwaiter awaiter,
+        ref TStateMachine stateMachine)
+        where TAwaiter : INotifyCompletion
+        where TStateMachine : IAsyncStateMachine
+    {
+        awaiter.OnCompleted(LuminTaskBuilder.GetOrCreateBox(ref _handle, ref stateMachine).MoveNextAction);
+    }
+
+    [DebuggerHidden]
+    [SecuritySafeCritical]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public void AwaitUnsafeOnCompleted<TAwaiter, TStateMachine>(
+        ref TAwaiter awaiter,
+        ref TStateMachine stateMachine)
+        where TAwaiter : ICriticalNotifyCompletion
+        where TStateMachine : IAsyncStateMachine
+    {
+        awaiter.UnsafeOnCompleted(LuminTaskBuilder.GetOrCreateBox(ref _handle, ref stateMachine).MoveNextAction);
     }
 }

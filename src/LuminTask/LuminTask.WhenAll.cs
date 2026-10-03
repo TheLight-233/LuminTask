@@ -6,7 +6,7 @@ using LuminThread.TaskSource.Promise;
 
 namespace LuminThread;
 
-public readonly partial struct LuminTask
+public partial struct LuminTask
 {
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static unsafe LuminTask WhenAll(LuminTask[]? tasks)

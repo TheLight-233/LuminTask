@@ -26,8 +26,10 @@ async LuminTask<int> SumAsync()
 }
 ```
 
-`await` 语法、`try/catch`、`CancellationToken` 与 `Task` 完全一致，由编译期
-`AsyncLuminTaskMethodBuilder` 支撑。
+`await` 语法、`try/catch`、`CancellationToken` 与 `Task` 完全一致。`LuminTask` / `LuminTask<T>` 自己
+就是编译器要求的 builder（`[AsyncMethodBuilder(typeof(LuminTask))]`）：挂起的 StateMachineBox 与同步
+异常都放在任务槽位里，任务结构体本身仍是 8 字节（`LuminTask<T>` 为 8 + `sizeof(T)`，多出的部分是
+同步完成的结果）。
 
 ## 2. 已完成的工厂方法
 
@@ -189,6 +191,12 @@ ValueTask vt = lt;                              // LuminTask 隐式转 ValueTask
   `await t.ConfigureAwait(false)` 与 `await t` 走同一条 awaiter 路径，不引入额外的 await 方法实例化。
 - 热路径避免闭包捕获：优先 `Create(state, factory)`、静态 lambda、`Action<object>`。
 - 已完成的 `FromResult` / `CompletedTask` 本身零分配；组合子（WhenAll/WhenAny/元组）也零分配。
+- `LuminTask.Yield()` 是一个真实任务（会租一个槽位，下一轮归还），不再是裸的 continuation 注册；
+  换来了更少的等待器类型与方法实例化。高频 yield 的场景请留意槽位租还是否在预算内。
+- 线程切换只保留两个等待器类型：`SwitchToAwaitable`（`SwitchToMainThread` / `SwitchToThreadPool` /
+  `SwitchToTaskPool` / `SwitchToSynchronizationContext`）与 `ReturnToAwaitable`（`ReturnToMainThread` /
+  `ReturnToSynchronizationContext` / `ReturnToCurrentSynchronizationContext`）。方法名不变，只是原先
+  四个/两个等待器类型合并了；显式写类型名的代码需要跟着改。
 - 用 DEBUG 构建的 leak tracker（`LuminTaskLeakTracker`）在开发期抓"未被消费"的任务。
 
 ## 常见陷阱

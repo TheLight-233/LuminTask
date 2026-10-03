@@ -7,7 +7,7 @@ using LuminThread.Utility;
 
 namespace LuminThread;
 
-public readonly partial struct LuminTask
+public partial struct LuminTask
 {
     private static readonly MoveNext DelayFrameStepAction = DelayFrameStep;
 

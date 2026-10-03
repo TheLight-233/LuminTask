@@ -4,7 +4,7 @@ using System.Threading;
 
 namespace LuminThread;
 
-public readonly partial struct LuminTask
+public partial struct LuminTask
 {
     /// <summary>Awaits tasks one at a time in input order.</summary>
     public static async LuminTask WhenAllSequential(IEnumerable<LuminTask> tasks, CancellationToken cancellationToken = default)

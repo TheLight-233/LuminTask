@@ -2,6 +2,7 @@ using System;
 using System.Runtime.CompilerServices;
 using System.Runtime.ExceptionServices;
 using System.Threading;
+using LuminThread.CompilerServices;
 using LuminThread.Interface;
 using LuminThread.Utility;
 
@@ -233,7 +234,7 @@ internal static class LuminTaskCoreSource
         return true;
     }
 
-    // ---------------------------------------------------------------- awaiter side
+    // ---------------------------------------------------------------- awaitable side
 
     // ConfigureAwait(false/true) sets the capture policy before the continuation is registered. A
     // zero handle means the task completed synchronously, so there is no policy to set.
@@ -246,6 +247,32 @@ internal static class LuminTaskCoreSource
 
         if (!Unsafe.IsNullRef(ref item))
             item.ContinueOnCapturedContext = value;
+    }
+
+    // ---------------------------------------------------------------- builder side (state machine box)
+
+    // Park the box that owns a suspended state machine in the slot. The builder itself only carries
+    // the handle, so the box has to be reachable through it: the next suspension reads it back to
+    // re-register the continuation and the completion path reads it back to return it to its pool.
+    // Best effort by design - an abandoned task (slot already consumed) drops the box here, and the
+    // collector reclaims it instead of the pool.
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal static void SetBox(LuminTaskHandle handle, IStateMachineBox box)
+    {
+        ref var item = ref TryResolve(handle, out var cold, out int index);
+
+        if (Unsafe.IsNullRef(ref item))
+            return;
+
+        cold.SetBox(index, box);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal static IStateMachineBox? BoxAt(LuminTaskHandle handle)
+    {
+        ref var item = ref TryResolve(handle, out var cold, out int index);
+
+        return Unsafe.IsNullRef(ref item) ? null : cold.BoxAt(index) as IStateMachineBox;
     }
 
     internal static void OnCompleted(LuminTaskHandle handle, Action<object> continuation, object? state)

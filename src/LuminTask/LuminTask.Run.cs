@@ -4,7 +4,7 @@ using System;
 using System.Runtime.CompilerServices;
 using System.Threading;
 
-public readonly partial struct LuminTask
+public partial struct LuminTask
 {
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]

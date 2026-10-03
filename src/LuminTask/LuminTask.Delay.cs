@@ -8,7 +8,7 @@ using LuminThread.Utility;
 
 namespace LuminThread;
 
-public readonly unsafe partial struct LuminTask
+public unsafe partial struct LuminTask
 {
     [DebuggerHidden]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]

@@ -360,11 +360,22 @@ public sealed class LuminTaskCold
     private CancellationToken[]?[]? _cancellationTokens;
     private CancellationTokenRegistration[]?[]? _registrations;
 
+    // State machine box of a suspended async method. It lives here rather than in the builder struct
+    // because a LuminTask is only a handle: the builder reaches the box back through the slot to
+    // re-register its continuation and to return the box to its pool on completion. The reference is
+    // dropped - never returned - on slot release, because the state machine inside the box may still
+    // be executing when the consumer releases the slot.
+    private object?[]?[]? _box;
+
     // ---------------------------------------------------------------- writers (create on demand)
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal void SetRef(int index, object? value)
         => RefBlock(index)[index & BlockMask] = value;
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal void SetBox(int index, object box)
+        => BoxBlock(index)[index & BlockMask] = box;
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal void SetPayload(int index, nint value)
@@ -388,6 +399,13 @@ public sealed class LuminTaskCold
     internal object? RefAt(int index)
     {
         var block = RefBlockOrNull(index);
+        return block is null ? null : block[index & BlockMask];
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal object? BoxAt(int index)
+    {
+        var block = BoxBlockOrNull(index);
         return block is null ? null : block[index & BlockMask];
     }
 
@@ -417,8 +435,8 @@ public sealed class LuminTaskCold
     /// <summary>
     /// Drops everything the slot at <paramref name="index"/> owns: the pending cancellation
     /// registration, the unmanaged result/scratch block, a pooled result container, the recorded
-    /// exception and token. Never allocates — a field whose block was never faulted has nothing to
-    /// release.
+    /// exception and token, and the reference to the suspended state machine box. Never allocates —
+    /// a field whose block was never faulted has nothing to release.
     /// </summary>
     internal unsafe void ReleaseSlot(int index)
     {
@@ -431,6 +449,9 @@ public sealed class LuminTaskCold
             registrations[sub].Release();
             registrations[sub] = default;
         }
+
+        if (BoxBlockOrNull(index) is { } boxes)
+            boxes[sub] = null;
 
         if (PayloadBlockOrNull(index) is { } payload && payload[sub] != 0)
         {
@@ -508,6 +529,24 @@ public sealed class LuminTaskCold
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private object?[]? ExceptionBlockOrNull(int index)
         => _exception is null ? null : Volatile.Read(ref _exception[index >> BlockBits]);
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private object?[] BoxBlock(int index)
+    {
+        var blocks = _box;
+        if (blocks is null)
+            Volatile.Write(ref _box, blocks = new object?[]?[BlockCount]);
+
+        int slot = index >> BlockBits;
+        var block = Volatile.Read(ref blocks[slot]);
+        if (block is null)
+            Volatile.Write(ref blocks[slot], block = new object?[BlockSize]);
+        return block;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private object?[]? BoxBlockOrNull(int index)
+        => _box is null ? null : Volatile.Read(ref _box[index >> BlockBits]);
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private CancellationToken[] CancellationTokenBlock(int index)

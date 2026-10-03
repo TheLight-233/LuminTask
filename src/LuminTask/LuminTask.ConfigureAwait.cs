@@ -12,22 +12,22 @@ namespace LuminThread;
 // types and one extra (TAwaiter, TStateMachine) instantiation of AwaitOnCompleted /
 // AwaitUnsafeOnCompleted at every await site that used it - pure metadata and code-size cost for a
 // boolean that the slot already stores.
-public readonly unsafe partial struct LuminTask
+public unsafe partial struct LuminTask
 {
     /// <summary>Controls whether the await continuation captures the current execution context.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public LuminTask ConfigureAwait(bool continueOnCapturedContext)
+    public readonly LuminTask ConfigureAwait(bool continueOnCapturedContext)
     {
         LuminTaskCoreSource.SetContinueOnCapturedContext(_handle, continueOnCapturedContext);
         return this;
     }
 }
 
-public readonly unsafe partial struct LuminTask<T>
+public unsafe partial struct LuminTask<T>
 {
     /// <summary>Controls whether the await continuation captures the current execution context.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public LuminTask<T> ConfigureAwait(bool continueOnCapturedContext)
+    public readonly LuminTask<T> ConfigureAwait(bool continueOnCapturedContext)
     {
         LuminTaskCoreSource.SetContinueOnCapturedContext(_handle, continueOnCapturedContext);
         return this;
