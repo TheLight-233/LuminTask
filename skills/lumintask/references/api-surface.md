@@ -23,10 +23,10 @@
 
 ## 组合子与扩展
 
-- `WhenAll<T>(LuminTask<T>[], IEnumerable)` → `LuminTask<T[]>`；`WhenAll(in LuminTask...)` 1~15 参数
+- `WhenAll<T>(LuminTask<T>[], IEnumerable)` → `LuminTask<T[]>`；`WhenAll(in LuminTask...)` 1~4 参数异构重载
 - `WhenAny(LuminTask[])` 等 → `LuminTask<int>`（完成索引）
 - `WhenEach(...)` → 逐个产出完成的任务（配 `await foreach`）
-- 元组并发：`await (task1, task2, ...)`（`GetAwaiter` 扩展到 15 元组）
+- 元组并发：`await (task1, task2, ...)`（`GetAwaiter` 扩展到 4 元组）
 - `ContinueWith(...)`（可选 `PlayerLoopTiming` 调度）
 - `Timeout(TimeSpan, ct)`、`AttachExternalCancellation(ct)`、`WaitAsync(ct)`
 - `Forget()`（各带 `Action<Exception>` 处理器重载）——唯一合法的"不等待"出口

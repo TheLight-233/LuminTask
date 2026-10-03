@@ -21,9 +21,26 @@ public readonly unsafe partial struct LuminTask
         if (millisecondsDelay == 0)
             return CompletedTask();
 
-        var source = DelayPromise<AsyncUnit>.Create(millisecondsDelay, loopTiming, cancellationToken, cancelImmediately);
+        var handle = RentSlot();
+        ref var item = ref GetRentedSlot(handle, out var cold, out int index);
 
-        return source.Task;
+        // The pending state gets its own unmanaged block, sized to what Delay actually needs (two
+        // timestamps). The slot holds only the pointer, and Return frees it.
+        unsafe
+        {
+            void* scratch = MemoryHelper.Alloc(LuminTaskCold.LoopStateSize);
+            UnsafeMemory.Write(scratch, Stopwatch.GetTimestamp());
+            UnsafeMemory.Write((byte*)scratch + sizeof(long),
+                DelayPromise.MillisecondsToStopwatchTicks(millisecondsDelay));
+            cold.SetPayload(index, (nint)scratch);
+        }
+
+        if (cancelImmediately && cancellationToken.CanBeCanceled)
+            AttachCancellation(handle, cancellationToken);
+
+        PlayerLoopHelper.AddAction(loopTiming, new LuminTaskState(handle, cancellationToken), DelayPromise.MoveNextAction);
+
+        return new LuminTask(handle);
     }
 
     [DebuggerHidden]

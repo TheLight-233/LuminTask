@@ -8,6 +8,7 @@ using UnityEngine;
 using LuminThread.TaskSource;
 using LuminThread.Utility;
 using System.Runtime.CompilerServices;
+using LuminThread.Interface;
 
 namespace LuminThread.Unity
 {
@@ -39,44 +40,36 @@ namespace LuminThread.Unity
                     return LuminTask.CompletedTask();
                 }
 
-                var core = LuminTaskSourceCore<AsyncUnit>.Create();
-                var state = new LuminTaskState(core, cancellationToken, jobHandle);
+                var task = LuminTaskSource.Create(out ulong handle);
+                var state = new LuminTaskState(handle, cancellationToken, StateTuple.Create(handle, jobHandle));
 
-                PlayerLoopHelper.AddAction(timing, state, &MoveNext);
+                PlayerLoopHelper.AddAction(timing, state, MoveNextAction);
 
-                return new LuminTask(LuminTaskSourceCore<AsyncUnit>.MethodTablePtr, core, core->Id);
+                return task;
             }
 
-            public static unsafe bool MoveNext(in LuminTaskState state)
+            private static readonly MoveNext MoveNextAction = MoveNext;
+
+            public static bool MoveNext(in LuminTaskState state)
             {
-                var jobHandle = (JobHandle)state.State;
+                var tuple = (StateTuple<(ulong, JobHandle)>)state.State!;
+                var jobHandle = tuple.Item.Item2;
 
                 if (state.CancellationToken.IsCancellationRequested)
                 {
                     jobHandle.Complete();
-                    LuminTaskSourceCore<AsyncUnit>.TrySetCanceled(state.Source);
-                    Dispose(state.Source);
+                    LuminTaskSource.SetCanceled(tuple.Item.Item1, state.CancellationToken);
                     return false;
                 }
 
                 if (jobHandle.IsCompleted)
                 {
                     jobHandle.Complete();
-                    LuminTaskSourceCore<AsyncUnit>.TrySetResult(state.Source);
-                    Dispose(state.Source);
+                    LuminTaskSource.SetResult(tuple.Item.Item1);
                     return false;
                 }
 
                 return true;
-            }
-
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            private static unsafe void Dispose(void* source)
-            {
-                if (source != null)
-                {
-                    LuminTaskSourceCore<AsyncUnit>.Dispose(source);
-                }
             }
         }
 

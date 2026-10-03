@@ -1,82 +1,71 @@
 using System;
-using System.Collections.Concurrent;
 using System.Runtime.CompilerServices;
 
 namespace LuminThread.Unity
 {
     /// <summary>
-    /// Shared pooling core for pooled delegates to reduce GC allocations.
-    /// Holds the continuation and the pool; both the <see cref="PooledDelegate{T}"/> (
-    /// <c>Action&lt;T&gt;</c>) and the <c>Action</c> / <c>TweenCallback</c> variants reuse it.
-    /// </summary>
-    internal static class PooledDelegateCore
-    {
-        private static readonly ConcurrentQueue<PooledDelegateBody> pool = new ConcurrentQueue<PooledDelegateBody>();
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static PooledDelegateBody Rent(Action continuation)
-        {
-            if (!pool.TryDequeue(out var body))
-                body = new PooledDelegateBody();
-
-            body.Continuation = continuation;
-            return body;
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static void Release(PooledDelegateBody body)
-        {
-            pool.Enqueue(body);
-        }
-    }
-
-    /// <summary>
-    /// Pool entry storing the wrapped continuation.
-    /// </summary>
-    internal sealed class PooledDelegateBody
-    {
-        public Action Continuation;
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void Invoke()
-        {
-            var call = Continuation;
-            Continuation = null;
-            if (call != null)
-            {
-                PooledDelegateCore.Release(this);
-                call.Invoke();
-            }
-        }
-    }
-
-    /// <summary>
-    /// Pooled delegate for async operations to reduce GC allocations.
+    /// Pooled delegate for async operations to reduce GC allocations: the instance itself is the
+    /// delegate target, and it is recycled per thread after firing, so a steady-state call costs
+    /// nothing.
     /// </summary>
     /// <typeparam name="T">The parameter type for the delegate</typeparam>
     public sealed class PooledDelegate<T>
     {
-        private readonly PooledDelegateBody body;
-        private readonly Action<T> runDelegate;
+        // Bounded like every other pool in the library: past this the instance is simply dropped,
+        // which costs one GC once instead of letting the free list track the peak forever.
+        private const int MaxRetainedPerThread = 16;
 
-        private PooledDelegate(PooledDelegateBody body)
+        [ThreadStatic] private static PooledDelegate<T> _freeList;
+        [ThreadStatic] private static int _freeCount;
+
+        private PooledDelegate<T> _next;
+        private Action _continuation;
+        private readonly Action<T> _runDelegate;
+
+        private PooledDelegate()
         {
-            this.body = body;
-            runDelegate = Run;
+            _runDelegate = Run;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static Action<T> Create(Action continuation)
         {
-            var body = PooledDelegateCore.Rent(continuation);
-            var item = new PooledDelegate<T>(body);
-            return item.runDelegate;
+            var item = _freeList;
+            if (item != null)
+            {
+                _freeList = item._next;
+                item._next = null;
+                _freeCount--;
+            }
+            else
+            {
+                item = new PooledDelegate<T>();
+            }
+
+            item._continuation = continuation;
+            return item._runDelegate;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void Run(T _)
         {
-            body.Invoke();
+            var call = _continuation;
+            _continuation = null;
+
+            // Return before invoking: the continuation may create another pooled delegate of this
+            // shape, and it must find this slot available rather than allocating a second one.
+            if (_freeCount < MaxRetainedPerThread)
+            {
+                _next = _freeList;
+                _freeList = this;
+                _freeCount++;
+            }
+            else
+            {
+                _next = null;
+            }
+
+            call?.Invoke();
         }
     }
 }

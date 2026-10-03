@@ -8,10 +8,15 @@ using LuminThread.Utility;
 
 namespace LuminThread.CompilerServices
 {
+    // Builder for a non-generic async LuminTask. No source object exists up front: the slot is
+    // rented on the first suspension, so an async method that completes synchronously returns the
+    // zero handle and allocates nothing at all. What the builder carries between suspensions is a
+    // 64-bit handle, not a pointer into unmanaged memory, so a recycled slot fails the generation
+    // check instead of being read as stale memory.
     [StructLayout(LayoutKind.Sequential)]
     public unsafe struct AsyncLuminTaskMethodBuilder
     {
-        private LuminTaskSourceCore<AsyncUnit>* _source;
+        private LuminTaskHandle _handle;
         private IStateMachineBox? _box;
         private Exception? _exception;
 
@@ -26,15 +31,10 @@ namespace LuminThread.CompilerServices
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             get
             {
-                if (_source != null)
-                    return new(LuminTaskSourceCore<AsyncUnit>.MethodTableAutoDisposePtr, _source, _source->Id);
-                if (_exception is OperationCanceledException canceled)
-                    return LuminTask.FromCanceled(canceled.CancellationToken);
+                if (_handle != 0)
+                    return new(_handle);
                 if (_exception != null)
-                {
-                    var es = ExceptionResultSource<AsyncUnit>.Create(_exception);
-                    return new(ExceptionResultSource<AsyncUnit>.MethodTablePtr, es, es->Id);
-                }
+                    return LuminTask.FromException(_exception);
                 return LuminTask.CompletedTask();
             }
         }
@@ -43,13 +43,13 @@ namespace LuminThread.CompilerServices
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void SetResult()
         {
-            // _box != null  <=>  _source != null (both created together on first suspension).
+            // _box != null  <=>  _handle != 0 (both are created together on first suspension).
             if (_box != null)
             {
-                var source = _source;
+                LuminTaskHandle handle = _handle;
                 var box = _box;
                 box.Return();   // zeroes the state machine (== `this`); read nothing off `this` after.
-                LuminTaskSourceCore<AsyncUnit>.TrySetResult(source);
+                LuminTaskCoreSource.TrySetResult(handle);
             }
         }
 
@@ -59,13 +59,10 @@ namespace LuminThread.CompilerServices
         {
             if (_box != null)
             {
-                var source = _source;
+                LuminTaskHandle handle = _handle;
                 var box = _box;
                 box.Return();
-                if (exception is OperationCanceledException canceled)
-                    LuminTaskSourceCore<AsyncUnit>.TrySetCanceled(source, canceled.CancellationToken);
-                else
-                    LuminTaskSourceCore<AsyncUnit>.TrySetException(source, exception);
+                LuminTaskCoreSource.TrySetException(handle, exception);
             }
             else
             {
@@ -83,11 +80,11 @@ namespace LuminThread.CompilerServices
         {
             if (_box == null)
             {
-                if (_source == null)
-                    _source = LuminTaskSourceCore<AsyncUnit>.Create();
+                if (_handle == 0)
+                    _handle = LuminTask.RentSlot();
                 var box = StateMachineBox<TStateMachine>.Rent();
                 _box = box;                       // set this._box BEFORE copying the state machine
-                box.StateMachine = stateMachine;  // the copy now carries _box / _source
+                box.StateMachine = stateMachine;  // the copy now carries _handle / _box
             }
             awaiter.OnCompleted(_box.MoveNextAction);
         }
@@ -103,8 +100,8 @@ namespace LuminThread.CompilerServices
         {
             if (_box == null)
             {
-                if (_source == null)
-                    _source = LuminTaskSourceCore<AsyncUnit>.Create();
+                if (_handle == 0)
+                    _handle = LuminTask.RentSlot();
                 var box = StateMachineBox<TStateMachine>.Rent();
                 _box = box;
                 box.StateMachine = stateMachine;
@@ -125,10 +122,13 @@ namespace LuminThread.CompilerServices
         public void SetStateMachine(IAsyncStateMachine stateMachine) { }
     }
 
+    // Same layout rule as the non-generic builder, plus the synchronous result. A method that
+    // completes without suspending carries its value in _result and never rents a slot - that is
+    // what makes the non-suspended path allocation free.
     [StructLayout(LayoutKind.Sequential)]
     public unsafe struct AsyncLuminTaskMethodBuilder<T>
     {
-        private LuminTaskSourceCore<T>* _source;
+        private LuminTaskHandle _handle;
         private IStateMachineBox? _box;
         private Exception? _exception;
         private T _result;
@@ -144,15 +144,10 @@ namespace LuminThread.CompilerServices
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             get
             {
-                if (_source != null)
-                    return new(LuminTaskSourceCore<T>.MethodTableAutoDisposePtr, _source, _source->Id);
-                if (_exception is OperationCanceledException canceled)
-                    return LuminTask.FromCanceled<T>(canceled.CancellationToken);
+                if (_handle != 0)
+                    return new(_handle);
                 if (_exception != null)
-                {
-                    var es = ExceptionResultSource<T>.Create(_exception);
-                    return new(ExceptionResultSource<T>.MethodTablePtr, es, es->Id);
-                }
+                    return LuminTask.FromException<T>(_exception);
                 return new LuminTask<T>(_result);
             }
         }
@@ -163,10 +158,10 @@ namespace LuminThread.CompilerServices
         {
             if (_box != null)
             {
-                var source = _source;
+                LuminTaskHandle handle = _handle;
                 var box = _box;
                 box.Return();
-                LuminTaskSourceCore<T>.TrySetResult(source, result);
+                LuminTaskResultBridge.TrySetResult(handle, in result);
             }
             else
             {
@@ -180,13 +175,10 @@ namespace LuminThread.CompilerServices
         {
             if (_box != null)
             {
-                var source = _source;
+                LuminTaskHandle handle = _handle;
                 var box = _box;
                 box.Return();
-                if (exception is OperationCanceledException canceled)
-                    LuminTaskSourceCore<T>.TrySetCanceled(source, canceled.CancellationToken);
-                else
-                    LuminTaskSourceCore<T>.TrySetException(source, exception);
+                LuminTaskCoreSource.TrySetException(handle, exception);
             }
             else
             {
@@ -204,8 +196,8 @@ namespace LuminThread.CompilerServices
         {
             if (_box == null)
             {
-                if (_source == null)
-                    _source = LuminTaskSourceCore<T>.Create();
+                if (_handle == 0)
+                    _handle = LuminTask.RentSlot();
                 var box = StateMachineBox<TStateMachine>.Rent();
                 _box = box;
                 box.StateMachine = stateMachine;
@@ -224,8 +216,8 @@ namespace LuminThread.CompilerServices
         {
             if (_box == null)
             {
-                if (_source == null)
-                    _source = LuminTaskSourceCore<T>.Create();
+                if (_handle == 0)
+                    _handle = LuminTask.RentSlot();
                 var box = StateMachineBox<TStateMachine>.Rent();
                 _box = box;
                 box.StateMachine = stateMachine;

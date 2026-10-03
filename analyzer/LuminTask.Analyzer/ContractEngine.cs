@@ -16,6 +16,9 @@ namespace LuminThread.Analyzer
         internal readonly INamedTypeSymbol? TcsType;
         internal readonly INamedTypeSymbol? TcsOfTType;
 
+        /// <summary>LuminTaskSource：扩展程序集通过原生 handle 驱动完成源的生产者入口。</summary>
+        internal readonly INamedTypeSymbol? SourceType;
+
         internal bool HasLuminTask => TaskType != null || TaskOfTType != null;
 
         internal ContractTypes(Compilation compilation)
@@ -24,6 +27,7 @@ namespace LuminThread.Analyzer
             TaskOfTType = compilation.GetTypeByMetadataName("LuminThread.LuminTask`1");
             TcsType = compilation.GetTypeByMetadataName("LuminThread.LuminTaskCompletionSource");
             TcsOfTType = compilation.GetTypeByMetadataName("LuminThread.LuminTaskCompletionSource`1");
+            SourceType = compilation.GetTypeByMetadataName("LuminThread.LuminTaskSource");
         }
     }
 
@@ -112,15 +116,24 @@ namespace LuminThread.Analyzer
         {
             private static readonly SymbolEqualityComparer SymEquals = SymbolEqualityComparer.Default;
 
+            // 会释放/接管任务源的成员调用。ConfigureAwait 与 Unwrap 各自返回 awaitable / 内层任务，
+            // 真正的消费发生在 await 它们时，因此与 AsTask / WaitAsync 同等对待：调用点即消费点。
             private static readonly HashSet<string> s_consumingTaskApis = new(StringComparer.Ordinal)
             {
                 "Forget", "AsTask", "AsValueTask", "ContinueWith", "Timeout", "WaitAsync",
                 "AttachExternalCancellation", "SuppressCancellationThrow", "ToCoroutine",
+                "ConfigureAwait", "Unwrap",
             };
 
             private static readonly HashSet<string> s_tcsCompleteApis = new(StringComparer.Ordinal)
             {
                 "TrySetResult", "TrySetException", "TrySetCanceled",
+            };
+
+            // LuminTaskSource.Set*：以原生 handle 完成完成源，是 TrySet* 之外的第二条完成通道。
+            private static readonly HashSet<string> s_handleCompleteApis = new(StringComparer.Ordinal)
+            {
+                "SetResult", "SetException", "SetCanceled",
             };
 
             private readonly SemanticModel _model;
@@ -197,21 +210,21 @@ namespace LuminThread.Analyzer
                 analyzer.WalkStatements(block.Statements, env, null);
                 // Must run after the walk: task groups are registered as declarations are visited.
                 analyzer.MarkCapturedAsTrivial(body);
-                analyzer.Finalize(env);
+                analyzer.FinishBody(body, env);
             }
             else if (body is ArrowExpressionClauseSyntax arrow)
             {
                 var env = new FlowEnv();
                 analyzer.AnalyzeExpression(arrow.Expression, env, transfer: true);
                 analyzer.MarkCapturedAsTrivial(body);
-                analyzer.Finalize(env);
+                analyzer.FinishBody(body, env);
             }
             else if (body is ExpressionSyntax expr)
             {
                 var env = new FlowEnv();
                 analyzer.AnalyzeExpression(expr, env, transfer: true);
                 analyzer.MarkCapturedAsTrivial(body);
-                analyzer.Finalize(env);
+                analyzer.FinishBody(body, env);
             }
         }
 
@@ -228,6 +241,11 @@ namespace LuminThread.Analyzer
             private readonly Dictionary<ISymbol, Group> _taskGroups = new(SymEquals);
             private readonly Dictionary<ISymbol, Group> _tcsGroups = new(SymEquals);
             private readonly List<Group> _allGroups = new();
+
+            // 租出的 LuminTaskHandle 单独记账：它不参与任务/完成源的消费计数，
+            // 只要求“在方法体内被引用过”（引用即意味着存在完成路径或已逃逸）。
+            private readonly Dictionary<ISymbol, Group> _handleGroups = new(SymEquals);
+            private readonly List<Group> _handleGroupList = new();
 
             internal FlowAnalyzer(
                 SemanticModel model,
@@ -251,6 +269,8 @@ namespace LuminThread.Analyzer
                 internal bool LoopManaged;  // reset & consumed inside a loop — lifecycle ends in the loop
                 internal bool IsTcs;        // completion source (LUM1004/LUM1006) instead of task (LUM1001/LUM1002)
                 internal bool CapturedConsumed; // consumed by a lambda/local function
+                internal bool IsHandle;     // handle rented by LuminTaskSource.Rent/Create (LUM1008)
+                internal bool Used;         // handle referenced anywhere in the body
 
                 internal Group(string name, Location declaration)
                 {
@@ -847,6 +867,18 @@ namespace LuminThread.Analyzer
                 // Static / free-standing invocation.
                 AnalyzeInvocationArguments(arguments, methodSymbol, env, assignedInLoop);
 
+                // LuminTaskSource.SetResult(tcs.Handle, ...) 是扩展程序集驱动完成源的生产者入口：
+                // handle 由某个 LuminTaskCompletionSource 租出，settle 它等同于完成了该完成源。
+                if (_types.SourceType != null &&
+                    methodSymbol != null &&
+                    SymEquals.Equals(methodSymbol.ContainingType?.OriginalDefinition, _types.SourceType) &&
+                    s_handleCompleteApis.Contains(methodSymbol.Name) &&
+                    arguments.FirstOrDefault() is ArgumentSyntax handleArgument &&
+                    TryGetTcsHandleOwner(handleArgument.Expression, out var handleOwner))
+                {
+                    CompleteTcs(handleOwner, inv.GetLocation(), env);
+                }
+
                 if (IsTaskType(methodSymbol?.ReturnType))
                 {
                     bool trivial = methodSymbol != null &&
@@ -878,6 +910,13 @@ namespace LuminThread.Analyzer
                         transfersOwnership = (IsTaskType(paramType) || IsTcsType(paramType)) &&
                                              GetParameterContract(methodSymbol, methodSymbol.Parameters[index].Name) != ParameterContract.Drops;
                     }
+                    // LuminTaskSource.Rent/Create 以 out var 租出的句柄：登记后只要求被引用过。
+                    if ((IsSourceApi(methodSymbol, "Rent") || IsSourceApi(methodSymbol, "Create")) &&
+                        TryGetRentedHandle(arg.Expression, out var rentedHandle))
+                    {
+                        RegisterHandle(rentedHandle, arg.Expression.GetLocation(), rentedHandle.Name);
+                    }
+
                     AnalyzeExpression(arg.Expression, env, transfer: transfersOwnership, assignedInLoop: assignedInLoop);
                     index++;
                 }
@@ -1260,6 +1299,80 @@ namespace LuminThread.Analyzer
                 }
                 group = null!;
                 return false;
+            }
+
+            /// <summary>把 `tcs.Handle` 解析回租出该 handle 的完成源分组。</summary>
+            private bool TryGetTcsHandleOwner(ExpressionSyntax expr, out Group group)
+            {
+                group = null!;
+                if (expr is not MemberAccessExpressionSyntax handleAccess)
+                    return false;
+                if (handleAccess.Name.Identifier.ValueText != "Handle")
+                    return false;
+                return TryGetTcsGroup(handleAccess.Expression, out group);
+            }
+
+            /// <summary>判断是否调用了 LuminTaskSource 上的指定成员（Rent / Create / Set*）。</summary>
+            private bool IsSourceApi(IMethodSymbol? method, string name)
+                => method != null &&
+                   _types.SourceType != null &&
+                   SymEquals.Equals(method.ContainingType?.OriginalDefinition, _types.SourceType) &&
+                   method.Name == name;
+
+            /// <summary>识别 `Rent(out var h)` 形式租出的句柄变量。显式类型与 var 形式都归到 SingleVariableDesignation。</summary>
+            private bool TryGetRentedHandle(ExpressionSyntax expr, out ISymbol symbol)
+            {
+                symbol = null!;
+                if (expr is not DeclarationExpressionSyntax declaration)
+                    return false;
+                if (declaration.Designation is not SingleVariableDesignationSyntax single)
+                    return false;
+                if (_model.GetDeclaredSymbol(single) is not ILocalSymbol local)
+                    return false;
+                symbol = local;
+                return true;
+            }
+
+            private void RegisterHandle(ISymbol symbol, Location location, string name)
+            {
+                if (_handleGroups.ContainsKey(symbol))
+                    return;
+
+                var g = new Group(name, location) { IsHandle = true };
+                _handleGroups[symbol] = g;
+                _handleGroupList.Add(g);
+            }
+
+            /// <summary>
+            /// 句柄只要在方法体内（含 lambda / 局部函数 / 状态对象赋值）被引用过任意一次，
+            /// 就认为它已交给某条完成路径；因此这里做一次整树扫描，而不是走路径敏感的消费计数。
+            /// </summary>
+            internal void MarkHandleUsages(SyntaxNode body)
+            {
+                if (_handleGroupList.Count == 0)
+                    return;
+
+                foreach (var id in body.DescendantNodes().OfType<IdentifierNameSyntax>())
+                {
+                    var symbol = ResolveSymbol(id);
+                    if (symbol == null)
+                        continue;
+                    if (_handleGroups.TryGetValue(symbol, out var g))
+                        g.Used = true;
+                }
+            }
+
+            /// <summary>方法体收尾：标记句柄使用情况，产出任务/完成源诊断，最后产出句柄漏报。</summary>
+            internal void FinishBody(SyntaxNode body, FlowEnv env)
+            {
+                MarkHandleUsages(body);
+                Finalize(env);
+
+                foreach (var g in _handleGroupList)
+                {
+                    if (!g.Used)
+                        Report(ContractDiagnostics.UnusedRentedSource, g.Declaration, g.Name);
+                }
             }
 
             /// <summary>

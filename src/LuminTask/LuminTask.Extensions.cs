@@ -12,7 +12,7 @@ using LuminThread.Interface;
 
 namespace LuminThread
 {
-    public static unsafe class LuminTaskExtensions
+    public static class LuminTaskExtensions
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static ValueTask AsValueTask(this LuminTask task) => task;
@@ -20,15 +20,15 @@ namespace LuminThread
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static ValueTask<T> AsValueTask<T>(this LuminTask<T> task) => task;
 
-        #region Task 转换
+        #region Task conversion
 
         public static LuminTask<T> AsLuminTask<T>(this Task<T> task, CancellationToken cancellationToken = default)
         {
             if (task is null) throw new ArgumentNullException(nameof(task));
             if (task.IsCompleted) return ConvertCompletedTask(task, cancellationToken);
 
-            var core = LuminTaskSourceCore<T>.Create();
-            var state = StateTuple.Create(new IntPtr(core), cancellationToken);
+            var handle = LuminTask.RentSlot();
+            var state = StateTuple.Create((handle, cancellationToken));
             task.ContinueWith(
                 static (completed, boxedState) => CompleteTaskConversion(completed, boxedState),
                 state,
@@ -36,7 +36,7 @@ namespace LuminThread
                 TaskContinuationOptions.ExecuteSynchronously,
                 TaskScheduler.Default);
 
-            return new LuminTask<T>(LuminTaskSourceCore<T>.MethodTableAutoDisposePtr, core, core->Id);
+            return new LuminTask<T>(handle);
         }
 
         public static LuminTask AsLuminTask(this Task task, CancellationToken cancellationToken = default)
@@ -44,8 +44,8 @@ namespace LuminThread
             if (task is null) throw new ArgumentNullException(nameof(task));
             if (task.IsCompleted) return ConvertCompletedTask(task, cancellationToken);
 
-            var core = LuminTaskSourceCore<AsyncUnit>.Create();
-            var state = StateTuple.Create(new IntPtr(core), cancellationToken);
+            var handle = LuminTask.RentSlot();
+            var state = StateTuple.Create((handle, cancellationToken));
             task.ContinueWith(
                 static (completed, boxedState) => CompleteTaskConversion(completed, boxedState),
                 state,
@@ -53,7 +53,7 @@ namespace LuminThread
                 TaskContinuationOptions.ExecuteSynchronously,
                 TaskScheduler.Default);
 
-            return new LuminTask(LuminTaskSourceCore<AsyncUnit>.MethodTableAutoDisposePtr, core, core->Id);
+            return new LuminTask(handle);
         }
 
         private static LuminTask<T> ConvertCompletedTask<T>(Task<T> task, CancellationToken fallbackToken)
@@ -91,44 +91,45 @@ namespace LuminThread
 
         private static void CompleteTaskConversion<T>(Task<T> task, object? boxedState)
         {
-            var state = (StateTuple<(IntPtr, CancellationToken)>)boxedState!;
-            var core = (LuminTaskSourceCore<T>*)state.Item.Item1.ToPointer();
+            var state = (StateTuple<(LuminTaskHandle, CancellationToken)>)boxedState!;
+            var handle = state.Item.Item1;
             var fallbackToken = state.Item.Item2;
             state.Dispose();
 
             try
             {
-                LuminTaskSourceCore<T>.TrySetResult(core, task.GetAwaiter().GetResult());
+                var result = task.GetAwaiter().GetResult();
+                LuminTaskResultBridge.TrySetResult(handle, in result);
             }
             catch (OperationCanceledException canceled)
             {
-                LuminTaskSourceCore<T>.TrySetCanceled(core, SelectCancellationToken(canceled, fallbackToken));
+                LuminTaskCoreSource.TrySetCanceled(handle, SelectCancellationToken(canceled, fallbackToken));
             }
             catch (Exception exception)
             {
-                LuminTaskSourceCore<T>.TrySetException(core, exception);
+                LuminTaskCoreSource.TrySetException(handle, exception);
             }
         }
 
         private static void CompleteTaskConversion(Task task, object? boxedState)
         {
-            var state = (StateTuple<(IntPtr, CancellationToken)>)boxedState!;
-            var core = (LuminTaskSourceCore<AsyncUnit>*)state.Item.Item1.ToPointer();
+            var state = (StateTuple<(LuminTaskHandle, CancellationToken)>)boxedState!;
+            var handle = state.Item.Item1;
             var fallbackToken = state.Item.Item2;
             state.Dispose();
 
             try
             {
                 task.GetAwaiter().GetResult();
-                LuminTaskSourceCore<AsyncUnit>.TrySetResult(core);
+                LuminTaskCoreSource.TrySetResult(handle);
             }
             catch (OperationCanceledException canceled)
             {
-                LuminTaskSourceCore<AsyncUnit>.TrySetCanceled(core, SelectCancellationToken(canceled, fallbackToken));
+                LuminTaskCoreSource.TrySetCanceled(handle, SelectCancellationToken(canceled, fallbackToken));
             }
             catch (Exception exception)
             {
-                LuminTaskSourceCore<AsyncUnit>.TrySetException(core, exception);
+                LuminTaskCoreSource.TrySetException(handle, exception);
             }
         }
 
@@ -143,12 +144,12 @@ namespace LuminThread
             => token.IsCancellationRequested ? token : new CancellationToken(canceled: true);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private static void TrySetExceptionOrCanceled<TResult>(void* source, Exception exception)
+        private static void TrySetExceptionOrCanceled(LuminTaskHandle handle, Exception exception)
         {
             if (exception is OperationCanceledException canceled)
-                LuminTaskSourceCore<TResult>.TrySetCanceled(source, canceled.CancellationToken);
+                LuminTaskCoreSource.TrySetCanceled(handle, canceled.CancellationToken);
             else
-                LuminTaskSourceCore<TResult>.TrySetException(source, exception);
+                LuminTaskCoreSource.TrySetException(handle, exception);
         }
 
         // Timeout/cancellation only stops waiting; it does not transfer ownership of the
@@ -303,7 +304,7 @@ namespace LuminThread
 
         #endregion
 
-        #region 取消支持
+        #region Cancellation support
 
         public static LuminTask AttachExternalCancellation(this LuminTask task, CancellationToken cancellationToken)
         {
@@ -351,24 +352,26 @@ namespace LuminThread
 
         private static class AttachExternalCancellationPromise
         {
+            private static readonly MoveNext MoveNextAction = MoveNext;
+
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public static LuminTask Create(LuminTask task, CancellationToken cancellationToken)
             {
-                var core = LuminTaskSourceCore<AsyncUnit>.Create();
-                var state = new LuminTaskState(core, cancellationToken, task);
+                var handle = LuminTask.RentSlot();
+                var state = new LuminTaskState(handle, cancellationToken, task);
 
-                PlayerLoopHelper.AddAction(PlayerLoopTiming.DotNet, state, MoveNext, &MoveNext);
-                return new LuminTask(LuminTaskSourceCore<AsyncUnit>.MethodTableAutoDisposePtr, core, core->Id);
+                PlayerLoopHelper.AddAction(PlayerLoopTiming.DotNet, state, MoveNextAction);
+                return new LuminTask(handle);
             }
 
             public static bool MoveNext(in LuminTaskState state)
             {
-                var innerTask = (LuminTask)state.State;
+                var innerTask = (LuminTask)state.State!;
 
                 if (state.CancellationToken.IsCancellationRequested)
                 {
                     Drain(innerTask);
-                    LuminTaskSourceCore<AsyncUnit>.TrySetCanceled(state.Source, state.CancellationToken);
+                    LuminTaskCoreSource.TrySetCanceled(state.Handle, state.CancellationToken);
                     return false;
                 }
 
@@ -377,11 +380,11 @@ namespace LuminThread
                     try
                     {
                         innerTask.GetAwaiter().GetResult();
-                        LuminTaskSourceCore<AsyncUnit>.TrySetResult(state.Source);
+                        LuminTaskCoreSource.TrySetResult(state.Handle);
                     }
                     catch (Exception ex)
                     {
-                        TrySetExceptionOrCanceled<AsyncUnit>(state.Source, ex);
+                        TrySetExceptionOrCanceled(state.Handle, ex);
                     }
                     return false;
                 }
@@ -392,24 +395,26 @@ namespace LuminThread
 
         private static class AttachExternalCancellationPromise<T>
         {
+            private static readonly MoveNext MoveNextAction = MoveNext;
+
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public static LuminTask<T> Create(LuminTask<T> task, CancellationToken cancellationToken)
             {
-                var core = LuminTaskSourceCore<T>.Create();
-                var state = new LuminTaskState(core, cancellationToken, task);
+                var handle = LuminTask.RentSlot();
+                var state = new LuminTaskState(handle, cancellationToken, task);
 
-                PlayerLoopHelper.AddAction(PlayerLoopTiming.DotNet, state, MoveNext, &MoveNext);
-                return new LuminTask<T>(LuminTaskSourceCore<T>.MethodTableAutoDisposePtr, core, core->Id);
+                PlayerLoopHelper.AddAction(PlayerLoopTiming.DotNet, state, MoveNextAction);
+                return new LuminTask<T>(handle);
             }
 
             public static bool MoveNext(in LuminTaskState state)
             {
-                var innerTask = (LuminTask<T>)state.State;
+                var innerTask = (LuminTask<T>)state.State!;
 
                 if (state.CancellationToken.IsCancellationRequested)
                 {
                     Drain(innerTask);
-                    LuminTaskSourceCore<T>.TrySetCanceled(state.Source, state.CancellationToken);
+                    LuminTaskCoreSource.TrySetCanceled(state.Handle, state.CancellationToken);
                     return false;
                 }
 
@@ -418,11 +423,11 @@ namespace LuminThread
                     try
                     {
                         var result = innerTask.GetAwaiter().GetResult();
-                        LuminTaskSourceCore<T>.TrySetResult(state.Source, result);
+                        LuminTaskResultBridge.TrySetResult(state.Handle, in result);
                     }
                     catch (Exception ex)
                     {
-                        TrySetExceptionOrCanceled<T>(state.Source, ex);
+                        TrySetExceptionOrCanceled(state.Handle, ex);
                     }
                     return false;
                 }
@@ -433,7 +438,7 @@ namespace LuminThread
 
         #endregion
 
-        #region 超时支持
+        #region Timeout support
 
         public static LuminTask Timeout(this LuminTask task, TimeSpan timeout, CancellationToken cancellationToken = default)
         {
@@ -514,10 +519,12 @@ namespace LuminThread
                 public long TimeoutTimestampTicks;
             }
 
+            private static readonly MoveNext MoveNextAction = MoveNext;
+
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public static LuminTask Create(LuminTask task, TimeSpan timeout, CancellationToken cancellationToken)
             {
-                var core = LuminTaskSourceCore<AsyncUnit>.Create();
+                var handle = LuminTask.RentSlot();
 
                 var stateData = new TimeoutStateData
                 {
@@ -525,25 +532,25 @@ namespace LuminThread
                     TimeoutTimestampTicks = ToStopwatchTicks(timeout)
                 };
 
-                var stateTuple = StateTuple.Create(stateData);
-                var state = new LuminTaskState(core, cancellationToken, task, stateTuple);
+                var stateTuple = StateTuple.Create((task, stateData));
+                var state = new LuminTaskState(handle, cancellationToken, stateTuple);
 
-                PlayerLoopHelper.AddAction(PlayerLoopTiming.DotNet, state, MoveNext, &MoveNext);
-                return new LuminTask(LuminTaskSourceCore<AsyncUnit>.MethodTableAutoDisposePtr, core, core->Id);
+                PlayerLoopHelper.AddAction(PlayerLoopTiming.DotNet, state, MoveNextAction);
+                return new LuminTask(handle);
             }
 
             public static bool MoveNext(in LuminTaskState state)
             {
-                var innerTask = (LuminTask)state.State;
-                var stateTuple = Unsafe.As<StateTuple<TimeoutStateData>>(state.StateTuple);
+                var stateTuple = Unsafe.As<StateTuple<(LuminTask, TimeoutStateData)>>(state.State!);
                 if (stateTuple == null) return false;
 
-                var data = stateTuple.Item;
+                var innerTask = stateTuple.Item.Item1;
+                var data = stateTuple.Item.Item2;
 
                 if (state.CancellationToken.IsCancellationRequested)
                 {
                     Drain(innerTask);
-                    LuminTaskSourceCore<AsyncUnit>.TrySetCanceled(state.Source, state.CancellationToken);
+                    LuminTaskCoreSource.TrySetCanceled(state.Handle, state.CancellationToken);
                     stateTuple.Dispose();
                     return false;
                 }
@@ -551,7 +558,7 @@ namespace LuminThread
                 if (Stopwatch.GetTimestamp() - data.StartTimestamp >= data.TimeoutTimestampTicks)
                 {
                     Drain(innerTask);
-                    LuminTaskSourceCore<AsyncUnit>.TrySetException(state.Source, new TimeoutException());
+                    LuminTaskCoreSource.TrySetException(state.Handle, new TimeoutException());
                     stateTuple.Dispose();
                     return false;
                 }
@@ -561,11 +568,11 @@ namespace LuminThread
                     try
                     {
                         innerTask.GetAwaiter().GetResult();
-                        LuminTaskSourceCore<AsyncUnit>.TrySetResult(state.Source);
+                        LuminTaskCoreSource.TrySetResult(state.Handle);
                     }
                     catch (Exception ex)
                     {
-                        TrySetExceptionOrCanceled<AsyncUnit>(state.Source, ex);
+                        TrySetExceptionOrCanceled(state.Handle, ex);
                     }
                     stateTuple.Dispose();
                     return false;
@@ -584,10 +591,12 @@ namespace LuminThread
                 public long TimeoutTimestampTicks;
             }
 
+            private static readonly MoveNext MoveNextAction = MoveNext;
+
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public static LuminTask<T> Create(LuminTask<T> task, TimeSpan timeout, CancellationToken cancellationToken)
             {
-                var core = LuminTaskSourceCore<T>.Create();
+                var handle = LuminTask.RentSlot();
 
                 var stateData = new TimeoutStateData
                 {
@@ -595,25 +604,25 @@ namespace LuminThread
                     TimeoutTimestampTicks = ToStopwatchTicks(timeout)
                 };
 
-                var stateTuple = StateTuple.Create(stateData);
-                var state = new LuminTaskState(core, cancellationToken, task, stateTuple);
+                var stateTuple = StateTuple.Create((task, stateData));
+                var state = new LuminTaskState(handle, cancellationToken, stateTuple);
 
-                PlayerLoopHelper.AddAction(PlayerLoopTiming.DotNet, state, MoveNext, &MoveNext);
-                return new LuminTask<T>(LuminTaskSourceCore<T>.MethodTableAutoDisposePtr, core, core->Id);
+                PlayerLoopHelper.AddAction(PlayerLoopTiming.DotNet, state, MoveNextAction);
+                return new LuminTask<T>(handle);
             }
 
             public static bool MoveNext(in LuminTaskState state)
             {
-                var innerTask = (LuminTask<T>)state.State;
-                var stateTuple = Unsafe.As<StateTuple<TimeoutStateData>>(state.StateTuple);
+                var stateTuple = Unsafe.As<StateTuple<(LuminTask<T>, TimeoutStateData)>>(state.State!);
                 if (stateTuple == null) return false;
 
-                var data = stateTuple.Item;
+                var innerTask = stateTuple.Item.Item1;
+                var data = stateTuple.Item.Item2;
 
                 if (state.CancellationToken.IsCancellationRequested)
                 {
                     Drain(innerTask);
-                    LuminTaskSourceCore<T>.TrySetCanceled(state.Source, state.CancellationToken);
+                    LuminTaskCoreSource.TrySetCanceled(state.Handle, state.CancellationToken);
                     stateTuple.Dispose();
                     return false;
                 }
@@ -621,7 +630,7 @@ namespace LuminThread
                 if (Stopwatch.GetTimestamp() - data.StartTimestamp >= data.TimeoutTimestampTicks)
                 {
                     Drain(innerTask);
-                    LuminTaskSourceCore<T>.TrySetException(state.Source, new TimeoutException());
+                    LuminTaskCoreSource.TrySetException(state.Handle, new TimeoutException());
                     stateTuple.Dispose();
                     return false;
                 }
@@ -631,11 +640,11 @@ namespace LuminThread
                     try
                     {
                         var result = innerTask.GetAwaiter().GetResult();
-                        LuminTaskSourceCore<T>.TrySetResult(state.Source, result);
+                        LuminTaskResultBridge.TrySetResult(state.Handle, in result);
                     }
                     catch (Exception ex)
                     {
-                        TrySetExceptionOrCanceled<T>(state.Source, ex);
+                        TrySetExceptionOrCanceled(state.Handle, ex);
                     }
                     stateTuple.Dispose();
                     return false;
@@ -647,7 +656,7 @@ namespace LuminThread
 
         #endregion
 
-        #region Forget (忽略结果)
+        #region Forget (ignore result)
 
         public static void Forget(this LuminTask task)
         {
@@ -696,7 +705,11 @@ namespace LuminThread
             }
             else
             {
-                ForgetBlock<T>.Schedule(awaiter, null);
+                // Forget discards the result, so the non-generic block (which exits through
+                // LuminTaskCoreSource.ConsumeVoid and returns the pooled result container on the way)
+                // covers LuminTask<T> as well. Sharing it drops the per-T ForgetBlock<T> generic
+                // instantiation entirely.
+                ForgetBlock.Schedule(awaiter, null);
             }
         }
 
@@ -717,13 +730,15 @@ namespace LuminThread
             }
             else
             {
-                ForgetBlock<T>.Schedule(awaiter, exceptionHandler);
+                // See the note on the parameterless overload: Forget never reads the result, so the
+                // non-generic block serves LuminTask<T> too.
+                ForgetBlock.Schedule(awaiter, exceptionHandler);
             }
         }
 
         #endregion
 
-        #region ContinueWith (链式调用)
+        #region ContinueWith (chaining)
 
         public static LuminTask ContinueWith<T>(this LuminTask<T> task, Action<T> continuation, PlayerLoopTiming loopTiming = PlayerLoopTiming.DotNet)
         {
@@ -767,21 +782,24 @@ namespace LuminThread
 
         private static class ContinueWithActionPromise<T>
         {
+            private static readonly MoveNext MoveNextAction = MoveNext;
+
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public static LuminTask Create(LuminTask<T> task, Action<T> continuation, PlayerLoopTiming loopTiming = PlayerLoopTiming.DotNet)
             {
-                var core = LuminTaskSourceCore<AsyncUnit>.Create();
-                var stateTuple = StateTuple.Create(continuation);
-                var state = new LuminTaskState(core, CancellationToken.None, task, stateTuple);
+                var handle = LuminTask.RentSlot();
+                var stateTuple = StateTuple.Create((task, continuation));
+                var state = new LuminTaskState(handle, CancellationToken.None, stateTuple);
 
-                PlayerLoopHelper.AddAction(loopTiming, state, MoveNext, &MoveNext);
-                return new LuminTask(LuminTaskSourceCore<AsyncUnit>.MethodTableAutoDisposePtr, core, core->Id);
+                PlayerLoopHelper.AddAction(loopTiming, state, MoveNextAction);
+                return new LuminTask(handle);
             }
 
             public static bool MoveNext(in LuminTaskState state)
             {
-                var innerTask = (LuminTask<T>)state.State;
-                var continuation = Unsafe.As<StateTuple<Action<T>>>(state.StateTuple);
+                var stateTuple = Unsafe.As<StateTuple<(LuminTask<T>, Action<T>)>>(state.State!);
+                var innerTask = stateTuple.Item.Item1;
+                var continuation = stateTuple.Item.Item2;
 
                 if (innerTask.Status == LuminTaskStatus.Pending)
                     return true;
@@ -789,36 +807,39 @@ namespace LuminThread
                 try
                 {
                     var result = innerTask.GetAwaiter().GetResult();
-                    continuation.Item(result);
-                    LuminTaskSourceCore<AsyncUnit>.TrySetResult(state.Source);
+                    continuation(result);
+                    LuminTaskCoreSource.TrySetResult(state.Handle);
                 }
                 catch (Exception ex)
                 {
-                    TrySetExceptionOrCanceled<AsyncUnit>(state.Source, ex);
+                    TrySetExceptionOrCanceled(state.Handle, ex);
                 }
 
-                continuation.Dispose();
+                stateTuple.Dispose();
                 return false;
             }
         }
 
         private static class ContinueWithFuncPromise<T, TR>
         {
+            private static readonly MoveNext MoveNextAction = MoveNext;
+
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public static LuminTask<TR> Create(LuminTask<T> task, Func<T, TR> continuation, PlayerLoopTiming loopTiming = PlayerLoopTiming.DotNet)
             {
-                var core = LuminTaskSourceCore<TR>.Create();
-                var stateTuple = StateTuple.Create(continuation);
-                var state = new LuminTaskState(core, CancellationToken.None, task, stateTuple);
+                var handle = LuminTask.RentSlot();
+                var stateTuple = StateTuple.Create((task, continuation));
+                var state = new LuminTaskState(handle, CancellationToken.None, stateTuple);
 
-                PlayerLoopHelper.AddAction(loopTiming, state, MoveNext, &MoveNext);
-                return new LuminTask<TR>(LuminTaskSourceCore<TR>.MethodTableAutoDisposePtr, core, core->Id);
+                PlayerLoopHelper.AddAction(loopTiming, state, MoveNextAction);
+                return new LuminTask<TR>(handle);
             }
 
             public static bool MoveNext(in LuminTaskState state)
             {
-                var innerTask = (LuminTask<T>)state.State;
-                var continuation = Unsafe.As<StateTuple<Func<T, TR>>>(state.StateTuple);
+                var stateTuple = Unsafe.As<StateTuple<(LuminTask<T>, Func<T, TR>)>>(state.State!);
+                var innerTask = stateTuple.Item.Item1;
+                var continuation = stateTuple.Item.Item2;
 
                 if (innerTask.Status == LuminTaskStatus.Pending)
                     return true;
@@ -826,15 +847,15 @@ namespace LuminThread
                 try
                 {
                     var result = innerTask.GetAwaiter().GetResult();
-                    var continuationResult = continuation.Item(result);
-                    LuminTaskSourceCore<TR>.TrySetResult(state.Source, continuationResult);
+                    var continuationResult = continuation(result);
+                    LuminTaskResultBridge.TrySetResult(state.Handle, in continuationResult);
                 }
                 catch (Exception ex)
                 {
-                    TrySetExceptionOrCanceled<TR>(state.Source, ex);
+                    TrySetExceptionOrCanceled(state.Handle, ex);
                 }
 
-                continuation.Dispose();
+                stateTuple.Dispose();
                 return false;
             }
         }
@@ -849,27 +870,29 @@ namespace LuminThread
                 public bool WaitingForContinuation;
             }
 
+            private static readonly MoveNext MoveNextAction = MoveNext;
+
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public static LuminTask Create(LuminTask<T> task, Func<T, LuminTask> continuation, PlayerLoopTiming loopTiming = PlayerLoopTiming.DotNet)
             {
-                var core = LuminTaskSourceCore<AsyncUnit>.Create();
+                var handle = LuminTask.RentSlot();
                 var stateData = new StateData
                 {
                     Continuation = continuation,
                     WaitingForContinuation = false
                 };
-                var stateTuple = StateTuple.Create(stateData);
-                var state = new LuminTaskState(core, CancellationToken.None, task, stateTuple);
+                var stateTuple = StateTuple.Create((task, stateData));
+                var state = new LuminTaskState(handle, CancellationToken.None, stateTuple);
 
-                PlayerLoopHelper.AddAction(loopTiming, state, MoveNext, &MoveNext);
-                return new LuminTask(LuminTaskSourceCore<AsyncUnit>.MethodTableAutoDisposePtr, core, core->Id);
+                PlayerLoopHelper.AddAction(loopTiming, state, MoveNextAction);
+                return new LuminTask(handle);
             }
 
             public static bool MoveNext(in LuminTaskState state)
             {
-                var innerTask = (LuminTask<T>)state.State;
-                var stateTuple = Unsafe.As<StateTuple<StateData>>(state.StateTuple);
-                ref var data = ref stateTuple.Item;
+                var stateTuple = Unsafe.As<StateTuple<(LuminTask<T>, StateData)>>(state.State!);
+                var innerTask = stateTuple.Item.Item1;
+                ref var data = ref stateTuple.Item.Item2;
 
                 if (!data.WaitingForContinuation)
                 {
@@ -885,14 +908,14 @@ namespace LuminThread
                         if (data.ContinuationTask.Status != LuminTaskStatus.Pending)
                         {
                             data.ContinuationTask.GetAwaiter().GetResult();
-                            LuminTaskSourceCore<AsyncUnit>.TrySetResult(state.Source);
+                            LuminTaskCoreSource.TrySetResult(state.Handle);
                             stateTuple.Dispose();
                             return false;
                         }
                     }
                     catch (Exception ex)
                     {
-                        TrySetExceptionOrCanceled<AsyncUnit>(state.Source, ex);
+                        TrySetExceptionOrCanceled(state.Handle, ex);
                         stateTuple.Dispose();
                         return false;
                     }
@@ -905,11 +928,11 @@ namespace LuminThread
                     try
                     {
                         data.ContinuationTask.GetAwaiter().GetResult();
-                        LuminTaskSourceCore<AsyncUnit>.TrySetResult(state.Source);
+                        LuminTaskCoreSource.TrySetResult(state.Handle);
                     }
                     catch (Exception ex)
                     {
-                        TrySetExceptionOrCanceled<AsyncUnit>(state.Source, ex);
+                        TrySetExceptionOrCanceled(state.Handle, ex);
                     }
 
                     stateTuple.Dispose();
@@ -930,27 +953,29 @@ namespace LuminThread
                 public bool WaitingForContinuation;
             }
 
+            private static readonly MoveNext MoveNextAction = MoveNext;
+
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public static LuminTask<TR> Create(LuminTask<T> task, Func<T, LuminTask<TR>> continuation, PlayerLoopTiming loopTiming = PlayerLoopTiming.DotNet)
             {
-                var core = LuminTaskSourceCore<TR>.Create();
+                var handle = LuminTask.RentSlot();
                 var stateData = new StateData
                 {
                     Continuation = continuation,
                     WaitingForContinuation = false
                 };
-                var stateTuple = StateTuple.Create(stateData);
-                var state = new LuminTaskState(core, CancellationToken.None, task, stateTuple);
+                var stateTuple = StateTuple.Create((task, stateData));
+                var state = new LuminTaskState(handle, CancellationToken.None, stateTuple);
 
-                PlayerLoopHelper.AddAction(loopTiming, state, MoveNext, &MoveNext);
-                return new LuminTask<TR>(LuminTaskSourceCore<TR>.MethodTableAutoDisposePtr, core, core->Id);
+                PlayerLoopHelper.AddAction(loopTiming, state, MoveNextAction);
+                return new LuminTask<TR>(handle);
             }
 
             public static bool MoveNext(in LuminTaskState state)
             {
-                var innerTask = (LuminTask<T>)state.State;
-                var stateTuple = Unsafe.As<StateTuple<StateData>>(state.StateTuple);
-                ref var data = ref stateTuple.Item;
+                var stateTuple = Unsafe.As<StateTuple<(LuminTask<T>, StateData)>>(state.State!);
+                var innerTask = stateTuple.Item.Item1;
+                ref var data = ref stateTuple.Item.Item2;
 
                 if (!data.WaitingForContinuation)
                 {
@@ -966,14 +991,14 @@ namespace LuminThread
                         if (data.ContinuationTask.Status != LuminTaskStatus.Pending)
                         {
                             var finalResult = data.ContinuationTask.GetAwaiter().GetResult();
-                            LuminTaskSourceCore<TR>.TrySetResult(state.Source, finalResult);
+                            LuminTaskResultBridge.TrySetResult(state.Handle, in finalResult);
                             stateTuple.Dispose();
                             return false;
                         }
                     }
                     catch (Exception ex)
                     {
-                        TrySetExceptionOrCanceled<TR>(state.Source, ex);
+                        TrySetExceptionOrCanceled(state.Handle, ex);
                         stateTuple.Dispose();
                         return false;
                     }
@@ -986,11 +1011,11 @@ namespace LuminThread
                     try
                     {
                         var finalResult = data.ContinuationTask.GetAwaiter().GetResult();
-                        LuminTaskSourceCore<TR>.TrySetResult(state.Source, finalResult);
+                        LuminTaskResultBridge.TrySetResult(state.Handle, in finalResult);
                     }
                     catch (Exception ex)
                     {
-                        TrySetExceptionOrCanceled<TR>(state.Source, ex);
+                        TrySetExceptionOrCanceled(state.Handle, ex);
                     }
 
                     stateTuple.Dispose();
@@ -1003,21 +1028,24 @@ namespace LuminThread
 
         private static class ContinueWithActionPromise
         {
+            private static readonly MoveNext MoveNextAction = MoveNext;
+
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public static LuminTask Create(LuminTask task, Action continuation, PlayerLoopTiming loopTiming = PlayerLoopTiming.DotNet)
             {
-                var core = LuminTaskSourceCore<AsyncUnit>.Create();
-                var stateTuple = StateTuple.Create(continuation);
-                var state = new LuminTaskState(core, CancellationToken.None, task, stateTuple);
+                var handle = LuminTask.RentSlot();
+                var stateTuple = StateTuple.Create((task, continuation));
+                var state = new LuminTaskState(handle, CancellationToken.None, stateTuple);
 
-                PlayerLoopHelper.AddAction(loopTiming, state, MoveNext, &MoveNext);
-                return new LuminTask(LuminTaskSourceCore<AsyncUnit>.MethodTableAutoDisposePtr, core, core->Id);
+                PlayerLoopHelper.AddAction(loopTiming, state, MoveNextAction);
+                return new LuminTask(handle);
             }
 
             public static bool MoveNext(in LuminTaskState state)
             {
-                var innerTask = (LuminTask)state.State;
-                var continuation = Unsafe.As<StateTuple<Action>>(state.StateTuple);
+                var stateTuple = Unsafe.As<StateTuple<(LuminTask, Action)>>(state.State!);
+                var innerTask = stateTuple.Item.Item1;
+                var continuation = stateTuple.Item.Item2;
 
                 if (innerTask.Status == LuminTaskStatus.Pending)
                     return true;
@@ -1025,36 +1053,39 @@ namespace LuminThread
                 try
                 {
                     innerTask.GetAwaiter().GetResult();
-                    continuation.Item();
-                    LuminTaskSourceCore<AsyncUnit>.TrySetResult(state.Source);
+                    continuation();
+                    LuminTaskCoreSource.TrySetResult(state.Handle);
                 }
                 catch (Exception ex)
                 {
-                    TrySetExceptionOrCanceled<AsyncUnit>(state.Source, ex);
+                    TrySetExceptionOrCanceled(state.Handle, ex);
                 }
 
-                continuation.Dispose();
+                stateTuple.Dispose();
                 return false;
             }
         }
 
         private static class ContinueWithFuncPromise<T>
         {
+            private static readonly MoveNext MoveNextAction = MoveNext;
+
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public static LuminTask<T> Create(LuminTask task, Func<T> continuation, PlayerLoopTiming loopTiming = PlayerLoopTiming.DotNet)
             {
-                var core = LuminTaskSourceCore<T>.Create();
-                var stateTuple = StateTuple.Create(continuation);
-                var state = new LuminTaskState(core, CancellationToken.None, task, stateTuple);
+                var handle = LuminTask.RentSlot();
+                var stateTuple = StateTuple.Create((task, continuation));
+                var state = new LuminTaskState(handle, CancellationToken.None, stateTuple);
 
-                PlayerLoopHelper.AddAction(loopTiming, state, MoveNext, &MoveNext);
-                return new LuminTask<T>(LuminTaskSourceCore<T>.MethodTableAutoDisposePtr, core, core->Id);
+                PlayerLoopHelper.AddAction(loopTiming, state, MoveNextAction);
+                return new LuminTask<T>(handle);
             }
 
             public static bool MoveNext(in LuminTaskState state)
             {
-                var innerTask = (LuminTask)state.State;
-                var continuation = Unsafe.As<StateTuple<Func<T>>>(state.StateTuple);
+                var stateTuple = Unsafe.As<StateTuple<(LuminTask, Func<T>)>>(state.State!);
+                var innerTask = stateTuple.Item.Item1;
+                var continuation = stateTuple.Item.Item2;
 
                 if (innerTask.Status == LuminTaskStatus.Pending)
                     return true;
@@ -1062,15 +1093,15 @@ namespace LuminThread
                 try
                 {
                     innerTask.GetAwaiter().GetResult();
-                    var result = continuation.Item();
-                    LuminTaskSourceCore<T>.TrySetResult(state.Source, result);
+                    var result = continuation();
+                    LuminTaskResultBridge.TrySetResult(state.Handle, in result);
                 }
                 catch (Exception ex)
                 {
-                    TrySetExceptionOrCanceled<T>(state.Source, ex);
+                    TrySetExceptionOrCanceled(state.Handle, ex);
                 }
 
-                continuation.Dispose();
+                stateTuple.Dispose();
                 return false;
             }
         }
@@ -1085,27 +1116,29 @@ namespace LuminThread
                 public bool WaitingForContinuation;
             }
 
+            private static readonly MoveNext MoveNextAction = MoveNext;
+
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public static LuminTask Create(LuminTask task, Func<LuminTask> continuation, PlayerLoopTiming loopTiming = PlayerLoopTiming.DotNet)
             {
-                var core = LuminTaskSourceCore<AsyncUnit>.Create();
+                var handle = LuminTask.RentSlot();
                 var stateData = new StateData
                 {
                     Continuation = continuation,
                     WaitingForContinuation = false
                 };
-                var stateTuple = StateTuple.Create(stateData);
-                var state = new LuminTaskState(core, CancellationToken.None, task, stateTuple);
+                var stateTuple = StateTuple.Create((task, stateData));
+                var state = new LuminTaskState(handle, CancellationToken.None, stateTuple);
 
-                PlayerLoopHelper.AddAction(loopTiming, state, MoveNext, &MoveNext);
-                return new LuminTask(LuminTaskSourceCore<AsyncUnit>.MethodTableAutoDisposePtr, core, core->Id);
+                PlayerLoopHelper.AddAction(loopTiming, state, MoveNextAction);
+                return new LuminTask(handle);
             }
 
             public static bool MoveNext(in LuminTaskState state)
             {
-                var innerTask = (LuminTask)state.State;
-                var stateTuple = Unsafe.As<StateTuple<StateData>>(state.StateTuple);
-                ref var data = ref stateTuple.Item;
+                var stateTuple = Unsafe.As<StateTuple<(LuminTask, StateData)>>(state.State!);
+                var innerTask = stateTuple.Item.Item1;
+                ref var data = ref stateTuple.Item.Item2;
 
                 if (!data.WaitingForContinuation)
                 {
@@ -1121,14 +1154,14 @@ namespace LuminThread
                         if (data.ContinuationTask.Status != LuminTaskStatus.Pending)
                         {
                             data.ContinuationTask.GetAwaiter().GetResult();
-                            LuminTaskSourceCore<AsyncUnit>.TrySetResult(state.Source);
+                            LuminTaskCoreSource.TrySetResult(state.Handle);
                             stateTuple.Dispose();
                             return false;
                         }
                     }
                     catch (Exception ex)
                     {
-                        TrySetExceptionOrCanceled<AsyncUnit>(state.Source, ex);
+                        TrySetExceptionOrCanceled(state.Handle, ex);
                         stateTuple.Dispose();
                         return false;
                     }
@@ -1141,11 +1174,11 @@ namespace LuminThread
                     try
                     {
                         data.ContinuationTask.GetAwaiter().GetResult();
-                        LuminTaskSourceCore<AsyncUnit>.TrySetResult(state.Source);
+                        LuminTaskCoreSource.TrySetResult(state.Handle);
                     }
                     catch (Exception ex)
                     {
-                        TrySetExceptionOrCanceled<AsyncUnit>(state.Source, ex);
+                        TrySetExceptionOrCanceled(state.Handle, ex);
                     }
 
                     stateTuple.Dispose();
@@ -1166,27 +1199,29 @@ namespace LuminThread
                 public bool WaitingForContinuation;
             }
 
+            private static readonly MoveNext MoveNextAction = MoveNext;
+
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public static LuminTask<T> Create(LuminTask task, Func<LuminTask<T>> continuation, PlayerLoopTiming loopTiming = PlayerLoopTiming.DotNet)
             {
-                var core = LuminTaskSourceCore<T>.Create();
+                var handle = LuminTask.RentSlot();
                 var stateData = new StateData
                 {
                     Continuation = continuation,
                     WaitingForContinuation = false
                 };
-                var stateTuple = StateTuple.Create(stateData);
-                var state = new LuminTaskState(core, CancellationToken.None, task, stateTuple);
+                var stateTuple = StateTuple.Create((task, stateData));
+                var state = new LuminTaskState(handle, CancellationToken.None, stateTuple);
 
-                PlayerLoopHelper.AddAction(loopTiming, state, MoveNext, &MoveNext);
-                return new LuminTask<T>(LuminTaskSourceCore<T>.MethodTableAutoDisposePtr, core, core->Id);
+                PlayerLoopHelper.AddAction(loopTiming, state, MoveNextAction);
+                return new LuminTask<T>(handle);
             }
 
             public static bool MoveNext(in LuminTaskState state)
             {
-                var innerTask = (LuminTask)state.State;
-                var stateTuple = Unsafe.As<StateTuple<StateData>>(state.StateTuple);
-                ref var data = ref stateTuple.Item;
+                var stateTuple = Unsafe.As<StateTuple<(LuminTask, StateData)>>(state.State!);
+                var innerTask = stateTuple.Item.Item1;
+                ref var data = ref stateTuple.Item.Item2;
 
                 if (!data.WaitingForContinuation)
                 {
@@ -1202,14 +1237,14 @@ namespace LuminThread
                         if (data.ContinuationTask.Status != LuminTaskStatus.Pending)
                         {
                             var result = data.ContinuationTask.GetAwaiter().GetResult();
-                            LuminTaskSourceCore<T>.TrySetResult(state.Source, result);
+                            LuminTaskResultBridge.TrySetResult(state.Handle, in result);
                             stateTuple.Dispose();
                             return false;
                         }
                     }
                     catch (Exception ex)
                     {
-                        TrySetExceptionOrCanceled<T>(state.Source, ex);
+                        TrySetExceptionOrCanceled(state.Handle, ex);
                         stateTuple.Dispose();
                         return false;
                     }
@@ -1222,11 +1257,11 @@ namespace LuminThread
                     try
                     {
                         var result = data.ContinuationTask.GetAwaiter().GetResult();
-                        LuminTaskSourceCore<T>.TrySetResult(state.Source, result);
+                        LuminTaskResultBridge.TrySetResult(state.Handle, in result);
                     }
                     catch (Exception ex)
                     {
-                        TrySetExceptionOrCanceled<T>(state.Source, ex);
+                        TrySetExceptionOrCanceled(state.Handle, ex);
                     }
 
                     stateTuple.Dispose();
@@ -1239,7 +1274,7 @@ namespace LuminThread
 
         #endregion
 
-        #region 转换为协程
+        #region Convert to coroutine
 
         public static IEnumerator ToCoroutine<T>(this LuminTask<T> task, Action<T> onCompleted = null, Action<Exception> onError = null)
         {
@@ -1319,7 +1354,7 @@ namespace LuminThread
 
     public static class LuminTaskSafeExtensions
     {
-        #region 辅助方法
+        #region Helpers
 
         public static async LuminTask<(bool IsCanceled, T Result)> SuppressCancellationThrow<T>(this LuminTask<T> task)
         {
@@ -1384,61 +1419,6 @@ namespace LuminThread
             return LuminTask.WhenAll(tasks.task1, tasks.task2, tasks.task3, tasks.task4).GetAwaiter();
         }
 
-        public static LuminTask<(T1, T2, T3, T4, T5)> GetAwaiter<T1, T2, T3, T4, T5>(this (LuminTask<T1> task1, LuminTask<T2> task2, LuminTask<T3> task3, LuminTask<T4> task4, LuminTask<T5> task5) tasks)
-        {
-            return LuminTask.WhenAll(tasks.task1, tasks.task2, tasks.task3, tasks.task4, tasks.task5).GetAwaiter();
-        }
-
-        public static LuminTask<(T1, T2, T3, T4, T5, T6)> GetAwaiter<T1, T2, T3, T4, T5, T6>(this (LuminTask<T1> task1, LuminTask<T2> task2, LuminTask<T3> task3, LuminTask<T4> task4, LuminTask<T5> task5, LuminTask<T6> task6) tasks)
-        {
-            return LuminTask.WhenAll(tasks.task1, tasks.task2, tasks.task3, tasks.task4, tasks.task5, tasks.task6).GetAwaiter();
-        }
-
-        public static LuminTask<(T1, T2, T3, T4, T5, T6, T7)> GetAwaiter<T1, T2, T3, T4, T5, T6, T7>(this (LuminTask<T1> task1, LuminTask<T2> task2, LuminTask<T3> task3, LuminTask<T4> task4, LuminTask<T5> task5, LuminTask<T6> task6, LuminTask<T7> task7) tasks)
-        {
-            return LuminTask.WhenAll(tasks.task1, tasks.task2, tasks.task3, tasks.task4, tasks.task5, tasks.task6, tasks.task7).GetAwaiter();
-        }
-
-        public static LuminTask<(T1, T2, T3, T4, T5, T6, T7, T8)> GetAwaiter<T1, T2, T3, T4, T5, T6, T7, T8>(this (LuminTask<T1> task1, LuminTask<T2> task2, LuminTask<T3> task3, LuminTask<T4> task4, LuminTask<T5> task5, LuminTask<T6> task6, LuminTask<T7> task7, LuminTask<T8> task8) tasks)
-        {
-            return LuminTask.WhenAll(tasks.task1, tasks.task2, tasks.task3, tasks.task4, tasks.task5, tasks.task6, tasks.task7, tasks.task8).GetAwaiter();
-        }
-
-        public static LuminTask<(T1, T2, T3, T4, T5, T6, T7, T8, T9)> GetAwaiter<T1, T2, T3, T4, T5, T6, T7, T8, T9>(this (LuminTask<T1> task1, LuminTask<T2> task2, LuminTask<T3> task3, LuminTask<T4> task4, LuminTask<T5> task5, LuminTask<T6> task6, LuminTask<T7> task7, LuminTask<T8> task8, LuminTask<T9> task9) tasks)
-        {
-            return LuminTask.WhenAll(tasks.task1, tasks.task2, tasks.task3, tasks.task4, tasks.task5, tasks.task6, tasks.task7, tasks.task8, tasks.task9).GetAwaiter();
-        }
-
-        public static LuminTask<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10)> GetAwaiter<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10>(this (LuminTask<T1> task1, LuminTask<T2> task2, LuminTask<T3> task3, LuminTask<T4> task4, LuminTask<T5> task5, LuminTask<T6> task6, LuminTask<T7> task7, LuminTask<T8> task8, LuminTask<T9> task9, LuminTask<T10> task10) tasks)
-        {
-            return LuminTask.WhenAll(tasks.task1, tasks.task2, tasks.task3, tasks.task4, tasks.task5, tasks.task6, tasks.task7, tasks.task8, tasks.task9, tasks.task10).GetAwaiter();
-        }
-
-        public static LuminTask<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11)> GetAwaiter<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11>(this (LuminTask<T1> task1, LuminTask<T2> task2, LuminTask<T3> task3, LuminTask<T4> task4, LuminTask<T5> task5, LuminTask<T6> task6, LuminTask<T7> task7, LuminTask<T8> task8, LuminTask<T9> task9, LuminTask<T10> task10, LuminTask<T11> task11) tasks)
-        {
-            return LuminTask.WhenAll(tasks.task1, tasks.task2, tasks.task3, tasks.task4, tasks.task5, tasks.task6, tasks.task7, tasks.task8, tasks.task9, tasks.task10, tasks.task11).GetAwaiter();
-        }
-
-        public static LuminTask<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12)> GetAwaiter<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12>(this (LuminTask<T1> task1, LuminTask<T2> task2, LuminTask<T3> task3, LuminTask<T4> task4, LuminTask<T5> task5, LuminTask<T6> task6, LuminTask<T7> task7, LuminTask<T8> task8, LuminTask<T9> task9, LuminTask<T10> task10, LuminTask<T11> task11, LuminTask<T12> task12) tasks)
-        {
-            return LuminTask.WhenAll(tasks.task1, tasks.task2, tasks.task3, tasks.task4, tasks.task5, tasks.task6, tasks.task7, tasks.task8, tasks.task9, tasks.task10, tasks.task11, tasks.task12).GetAwaiter();
-        }
-
-        public static LuminTask<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13)> GetAwaiter<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13>(this (LuminTask<T1> task1, LuminTask<T2> task2, LuminTask<T3> task3, LuminTask<T4> task4, LuminTask<T5> task5, LuminTask<T6> task6, LuminTask<T7> task7, LuminTask<T8> task8, LuminTask<T9> task9, LuminTask<T10> task10, LuminTask<T11> task11, LuminTask<T12> task12, LuminTask<T13> task13) tasks)
-        {
-            return LuminTask.WhenAll(tasks.task1, tasks.task2, tasks.task3, tasks.task4, tasks.task5, tasks.task6, tasks.task7, tasks.task8, tasks.task9, tasks.task10, tasks.task11, tasks.task12, tasks.task13).GetAwaiter();
-        }
-
-        public static LuminTask<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14)> GetAwaiter<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14>(this (LuminTask<T1> task1, LuminTask<T2> task2, LuminTask<T3> task3, LuminTask<T4> task4, LuminTask<T5> task5, LuminTask<T6> task6, LuminTask<T7> task7, LuminTask<T8> task8, LuminTask<T9> task9, LuminTask<T10> task10, LuminTask<T11> task11, LuminTask<T12> task12, LuminTask<T13> task13, LuminTask<T14> task14) tasks)
-        {
-            return LuminTask.WhenAll(tasks.task1, tasks.task2, tasks.task3, tasks.task4, tasks.task5, tasks.task6, tasks.task7, tasks.task8, tasks.task9, tasks.task10, tasks.task11, tasks.task12, tasks.task13, tasks.task14).GetAwaiter();
-        }
-
-        public static LuminTask<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15)> GetAwaiter<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15>(this (LuminTask<T1> task1, LuminTask<T2> task2, LuminTask<T3> task3, LuminTask<T4> task4, LuminTask<T5> task5, LuminTask<T6> task6, LuminTask<T7> task7, LuminTask<T8> task8, LuminTask<T9> task9, LuminTask<T10> task10, LuminTask<T11> task11, LuminTask<T12> task12, LuminTask<T13> task13, LuminTask<T14> task14, LuminTask<T15> task15) tasks)
-        {
-            return LuminTask.WhenAll(tasks.task1, tasks.task2, tasks.task3, tasks.task4, tasks.task5, tasks.task6, tasks.task7, tasks.task8, tasks.task9, tasks.task10, tasks.task11, tasks.task12, tasks.task13, tasks.task14, tasks.task15).GetAwaiter();
-        }
-
         public static LuminTask GetAwaiter(this (LuminTask task1, LuminTask task2) tasks)
         {
             return LuminTask.WhenAll(tasks.task1, tasks.task2).GetAwaiter();
@@ -1452,61 +1432,6 @@ namespace LuminThread
         public static LuminTask GetAwaiter(this (LuminTask task1, LuminTask task2, LuminTask task3, LuminTask task4) tasks)
         {
             return LuminTask.WhenAll(tasks.task1, tasks.task2, tasks.task3, tasks.task4).GetAwaiter();
-        }
-
-        public static LuminTask GetAwaiter(this (LuminTask task1, LuminTask task2, LuminTask task3, LuminTask task4, LuminTask task5) tasks)
-        {
-            return LuminTask.WhenAll(tasks.task1, tasks.task2, tasks.task3, tasks.task4, tasks.task5).GetAwaiter();
-        }
-
-        public static LuminTask GetAwaiter(this (LuminTask task1, LuminTask task2, LuminTask task3, LuminTask task4, LuminTask task5, LuminTask task6) tasks)
-        {
-            return LuminTask.WhenAll(tasks.task1, tasks.task2, tasks.task3, tasks.task4, tasks.task5, tasks.task6).GetAwaiter();
-        }
-
-        public static LuminTask GetAwaiter(this (LuminTask task1, LuminTask task2, LuminTask task3, LuminTask task4, LuminTask task5, LuminTask task6, LuminTask task7) tasks)
-        {
-            return LuminTask.WhenAll(tasks.task1, tasks.task2, tasks.task3, tasks.task4, tasks.task5, tasks.task6, tasks.task7).GetAwaiter();
-        }
-
-        public static LuminTask GetAwaiter(this (LuminTask task1, LuminTask task2, LuminTask task3, LuminTask task4, LuminTask task5, LuminTask task6, LuminTask task7, LuminTask task8) tasks)
-        {
-            return LuminTask.WhenAll(tasks.task1, tasks.task2, tasks.task3, tasks.task4, tasks.task5, tasks.task6, tasks.task7, tasks.task8).GetAwaiter();
-        }
-
-        public static LuminTask GetAwaiter(this (LuminTask task1, LuminTask task2, LuminTask task3, LuminTask task4, LuminTask task5, LuminTask task6, LuminTask task7, LuminTask task8, LuminTask task9) tasks)
-        {
-            return LuminTask.WhenAll(tasks.task1, tasks.task2, tasks.task3, tasks.task4, tasks.task5, tasks.task6, tasks.task7, tasks.task8, tasks.task9).GetAwaiter();
-        }
-
-        public static LuminTask GetAwaiter(this (LuminTask task1, LuminTask task2, LuminTask task3, LuminTask task4, LuminTask task5, LuminTask task6, LuminTask task7, LuminTask task8, LuminTask task9, LuminTask task10) tasks)
-        {
-            return LuminTask.WhenAll(tasks.task1, tasks.task2, tasks.task3, tasks.task4, tasks.task5, tasks.task6, tasks.task7, tasks.task8, tasks.task9, tasks.task10).GetAwaiter();
-        }
-
-        public static LuminTask GetAwaiter(this (LuminTask task1, LuminTask task2, LuminTask task3, LuminTask task4, LuminTask task5, LuminTask task6, LuminTask task7, LuminTask task8, LuminTask task9, LuminTask task10, LuminTask task11) tasks)
-        {
-            return LuminTask.WhenAll(tasks.task1, tasks.task2, tasks.task3, tasks.task4, tasks.task5, tasks.task6, tasks.task7, tasks.task8, tasks.task9, tasks.task10, tasks.task11).GetAwaiter();
-        }
-
-        public static LuminTask GetAwaiter(this (LuminTask task1, LuminTask task2, LuminTask task3, LuminTask task4, LuminTask task5, LuminTask task6, LuminTask task7, LuminTask task8, LuminTask task9, LuminTask task10, LuminTask task11, LuminTask task12) tasks)
-        {
-            return LuminTask.WhenAll(tasks.task1, tasks.task2, tasks.task3, tasks.task4, tasks.task5, tasks.task6, tasks.task7, tasks.task8, tasks.task9, tasks.task10, tasks.task11, tasks.task12).GetAwaiter();
-        }
-
-        public static LuminTask GetAwaiter(this (LuminTask task1, LuminTask task2, LuminTask task3, LuminTask task4, LuminTask task5, LuminTask task6, LuminTask task7, LuminTask task8, LuminTask task9, LuminTask task10, LuminTask task11, LuminTask task12, LuminTask task13) tasks)
-        {
-            return LuminTask.WhenAll(tasks.task1, tasks.task2, tasks.task3, tasks.task4, tasks.task5, tasks.task6, tasks.task7, tasks.task8, tasks.task9, tasks.task10, tasks.task11, tasks.task12, tasks.task13).GetAwaiter();
-        }
-
-        public static LuminTask GetAwaiter(this (LuminTask task1, LuminTask task2, LuminTask task3, LuminTask task4, LuminTask task5, LuminTask task6, LuminTask task7, LuminTask task8, LuminTask task9, LuminTask task10, LuminTask task11, LuminTask task12, LuminTask task13, LuminTask task14) tasks)
-        {
-            return LuminTask.WhenAll(tasks.task1, tasks.task2, tasks.task3, tasks.task4, tasks.task5, tasks.task6, tasks.task7, tasks.task8, tasks.task9, tasks.task10, tasks.task11, tasks.task12, tasks.task13, tasks.task14).GetAwaiter();
-        }
-
-        public static LuminTask GetAwaiter(this (LuminTask task1, LuminTask task2, LuminTask task3, LuminTask task4, LuminTask task5, LuminTask task6, LuminTask task7, LuminTask task8, LuminTask task9, LuminTask task10, LuminTask task11, LuminTask task12, LuminTask task13, LuminTask task14, LuminTask task15) tasks)
-        {
-            return LuminTask.WhenAll(tasks.task1, tasks.task2, tasks.task3, tasks.task4, tasks.task5, tasks.task6, tasks.task7, tasks.task8, tasks.task9, tasks.task10, tasks.task11, tasks.task12, tasks.task13, tasks.task14, tasks.task15).GetAwaiter();
         }
 
     }

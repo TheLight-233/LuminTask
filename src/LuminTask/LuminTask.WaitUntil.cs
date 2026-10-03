@@ -13,59 +13,97 @@ public readonly partial struct LuminTask
 {
     [DebuggerHidden]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static unsafe LuminTask WaitUntil(Func<bool> condition, PlayerLoopTiming timing = PlayerLoopTiming.DotNet,
+    public static LuminTask WaitUntil(Func<bool> condition, PlayerLoopTiming timing = PlayerLoopTiming.DotNet,
         CancellationToken cancellationToken = default, bool cancelImmediately = false)
     {
-        var promise = WaitUntilPromise<AsyncUnit>.Create(condition, timing, cancellationToken, cancelImmediately, out var id);
+        var handle = RentSlot();
 
-        return new LuminTask(LuminTaskSourceCore<AsyncUnit>.MethodTablePtr, promise.Source, id);
+        if (cancelImmediately && cancellationToken.CanBeCanceled)
+            AttachCancellation(handle, cancellationToken);
+
+        PlayerLoopHelper.AddAction(timing, new LuminTaskState(handle, cancellationToken, condition), WaitUntilPromise.MoveNextAction);
+
+        return new LuminTask(handle);
     }
 
     [DebuggerHidden]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static unsafe LuminTask WaitUntil<T>(T state, Func<T, bool> predicate,
+    public static LuminTask WaitUntil<T>(T state, Func<T, bool> predicate,
         PlayerLoopTiming timing = PlayerLoopTiming.DotNet,
         CancellationToken cancellationToken = default(CancellationToken), bool cancelImmediately = false)
     {
-        var promise = WaitUntilPromise<T, AsyncUnit>.Create(state, predicate, timing, cancellationToken, cancelImmediately, out var id);
+        var handle = RentSlot();
+        ref var item = ref GetRentedSlot(handle, out var cold, out int index);
 
-        return new LuminTask(LuminTaskSourceCore<AsyncUnit>.MethodTablePtr, promise.Source, id);
+        LuminTaskResultBridge.SetState(cold, index, in state);
+
+        if (cancelImmediately && cancellationToken.CanBeCanceled)
+            AttachCancellation(handle, cancellationToken);
+
+        PlayerLoopHelper.AddAction(timing, new LuminTaskState(handle, cancellationToken, predicate), WaitUntilPromise<T>.MoveNextAction);
+
+        return new LuminTask(handle);
     }
 
     [DebuggerHidden]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static unsafe LuminTask WaitWhile(Func<bool> predicate, PlayerLoopTiming timing = PlayerLoopTiming.DotNet,
+    public static LuminTask WaitWhile(Func<bool> predicate, PlayerLoopTiming timing = PlayerLoopTiming.DotNet,
         CancellationToken cancellationToken = default(CancellationToken), bool cancelImmediately = false)
     {
-        var promise = WaitWhilePromise<AsyncUnit>.Create(predicate, timing, cancellationToken, cancelImmediately, out var id);
+        var handle = RentSlot();
 
-        return new LuminTask(LuminTaskSourceCore<AsyncUnit>.MethodTablePtr, promise.Source, id);
+        if (cancelImmediately && cancellationToken.CanBeCanceled)
+            AttachCancellation(handle, cancellationToken);
+
+        PlayerLoopHelper.AddAction(timing, new LuminTaskState(handle, cancellationToken, predicate), WaitWhilePromise.MoveNextAction);
+
+        return new LuminTask(handle);
     }
 
     [DebuggerHidden]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static unsafe LuminTask WaitWhile<T>(T state, Func<T, bool> predicate,
+    public static LuminTask WaitWhile<T>(T state, Func<T, bool> predicate,
         PlayerLoopTiming timing = PlayerLoopTiming.DotNet,
         CancellationToken cancellationToken = default(CancellationToken), bool cancelImmediately = false)
     {
-        var promise = WaitWhilePromise<T, AsyncUnit>.Create(state, predicate, timing, cancellationToken, cancelImmediately, out var id);
+        var handle = RentSlot();
+        ref var item = ref GetRentedSlot(handle, out var cold, out int index);
 
-        return new LuminTask(LuminTaskSourceCore<AsyncUnit>.MethodTablePtr, promise.Source, id);
+        LuminTaskResultBridge.SetState(cold, index, in state);
+
+        if (cancelImmediately && cancellationToken.CanBeCanceled)
+            AttachCancellation(handle, cancellationToken);
+
+        PlayerLoopHelper.AddAction(timing, new LuminTaskState(handle, cancellationToken, predicate), WaitWhilePromise<T>.MoveNextAction);
+
+        return new LuminTask(handle);
     }
 
     [DebuggerHidden]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static unsafe LuminTask WaitUntilCanceled(CancellationToken cancellationToken,
+    public static LuminTask WaitUntilCanceled(CancellationToken cancellationToken,
         PlayerLoopTiming timing = PlayerLoopTiming.DotNet, bool completeImmediately = false)
     {
-        var promise = WaitUntilCanceledPromise<AsyncUnit>.Create(cancellationToken, timing, completeImmediately, out var id);
+        var handle = RentSlot();
 
-        return new LuminTask(LuminTaskSourceCore<AsyncUnit>.MethodTablePtr, promise.Source, id);
+        if (cancellationToken.IsCancellationRequested)
+        {
+            // Cancellation here means success, not failure.
+            LuminTaskCoreSource.TrySetResult(handle);
+            return new LuminTask(handle);
+        }
+
+        if (completeImmediately && cancellationToken.CanBeCanceled)
+            AttachCancellation(handle, cancellationToken, CancellationCallbackState.CompleteCallback);
+
+        PlayerLoopHelper.AddAction(timing, new LuminTaskState(handle, cancellationToken), WaitUntilCanceledPromise.MoveNextAction);
+
+        return new LuminTask(handle);
     }
 
     [DebuggerHidden]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static unsafe LuminTask<U> WaitUntilValueChanged<T, U>(
+    public static LuminTask<U> WaitUntilValueChanged<T, U>(
         T target,
         Func<T, U> monitorFunction,
         PlayerLoopTiming monitorTiming = PlayerLoopTiming.DotNet,
@@ -80,10 +118,15 @@ public readonly partial struct LuminTask
 
         equalityComparer ??= EqualityComparer<U>.Default;
 
-        var promise = WaitUntilValueChangedPromise<T, U>.Create(
-            target, monitorFunction, equalityComparer, monitorTiming,
-            cancellationToken, cancelImmediately, out var id);
+        var handle = RentSlot();
+        var helper = new WaitUntilValueChangedState<T, U>(
+            target, monitorFunction, equalityComparer, monitorFunction(target));
 
-        return new LuminTask<U>(LuminTaskSourceCore<U>.MethodTablePtr, promise.Source, id);
+        if (cancelImmediately && cancellationToken.CanBeCanceled)
+            AttachCancellation(handle, cancellationToken);
+
+        PlayerLoopHelper.AddAction(monitorTiming, new LuminTaskState(handle, cancellationToken, helper), WaitUntilValueChangedPromise<T, U>.MoveNextAction);
+
+        return new LuminTask<U>(handle);
     }
 }

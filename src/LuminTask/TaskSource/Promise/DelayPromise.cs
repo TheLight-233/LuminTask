@@ -1,84 +1,49 @@
-
 using System;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
-using System.Threading;
 using LuminThread.Interface;
 using LuminThread.Utility;
 
 namespace LuminThread.TaskSource.Promise;
 
-public unsafe struct DelayPromise<T>
+// Timed wait. The two timestamps that span the frames borrow the item's own LoopState scratch
+// instead of a separate native block.
+internal static class DelayPromise
 {
-    private long _startTimestamp;
-    private long _delayTimestampTicks;
-    private LuminTaskSourceCore<T>* _core;
+    internal static readonly MoveNext MoveNextAction = MoveNext;
 
-    internal LuminTaskSourceCore<T>* Source => _core;
-
-    public LuminTask Task => new LuminTask(LuminTaskSourceCore<T>.MethodTableAutoDisposePtr, _core, _core->Id);
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static DelayPromise<T> Create(
-        int millisecondsDelay,
-        PlayerLoopTiming timing,
-        CancellationToken cancellationToken,
-        bool cancelImmediately = false)
+    private static unsafe bool MoveNext(in LuminTaskState state)
     {
-        var core = LuminTaskSourceCore<T>.Create();
+        ref var item = ref LuminTaskCoreSource.TryResolve(state.Handle, out var cold, out int index);
 
-        var delayPromise = new DelayPromise<T>
-        {
-            _startTimestamp = Stopwatch.GetTimestamp(),
-            _delayTimestampTicks = MillisecondsToStopwatchTicks(millisecondsDelay),
-            _core      = core,
-        };
-
-        var promisePtr = MemoryHelper.Alloc((nuint)Unsafe.SizeOf<DelayPromise<T>>());
-        Unsafe.WriteUnaligned(promisePtr, delayPromise);
-
-        PlayerLoopHelper.AddAction(
-            timing,
-            new LuminTaskState(core, cancellationToken, null, valueState: promisePtr),
-            &MoveNext);
-
-        return delayPromise;
-    }
-
-    public LuminTaskStatus GetStatus(short token) => LuminTaskSourceCore<T>.GetStatus(_core, token);
-    public LuminTaskStatus UnsafeGetStatus()      => LuminTaskSourceCore<T>.UnsafeGetStatus(_core);
-
-    public void OnCompleted(Action<object> continuation, object state, short token)
-        => LuminTaskSourceCore<T>.OnCompleted(_core, continuation, state, token);
-
-    private static bool MoveNext(in LuminTaskState state)
-    {
-        var promisePtr = state.ValueState;
-        if (promisePtr == null) return false;
-
-        ref var promise = ref Unsafe.AsRef<DelayPromise<T>>(promisePtr);
+        // The slot was already consumed and recycled: drop this item.
+        if (Unsafe.IsNullRef(ref item))
+            return false;
 
         if (state.CancellationToken.IsCancellationRequested)
         {
-            LuminTaskSourceCore<T>.TrySetCanceled(state.Source, state.CancellationToken);
-            MemoryHelper.Free(promisePtr);
+            LuminTaskCoreSource.TrySetCanceled(state.Handle, state.CancellationToken);
             return false;
         }
 
-        long elapsed = Stopwatch.GetTimestamp() - promise._startTimestamp;
+        nint scratch = cold.PayloadAt(index);
 
-        if (elapsed >= promise._delayTimestampTicks)
-        {
-            LuminTaskSourceCore<T>.TrySetResult(state.Source);
-            MemoryHelper.Free(promisePtr);
+        // Released already (the slot was consumed): drop the item.
+        if (scratch == 0)
             return false;
-        }
 
-        return true;
+        long startTimestamp = UnsafeMemory.Read<long>((void*)scratch);
+        long delayTicks = UnsafeMemory.Read<long>((byte*)scratch + sizeof(long));
+
+        if (Stopwatch.GetTimestamp() - startTimestamp < delayTicks)
+            return true;
+
+        LuminTaskCoreSource.TrySetResult(state.Handle);
+        return false;
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static long MillisecondsToStopwatchTicks(int milliseconds)
+    internal static long MillisecondsToStopwatchTicks(int milliseconds)
         => milliseconds == System.Threading.Timeout.Infinite
             ? long.MaxValue
             : (long)(milliseconds * ((double)Stopwatch.Frequency / 1000D));

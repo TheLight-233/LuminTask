@@ -46,74 +46,73 @@ namespace LuminThread.Unity
                 public bool IsCancellationRequested;
                 public bool HasError;
                 public CancellationTokenRegistration Registration;
+                public ulong Handle;
             }
 
             public static unsafe LuminTask<AsyncGPUReadbackRequest> Create(AsyncGPUReadbackRequest asyncOperation, PlayerLoopTiming timing, CancellationToken cancellationToken, bool cancelImmediately)
             {
-                var core = LuminTaskSourceCore<AsyncGPUReadbackRequest>.Create();
+                var task = LuminTaskSource.Create<AsyncGPUReadbackRequest>(out ulong handle);
                 var stateData = new StateData
                 {
                     Completed = false,
                     IsCancellationRequested = false,
-                    HasError = false
+                    HasError = false,
+                    Handle = handle
                 };
 
-                var stateTuple = StateTuple.Create(stateData);
-                var state = new LuminTaskState(core, cancellationToken, asyncOperation, stateTuple);
+                var stateTuple = StateTuple.Create(stateData, asyncOperation);
+                var state = new LuminTaskState(handle, cancellationToken, stateTuple);
 
                 if (cancelImmediately && cancellationToken.CanBeCanceled)
                 {
-                    stateTuple.Item.Registration = cancellationToken.Register(() =>
+                    stateTuple.Item.Item1.Registration = cancellationToken.Register(() =>
                     {
                         stateData.Completed = true;
                         stateData.IsCancellationRequested = true;
-                        LuminTaskSourceCore<AsyncGPUReadbackRequest>.TrySetCanceled(core);
+                        LuminTaskSource.SetCanceled(handle, cancellationToken);
                     });
                 }
 
-                PlayerLoopHelper.AddAction(timing, state, &MoveNext);
+                PlayerLoopHelper.AddAction(timing, state, MoveNextAction);
 
-                return new LuminTask<AsyncGPUReadbackRequest>(LuminTaskSourceCore<AsyncGPUReadbackRequest>.MethodTablePtr, core, core->Id);
+                return task;
             }
 
-            public static unsafe bool MoveNext(in LuminTaskState state)
+            private static readonly MoveNext MoveNextAction = MoveNext;
+
+            public static bool MoveNext(in LuminTaskState state)
             {
-                var asyncOperation = state.State as AsyncGPUReadbackRequest?;
-                if (!asyncOperation.HasValue)
-                    return false;
+                var stateTuple = (StateTuple<(StateData, AsyncGPUReadbackRequest)>)state.State!;
+                var asyncOperation = stateTuple.Item.Item2;
 
-                var stateTuple = state.StateTuple as StateTuple<StateData>;
-                if (stateTuple == null)
-                    return false;
-
-                if (stateTuple.Item.Completed)
+                if (stateTuple.Item.Item1.Completed)
                     return false;
 
                 if (state.CancellationToken.IsCancellationRequested)
                 {
-                    stateTuple.Item.Completed = true;
-                    stateTuple.Item.IsCancellationRequested = true;
-                    LuminTaskSourceCore<AsyncGPUReadbackRequest>.TrySetCanceled(state.Source);
-                    stateTuple.Item.Registration.Dispose();
+                    stateTuple.Item.Item1.Completed = true;
+                    stateTuple.Item.Item1.IsCancellationRequested = true;
+                    LuminTaskSource.SetCanceled(stateTuple.Item.Item1.Handle, state.CancellationToken);
+                    stateTuple.Item.Item1.Registration.Dispose();
                     stateTuple.Dispose();
                     return false;
                 }
 
-                if (asyncOperation.Value.hasError)
+                if (asyncOperation.hasError)
                 {
-                    stateTuple.Item.Completed = true;
-                    stateTuple.Item.HasError = true;
-                    LuminTaskSourceCore<AsyncGPUReadbackRequest>.TrySetException(state.Source, new Exception("AsyncGPUReadbackRequest.hasError = true"));
-                    stateTuple.Item.Registration.Dispose();
+                    stateTuple.Item.Item1.Completed = true;
+                    stateTuple.Item.Item1.HasError = true;
+                    LuminTaskSource.SetException(stateTuple.Item.Item1.Handle, new Exception("AsyncGPUReadbackRequest.hasError = true"));
+                    stateTuple.Item.Item1.Registration.Dispose();
                     stateTuple.Dispose();
                     return false;
                 }
 
-                if (asyncOperation.Value.done)
+                if (asyncOperation.done)
                 {
-                    stateTuple.Item.Completed = true;
-                    LuminTaskSourceCore<AsyncGPUReadbackRequest>.TrySetResult(state.Source, asyncOperation.Value);
-                    stateTuple.Item.Registration.Dispose();
+                    stateTuple.Item.Item1.Completed = true;
+                    LuminTaskSource.SetResult(stateTuple.Item.Item1.Handle, asyncOperation);
+                    stateTuple.Item.Item1.Registration.Dispose();
                     stateTuple.Dispose();
                     return false;
                 }

@@ -6,22 +6,16 @@ using System.Threading;
 using LuminThread;
 using LuminThread.TaskSource;
 using LuminThread.Utility;
+using LuminThread.Interface;
 using UnityEngine;
 
 public static unsafe class EnumeratorAsyncLuminTask
 {
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static IEnumerator Core(IEnumerator inner, MonoBehaviour coroutineRunner, IntPtr source)
+    private static IEnumerator Core(IEnumerator inner, MonoBehaviour coroutineRunner, ulong handle)
     {
         yield return coroutineRunner.StartCoroutine(inner);
-        Warp(source);
-        
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        static void Warp(IntPtr source)
-        {
-            LuminTaskSourceCore<AsyncUnit>.TrySetResult(source.ToPointer());
-            LuminTaskSourceCore<AsyncUnit>.Dispose(source.ToPointer());
-        }
+        LuminTaskSource.SetResult(handle);
     }
     
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -57,9 +51,9 @@ public static unsafe class EnumeratorAsyncLuminTask
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static LuminTask ToLuminTask(this IEnumerator enumerator, MonoBehaviour coroutineRunner)
     {
-        var source = LuminTaskSourceCore<AsyncUnit>.Create();
-        coroutineRunner.StartCoroutine(Core(enumerator, coroutineRunner, new IntPtr(source)));
-        return new LuminTask(LuminTaskSourceCore<AsyncUnit>.MethodTablePtr, source, source->Id);
+        var task = LuminTaskSource.Create(out ulong handle);
+        coroutineRunner.StartCoroutine(Core(enumerator, coroutineRunner, handle));
+        return task;
     }
     
     public struct EnumeratorPromise
@@ -69,6 +63,8 @@ public static unsafe class EnumeratorAsyncLuminTask
             public int InitialFrame;
             public bool LoopRunning;
             public bool CalledGetResult;
+            public IEnumerator Enumerator;
+            public ulong Handle;
         }
         
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -79,7 +75,7 @@ public static unsafe class EnumeratorAsyncLuminTask
                 return LuminTask.FromCanceled(cancellationToken);
             }
             
-            var core = LuminTaskSourceCore<AsyncUnit>.Create();
+            var task = LuminTaskSource.Create(out ulong handle);
             
             IEnumerator enumerator = ConsumeEnumerator(innerEnumerator);
             
@@ -87,31 +83,34 @@ public static unsafe class EnumeratorAsyncLuminTask
             {
                 CalledGetResult = false,
                 LoopRunning = true,
-                InitialFrame = -1
+                InitialFrame = -1,
+                Enumerator = enumerator,
+                Handle = handle
             };
 
-            var state = new LuminTaskState(core, cancellationToken, enumerator, StateTuple.Create(infos));
+            var state = new LuminTaskState(handle, cancellationToken, StateTuple.Create(infos));
             
             // run immediately.
             if (MoveNext(state))
             {
                 
-                PlayerLoopHelper.AddAction(timing, state, &MoveNext);
+                PlayerLoopHelper.AddAction(timing, state, MoveNextAction);
             }
             
-            return new LuminTask(LuminTaskSourceCore<AsyncUnit>.MethodTablePtr, core, core->Id);
+            return task;
         }
+
+        private static readonly MoveNext MoveNextAction = MoveNext;
 
         public static bool MoveNext(in LuminTaskState state)
         {
-            ref LuminTaskState stateRef = ref Unsafe.AsRef(state);
-            IEnumerator innerEnumerator = Unsafe.As<IEnumerator>(state.State);
-            StateTuple<InfoWarp> infos = Unsafe.As<StateTuple<InfoWarp>>(state.StateTuple);
+            var infos = (StateTuple<InfoWarp>)state.State!;
+            IEnumerator innerEnumerator = infos.Item.Enumerator;
             
             if (infos.Item.CalledGetResult)
             {
                 infos.Item.LoopRunning = false;
-                Dispose(ref stateRef);
+                infos.Dispose();
                 return false;
             }
 
@@ -123,9 +122,8 @@ public static unsafe class EnumeratorAsyncLuminTask
             if (state.CancellationToken.IsCancellationRequested)
             {
                 infos.Item.LoopRunning = false;
-                LuminTaskSourceCore<AsyncUnit>.TrySetCanceled(state.Source);
+                LuminTaskSource.SetCanceled(infos.Item.Handle, state.CancellationToken);
                 infos.Dispose();
-                Dispose(ref stateRef);
                 return false;
             }
 
@@ -152,27 +150,15 @@ public static unsafe class EnumeratorAsyncLuminTask
             catch (Exception ex)
             {
                 infos.Item.LoopRunning = false;
-                LuminTaskSourceCore<AsyncUnit>.TrySetException(state.Source, ex);
+                LuminTaskSource.SetException(infos.Item.Handle, ex);
                 infos.Dispose();
-                Dispose(ref stateRef);
                 return false;
             }
 
             infos.Item.LoopRunning = false;
-            LuminTaskSourceCore<AsyncUnit>.TrySetResult(state.Source);
+            LuminTaskSource.SetResult(infos.Item.Handle);
             infos.Dispose();
-            Dispose(ref stateRef);
             return false;
-        }
-        
-        static void Dispose(ref LuminTaskState state)
-        {
-            if (state.Source != null)
-            {
-                LuminTaskSourceCore<AsyncUnit>.Dispose(state.Source);
-            }
-            
-            state = default;
         }
         
 

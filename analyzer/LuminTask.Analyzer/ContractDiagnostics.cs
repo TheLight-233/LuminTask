@@ -93,6 +93,19 @@ namespace LuminThread.Analyzer
             description:
                 "分析器只跟踪方法内的局部变量与参数。存放在字段中的 LuminTask 的所有权与消费时机无法静态确认，是泄漏与重复消费的高发来源。");
 
+        /// <summary>LUM1008: a handle rented from LuminTaskSource is never used — nothing can complete its source.</summary>
+        internal static readonly DiagnosticDescriptor UnusedRentedSource = new(
+            id: "LUM1008",
+            title: "LuminTaskSource 租出的句柄从未被使用",
+            messageFormat: "LuminTaskSource 租出的句柄 '{0}' 在方法体内从未被引用：没有任何路径能完成它，该任务源将永久占用槽位与内存{1}",
+            category: Category,
+            defaultSeverity: DiagnosticSeverity.Error,
+            isEnabledByDefault: true,
+            description:
+                "LuminTaskSource.Rent / Create 以 out 参数租出的 LuminTaskHandle 必须被交给完成路径" +
+                "（LuminTaskSource.SetResult / SetException / SetCanceled），或存入状态对象、闭包由回调稍后完成。" +
+                "句柄在方法内完全未被引用时，其槽位永远不会被归还，且 LuminTask.ToTask 也无法再重建该任务。");
+
         /// <summary>LUM9999: analyzer implementation failure.</summary>
         internal static readonly DiagnosticDescriptor InternalError = new(
             id: "LUM9999",

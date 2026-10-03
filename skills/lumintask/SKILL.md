@@ -43,23 +43,56 @@ async LuminTask<int> SumAsync()
 ## 3. 必须遵守的使用规则（违反会导致泄漏）
 
 - **每个返回的 `LuminTask` 必须恰好被消费一次**：要么 `await`，要么显式 `task.Forget()`。
-  底层是非托管内存，**没有 GC 兜底**；漏加一个 await/Forget 就泄漏一块原生内存。
-- **禁止 fire-and-forget**。集成 `LuminTask.Analyzer` 后编译器会直接报错，不要绕过它。
+  任务槽位由 `LuminTaskBag` 管理，**没有 GC 兜底**；漏加一个 await/Forget 就泄漏一个槽位（DEBUG 下
+  `LuminTaskLeakTracker` 会在进程退出时报告它和它的创建栈）。
 - `LuminTask<T>.Result` **只对同步完成的任务有效**（如 `FromResult`）；异步结果必须
   `await` 或 `GetAwaiter().GetResult()`，语义同 `ValueTask`。
-- `LuminTask.Model`（默认 `Safe`）必须在首次使用前确定，之后不可再改。
+- 句柄自带槽位 generation：重复消费或使用已被回收的陈旧句柄，在任何构建配置下都会抛异常，
+  不需要也不存在校验开关。
+- **禁止 fire-and-forget**。安装 NuGet 包后契约分析器自动生效，编译器会直接报错，不要绕过它。
+  规则一览（`LuminTask.Contract` 分类）：
+
+  | 规则 | 触发场景 |
+  |---|---|
+  | `LUM1001` | 任务从未被消费，或只在部分路径上被消费 |
+  | `LUM1002` | 任务被重复消费（含 `var b = a;` 这类别名副本） |
+  | `LUM1003` | 对非同步完成的任务读取 `.Result` |
+  | `LUM1004` | `LuminTaskCompletionSource` 从未完成 |
+  | `LUM1005` | 把任务赋给丢弃符 `_`（丢弃不会释放任务源） |
+  | `LUM1006` | 完成源在同一路径上被多次完成 |
+  | `LUM1007` | 任务存进字段（逃逸出方法级生命周期跟踪） |
+  | `LUM1008` | `LuminTaskSource.Rent` / `Create` 租出的句柄从未被使用 |
+
+  `ConfigureAwait(bool)`、`Unwrap()`、`WhenAll`/`WhenAny` 的参数传递、`return` 转发、
+  `yield return`、被 `await` 的 lambda 捕获，都算合法消费，不会误报。
+
+#### 手动驱动完成（handle 路径）
+
+需要从 PlayerLoop 回调、事件或定时器里自己驱动完成时，用句柄入口而不是 `TaskCompletionSource`：
+
+```csharp
+var task = LuminTaskSource.Create<int>(out var handle);   // 或 Rent(out var handle) 只租不建任务
+// …把 handle 存进状态对象/闭包，稍后由回调完成：
+LuminTaskSource.SetResult(handle, 42);                    // SetException / SetCanceled 同理
+await task;
+
+// 只保留了 handle 的场合可以随时重建任务（ToLuminTask 幂等的写法）
+var again = LuminTaskSource.ToTask<int>(handle);
+```
+
+每个租出的句柄必须有**恰好一条**完成路径；句柄在方法内完全没被引用时，`LUM1008` 会报错。
 
 ## 4. 组合与算子
 
 ```csharp
 // WhenAll：等待全部完成，返回结果数组
-LuminTask<int[]> all = LuminTask.WhenAll(t1, t2, t3);          // 重载 1~15 参数、数组、IEnumerable
+LuminTask<int[]> all = LuminTask.WhenAll(t1, t2, t3);          // 1~4 参数异构重载、数组、IEnumerable
 
 // WhenAny：任意一个完成，返回索引
 int idx = await LuminTask.WhenAny(t1, t2);
 
 // 元组并发（无需装箱、零分配）
-(int a, int b) = await (taskA, taskB);                          // 最多 15 元组
+(int a, int b) = await (taskA, taskB);                          // 最多 4 元组
 
 // WhenEach：逐个处理完成的
 await foreach (var task in LuminTask.WhenEach(tasks))
@@ -152,6 +185,8 @@ ValueTask vt = lt;                              // LuminTask 隐式转 ValueTask
 ## 10. 性能提示
 
 - `LuminTask.Run(factory, configureAwait: false)` 或 `ConfigureAwait(false)` 可避免回主线程的上下文切换。
+- `ConfigureAwait(bool)` 返回任务自身（不再产生 `ConfiguredLuminTaskAwaitable` 包装类型），
+  `await t.ConfigureAwait(false)` 与 `await t` 走同一条 awaiter 路径，不引入额外的 await 方法实例化。
 - 热路径避免闭包捕获：优先 `Create(state, factory)`、静态 lambda、`Action<object>`。
 - 已完成的 `FromResult` / `CompletedTask` 本身零分配；组合子（WhenAll/WhenAny/元组）也零分配。
 - 用 DEBUG 构建的 leak tracker（`LuminTaskLeakTracker`）在开发期抓"未被消费"的任务。

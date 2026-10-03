@@ -103,6 +103,7 @@ struct PromiseState
                 public bool CancelImmediately;
                 public bool AutoReleaseWhenCanceled;
                 public CancellationTokenRegistration Registration;
+                public ulong Handle;
             }
 
             public static LuminTask Create(AsyncOperationHandle handle, PlayerLoopTiming timing, IProgress<float> progress, CancellationToken cancellationToken, bool cancelImmediately, bool autoReleaseWhenCanceled)
@@ -112,17 +113,18 @@ struct PromiseState
                     return LuminTask.FromCanceled(cancellationToken);
                 }
 
-                var core = LuminTaskSourceCore<AsyncUnit>.Create();
-                
+                var task = LuminTaskSource.Create(out ulong sourceHandle);
+
                 var promiseState = new PromiseState
                 {
                     Completed = false,
                     CancelImmediately = cancelImmediately,
-                    AutoReleaseWhenCanceled = autoReleaseWhenCanceled
+                    AutoReleaseWhenCanceled = autoReleaseWhenCanceled,
+                    Handle = sourceHandle
                 };
 
                 var stateTuple = StateTuple.Create(promiseState, handle, progress);
-                var state = new LuminTaskState(core, cancellationToken, stateTuple);
+                var state = new LuminTaskState(sourceHandle, cancellationToken, stateTuple);
 
                 // Register cancellation if needed
                 if (cancelImmediately && cancellationToken.CanBeCanceled)
@@ -130,13 +132,13 @@ struct PromiseState
                     stateTuple.Item.Item1.Registration = cancellationToken.Register(static s =>
                     {
                         var taskState = (LuminTaskState)s;
-                        var tuple = Unsafe.As<StateTuple<(PromiseState, AsyncOperationHandle, IProgress<float>)>>(taskState.StateTuple);
+                        var tuple = (StateTuple<(PromiseState, AsyncOperationHandle, IProgress<float>)>)taskState.State!;
                         
                         if (tuple.Item.Item1.AutoReleaseWhenCanceled && tuple.Item.Item2.IsValid())
                         {
                             Addressables.Release(tuple.Item.Item2);
                         }
-                        LuminTaskSourceCore<AsyncUnit>.TrySetCanceled(taskState.Source);
+                        LuminTaskSource.SetCanceled(tuple.Item.Item1.Handle, taskState.CancellationToken);
                         // 回调自身在途：仅清引用，释放交给 OnCompleted / MoveNext。
                         tuple.Item.Item1.Registration = default;
                     }, state);
@@ -147,14 +149,16 @@ struct PromiseState
                 handle.Completed += completedCallback;
 
                 // Add to player loop for progress tracking
-                PlayerLoopHelper.AddAction(timing, state, &MoveNext);
+                PlayerLoopHelper.AddAction(timing, state, MoveNextAction);
 
-                return new LuminTask(LuminTaskSourceCore<AsyncUnit>.MethodTablePtr, core, core->Id);
+                return task;
             }
+
+            private static readonly MoveNext MoveNextAction = MoveNext;
 
             static bool MoveNext(in LuminTaskState state)
             {
-                var tuple = Unsafe.As<StateTuple<(PromiseState, AsyncOperationHandle, IProgress<float>)>>(state.StateTuple);
+                var tuple = (StateTuple<(PromiseState, AsyncOperationHandle, IProgress<float>)>)state.State!;
                 
                 if (tuple.Item.Item1.Completed)
                 {
@@ -169,7 +173,7 @@ struct PromiseState
                     {
                         Addressables.Release(tuple.Item.Item2);
                     }
-                    LuminTaskSourceCore<AsyncUnit>.TrySetCanceled(state.Source);
+                    LuminTaskSource.SetCanceled(tuple.Item.Item1.Handle, state.CancellationToken);
                     tuple.Item.Item1.Registration.Dispose();
                     tuple.Dispose();
                     return false;
@@ -186,7 +190,7 @@ struct PromiseState
 
             static void OnCompleted(LuminTaskState state)
             {
-                var tuple = Unsafe.As<StateTuple<(PromiseState, AsyncOperationHandle, IProgress<float>)>>(state.StateTuple);
+                var tuple = (StateTuple<(PromiseState, AsyncOperationHandle, IProgress<float>)>)state.State!;
                 
                 if (tuple.Item.Item1.Completed)
                 {
@@ -201,20 +205,19 @@ struct PromiseState
                     {
                         Addressables.Release(tuple.Item.Item2);
                     }
-                    LuminTaskSourceCore<AsyncUnit>.TrySetCanceled(state.Source);
+                    LuminTaskSource.SetCanceled(tuple.Item.Item1.Handle, state.CancellationToken);
                 }
                 else if (tuple.Item.Item2.Status == AsyncOperationStatus.Failed)
                 {
-                    LuminTaskSourceCore<AsyncUnit>.TrySetException(state.Source, tuple.Item.Item2.OperationException);
+                    LuminTaskSource.SetException(tuple.Item.Item1.Handle, tuple.Item.Item2.OperationException);
                 }
                 else
                 {
-                    LuminTaskSourceCore<AsyncUnit>.TrySetResult(state.Source);
+                    LuminTaskSource.SetResult(tuple.Item.Item1.Handle);
                 }
                 
                 tuple.Item.Item1.Registration.Dispose();
                 tuple.Dispose();
-                LuminTaskSourceCore<AsyncUnit>.Dispose(state.Source);
             }
         }
 
@@ -261,6 +264,7 @@ public unsafe struct AsyncOperationHandleLuminTaskConfiguredSource<T>
                 public bool CancelImmediately;
                 public bool AutoReleaseWhenCanceled;
                 public CancellationTokenRegistration Registration;
+                public ulong Handle;
             }
 
             public static LuminTask<T> Create(AsyncOperationHandle<T> handle, PlayerLoopTiming timing, IProgress<float> progress, CancellationToken cancellationToken, bool cancelImmediately, bool autoReleaseWhenCanceled)
@@ -270,17 +274,18 @@ public unsafe struct AsyncOperationHandleLuminTaskConfiguredSource<T>
                     return LuminTask.FromCanceled<T>(cancellationToken);
                 }
 
-                var core = LuminTaskSourceCore<T>.Create();
-                
+                var task = LuminTaskSource.Create<T>(out ulong sourceHandle);
+
                 var promiseState = new PromiseState
                 {
                     Completed = false,
                     CancelImmediately = cancelImmediately,
-                    AutoReleaseWhenCanceled = autoReleaseWhenCanceled
+                    AutoReleaseWhenCanceled = autoReleaseWhenCanceled,
+                    Handle = sourceHandle
                 };
 
                 var stateTuple = StateTuple.Create(promiseState, handle, progress);
-                var state = new LuminTaskState(core, cancellationToken, stateTuple);
+                var state = new LuminTaskState(sourceHandle, cancellationToken, stateTuple);
 
                 // Register cancellation if needed
                 if (cancelImmediately && cancellationToken.CanBeCanceled)
@@ -288,13 +293,13 @@ public unsafe struct AsyncOperationHandleLuminTaskConfiguredSource<T>
                     stateTuple.Item.Item1.Registration = cancellationToken.Register(static s =>
                     {
                         var taskState = (LuminTaskState)s;
-                        var tuple = Unsafe.As<StateTuple<(PromiseState, AsyncOperationHandle<T>, IProgress<float>)>>(taskState.StateTuple);
+                        var tuple = (StateTuple<(PromiseState, AsyncOperationHandle<T>, IProgress<float>)>)taskState.State!;
                         
                         if (tuple.Item.Item1.AutoReleaseWhenCanceled && tuple.Item.Item2.IsValid())
                         {
                             Addressables.Release(tuple.Item.Item2);
                         }
-                        LuminTaskSourceCore<T>.TrySetCanceled(taskState.Source);
+                        LuminTaskSource.SetCanceled(tuple.Item.Item1.Handle, taskState.CancellationToken);
                         // 回调自身在途：仅清引用，释放交给 OnCompleted / MoveNext。
                         tuple.Item.Item1.Registration = default;
                     }, state);
@@ -305,14 +310,16 @@ public unsafe struct AsyncOperationHandleLuminTaskConfiguredSource<T>
                 handle.Completed += completedCallback;
 
                 // Add to player loop for progress tracking
-                PlayerLoopHelper.AddAction(timing, state, &MoveNext);
+                PlayerLoopHelper.AddAction(timing, state, MoveNextAction);
 
-                return new LuminTask<T>(LuminTaskSourceCore<T>.MethodTablePtr, core, core->Id);
+                return task;
             }
+
+            private static readonly MoveNext MoveNextAction = MoveNext;
 
             static bool MoveNext(in LuminTaskState state)
             {
-                var tuple = Unsafe.As<StateTuple<(PromiseState, AsyncOperationHandle<T>, IProgress<float>)>>(state.StateTuple);
+                var tuple = (StateTuple<(PromiseState, AsyncOperationHandle<T>, IProgress<float>)>)state.State!;
                 
                 if (tuple.Item.Item1.Completed)
                 {
@@ -327,7 +334,7 @@ public unsafe struct AsyncOperationHandleLuminTaskConfiguredSource<T>
                     {
                         Addressables.Release(tuple.Item.Item2);
                     }
-                    LuminTaskSourceCore<T>.TrySetCanceled(state.Source);
+                    LuminTaskSource.SetCanceled(tuple.Item.Item1.Handle, state.CancellationToken);
                     tuple.Item.Item1.Registration.Dispose();
                     tuple.Dispose();
                     return false;
@@ -344,7 +351,7 @@ public unsafe struct AsyncOperationHandleLuminTaskConfiguredSource<T>
 
             static void OnCompleted(LuminTaskState state)
             {
-                var tuple = Unsafe.As<StateTuple<(PromiseState, AsyncOperationHandle<T>, IProgress<float>)>>(state.StateTuple);
+                var tuple = (StateTuple<(PromiseState, AsyncOperationHandle<T>, IProgress<float>)>)state.State!;
                 
                 if (tuple.Item.Item1.Completed)
                 {
@@ -359,20 +366,19 @@ public unsafe struct AsyncOperationHandleLuminTaskConfiguredSource<T>
                     {
                         Addressables.Release(tuple.Item.Item2);
                     }
-                    LuminTaskSourceCore<T>.TrySetCanceled(state.Source);
+                    LuminTaskSource.SetCanceled(tuple.Item.Item1.Handle, state.CancellationToken);
                 }
                 else if (tuple.Item.Item2.Status == AsyncOperationStatus.Failed)
                 {
-                    LuminTaskSourceCore<T>.TrySetException(state.Source, tuple.Item.Item2.OperationException);
+                    LuminTaskSource.SetException(tuple.Item.Item1.Handle, tuple.Item.Item2.OperationException);
                 }
                 else
                 {
-                    LuminTaskSourceCore<T>.TrySetResult(state.Source, tuple.Item.Item2.Result);
+                    LuminTaskSource.SetResult(tuple.Item.Item1.Handle, tuple.Item.Item2.Result);
                 }
                 
                 tuple.Item.Item1.Registration.Dispose();
                 tuple.Dispose();
-                LuminTaskSourceCore<T>.Dispose(state.Source);
             }
         }
 

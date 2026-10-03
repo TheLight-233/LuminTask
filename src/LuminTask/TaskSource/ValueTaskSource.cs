@@ -1,83 +1,53 @@
 using System;
 using System.Runtime.CompilerServices;
-using LuminThread.Interface;
+using System.Threading.Tasks.Sources;
 
 namespace LuminThread.TaskSource;
 
-public sealed unsafe class ValueTaskSource : ILuminTaskSource
+// Thin IValueTaskSource wrapper: it holds nothing but a 64-bit handle and forwards every operation
+// to the global LuminTaskCoreSource. The token is part of the ValueTask protocol shape; the
+// handle's own generation already carries the validation duty, so it is ignored here.
+//
+// LuminTaskStatus matches ValueTaskSourceStatus value for value
+// (Pending / Succeeded / Faulted / Canceled = 0 / 1 / 2 / 3), so the projection is a plain cast.
+public sealed class ValueTaskSource : IValueTaskSource
 {
-    private readonly VTable* _method;
-    private readonly void* _taskSource;
+    private readonly LuminTaskHandle _handle;
 
-    public ValueTaskSource(VTable* table, void* taskSource)
+    public ValueTaskSource(LuminTaskHandle handle)
     {
-        _method = table;
-        _taskSource = taskSource;
+        _handle = handle;
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public LuminTaskStatus GetStatus(short token)
-    {
-        return _method->GetStatus(_taskSource, token);
-    }
+    public ValueTaskSourceStatus GetStatus(short token)
+        => (ValueTaskSourceStatus)(int)LuminTaskCoreSource.GetStatus(_handle);
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public LuminTaskStatus UnsafeGetStatus()
-    {
-        return _method->UnsafeGetStatus(_taskSource);
-    }
+    public void GetResult(short token) => LuminTaskCoreSource.ConsumeVoid(_handle);
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public void GetResult(short token)
-    {
-        _method->GetResult(_taskSource, token);
-    }
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public void OnCompleted(Action<object> continuation, object state, short token)
-    {
-        _method->OnCompleted(_taskSource, continuation, state, token);
-    }
+    public void OnCompleted(Action<object> continuation, object state, short token, ValueTaskSourceOnCompletedFlags flags)
+        => LuminTaskCoreSource.OnCompleted(_handle, continuation, state);
 }
 
-public sealed unsafe class ValueTaskSource<T> : ILuminTaskSource<T>
+public sealed class ValueTaskSource<T> : IValueTaskSource<T>
 {
-    private readonly VTable* _method;
-    private readonly void* _taskSource;
+    private readonly LuminTaskHandle _handle;
 
-    public ValueTaskSource(VTable* table, void* taskSource)
+    public ValueTaskSource(LuminTaskHandle handle)
     {
-        _method = table;
-        _taskSource = taskSource;
+        _handle = handle;
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public LuminTaskStatus GetStatus(short token)
-    {
-        return _method->GetStatus(_taskSource, token);
-    }
+    public ValueTaskSourceStatus GetStatus(short token)
+        => (ValueTaskSourceStatus)(int)LuminTaskCoreSource.GetStatus(_handle);
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public LuminTaskStatus UnsafeGetStatus()
-    {
-        return _method->UnsafeGetStatus(_taskSource);
-    }
+    public T GetResult(short token) => LuminTaskResultBridge.Get<T>(_handle);
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    void ILuminTaskSource.GetResult(short token)
-    {
-        _method->GetResult(_taskSource, token);
-    }
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public T GetResult(short token)
-    {
-        return ((delegate*<void*, short, T>)_method->GetResultValue)(_taskSource, token);
-    }
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public void OnCompleted(Action<object> continuation, object state, short token)
-    {
-        _method->OnCompleted(_taskSource, continuation, state, token);
-    }
+    public void OnCompleted(Action<object> continuation, object state, short token, ValueTaskSourceOnCompletedFlags flags)
+        => LuminTaskCoreSource.OnCompleted(_handle, continuation, state);
 }

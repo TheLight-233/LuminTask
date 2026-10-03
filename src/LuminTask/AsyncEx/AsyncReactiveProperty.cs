@@ -211,15 +211,15 @@ internal sealed unsafe class ReactivePropertyState<T> : IDisposable
         if (IsDisposed) return LuminTask.FromCanceled<T>(cancellationToken);
         if (cancellationToken.IsCancellationRequested) return LuminTask.FromCanceled<T>(cancellationToken);
 
-        var core = LuminTaskSourceCore<T>.Create();
-        var awaiter = new AsyncReactivePropertyAwaiter<T>(core);
-        var task = new LuminTask<T>(LuminTaskSourceCore<T>.MethodTablePtr, core, core->Id);
+        var handle = LuminTask.RentSlot();
+        var awaiter = new AsyncReactivePropertyAwaiter<T>(handle);
+        var task = new LuminTask<T>(handle);
 
         lock (_lock)
         {
             if (IsDisposed)
             {
-                LuminTaskSourceCore<T>.TrySetCanceled(core);
+                LuminTaskCoreSource.TrySetCanceled(handle);
                 return task;
             }
             awaiter.Next = _awaiterHead;
@@ -277,40 +277,42 @@ internal sealed unsafe class ReactivePropertyState<T> : IDisposable
     }
 }
 
-internal sealed unsafe class AsyncReactivePropertyAwaiter<T>
+internal sealed class AsyncReactivePropertyAwaiter<T>
 {
     public AsyncReactivePropertyAwaiter<T>? Next;
-    private IntPtr _corePtr;
+    private LuminTaskHandle _handle;
     private CancellationTokenRegistration _registration;
 
-    public AsyncReactivePropertyAwaiter(LuminTaskSourceCore<T>* core)
+    public AsyncReactivePropertyAwaiter(LuminTaskHandle handle)
     {
-        _corePtr = (IntPtr)core;
+        _handle = handle;
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void TrySetResult(T value)
     {
-        var ptr = Interlocked.Exchange(ref _corePtr, IntPtr.Zero);
-        if (ptr == IntPtr.Zero) return;
+        var handle = TakeHandle(ref _handle);
+        if (handle == 0) return;
 
-        var core = (LuminTaskSourceCore<T>*)ptr;
-        LuminTaskSourceCore<T>.TrySetResult(core, value);
-        LuminTaskSourceCore<T>.Dispose(core);
+        LuminTaskResultBridge.TrySetResult(handle, in value);
         _registration.Release();
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void TrySetCanceled()
     {
-        var ptr = Interlocked.Exchange(ref _corePtr, IntPtr.Zero);
-        if (ptr == IntPtr.Zero) return;
+        var handle = TakeHandle(ref _handle);
+        if (handle == 0) return;
 
-        var core = (LuminTaskSourceCore<T>*)ptr;
-        LuminTaskSourceCore<T>.TrySetCanceled(core);
-        LuminTaskSourceCore<T>.Dispose(core);
+        LuminTaskCoreSource.TrySetCanceled(handle);
         _registration.Release();
     }
+
+    // Interlocked has no ulong overload on netstandard2.1, so the handle is exchanged as the same
+    // bits reinterpreted as a long.
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static LuminTaskHandle TakeHandle(ref LuminTaskHandle handle)
+        => (ulong)Interlocked.Exchange(ref Unsafe.As<ulong, long>(ref handle), 0L);
 
     public void RegisterCancellation(CancellationToken cancellationToken, ReactivePropertyState<T> parent)
     {

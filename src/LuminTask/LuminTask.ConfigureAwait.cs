@@ -1,118 +1,35 @@
-using System;
 using System.Runtime.CompilerServices;
-using System.Threading;
-using LuminThread.Utility;
+using LuminThread.TaskSource;
 
 namespace LuminThread;
 
+// The capture policy lives in the slot itself (LuminTaskCoreSource.SetContinueOnCapturedContext), so
+// ConfigureAwait only has to write that flag and hand the task back: the awaiter is LuminTask's own
+// GetAwaiter/OnCompleted pair, no wrapper type involved.
+//
+// Keeping it a single type is deliberate. A dedicated awaitable + awaiter pair per T (the previous
+// ConfiguredLuminTaskAwaitable[<T>] / ConfiguredLuminTaskAwaiter[<T>]) added four closed generic
+// types and one extra (TAwaiter, TStateMachine) instantiation of AwaitOnCompleted /
+// AwaitUnsafeOnCompleted at every await site that used it - pure metadata and code-size cost for a
+// boolean that the slot already stores.
 public readonly unsafe partial struct LuminTask
 {
     /// <summary>Controls whether the await continuation captures the current execution context.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public ConfiguredLuminTaskAwaitable ConfigureAwait(bool continueOnCapturedContext)
-        => new(this, continueOnCapturedContext);
+    public LuminTask ConfigureAwait(bool continueOnCapturedContext)
+    {
+        LuminTaskCoreSource.SetContinueOnCapturedContext(_handle, continueOnCapturedContext);
+        return this;
+    }
 }
 
 public readonly unsafe partial struct LuminTask<T>
 {
     /// <summary>Controls whether the await continuation captures the current execution context.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public ConfiguredLuminTaskAwaitable<T> ConfigureAwait(bool continueOnCapturedContext)
-        => new(this, continueOnCapturedContext);
-}
-
-public readonly unsafe struct ConfiguredLuminTaskAwaitable
-{
-    private readonly LuminTask _task;
-    private readonly bool _continueOnCapturedContext;
-
-    internal ConfiguredLuminTaskAwaitable(LuminTask task, bool continueOnCapturedContext)
+    public LuminTask<T> ConfigureAwait(bool continueOnCapturedContext)
     {
-        _task = task;
-        _continueOnCapturedContext = continueOnCapturedContext;
-    }
-
-    public ConfiguredLuminTaskAwaiter GetAwaiter()
-        => new(_task, _continueOnCapturedContext);
-}
-
-public readonly unsafe struct ConfiguredLuminTaskAwaitable<T>
-{
-    private readonly LuminTask<T> _task;
-    private readonly bool _continueOnCapturedContext;
-
-    internal ConfiguredLuminTaskAwaitable(LuminTask<T> task, bool continueOnCapturedContext)
-    {
-        _task = task;
-        _continueOnCapturedContext = continueOnCapturedContext;
-    }
-
-    public ConfiguredLuminTaskAwaiter<T> GetAwaiter()
-        => new(_task, _continueOnCapturedContext);
-}
-
-public readonly unsafe struct ConfiguredLuminTaskAwaiter : ICriticalNotifyCompletion
-{
-    private readonly LuminTask _task;
-    private readonly bool _continueOnCapturedContext;
-
-    internal ConfiguredLuminTaskAwaiter(LuminTask task, bool continueOnCapturedContext)
-    {
-        _task = task;
-        _continueOnCapturedContext = continueOnCapturedContext;
-    }
-
-    public bool IsCompleted => _task.GetAwaiter().IsCompleted;
-    public void GetResult() => _task.GetAwaiter().GetResult();
-
-    public void OnCompleted(Action continuation)
-    {
-        SetCapturePolicy();
-        _task.GetAwaiter().OnCompleted(continuation);
-    }
-
-    public void UnsafeOnCompleted(Action continuation)
-    {
-        SetCapturePolicy();
-        _task.GetAwaiter().UnsafeOnCompleted(continuation);
-    }
-
-    private void SetCapturePolicy()
-    {
-        if (_task._taskSource != null)
-            LuminTaskMarshal.GetTaskItem(_task._id).ContinueOnCapturedContext = _continueOnCapturedContext;
-    }
-}
-
-public readonly unsafe struct ConfiguredLuminTaskAwaiter<T> : ICriticalNotifyCompletion
-{
-    private readonly LuminTask<T> _task;
-    private readonly bool _continueOnCapturedContext;
-
-    internal ConfiguredLuminTaskAwaiter(LuminTask<T> task, bool continueOnCapturedContext)
-    {
-        _task = task;
-        _continueOnCapturedContext = continueOnCapturedContext;
-    }
-
-    public bool IsCompleted => _task.GetAwaiter().IsCompleted;
-    public T GetResult() => _task.GetAwaiter().GetResult();
-
-    public void OnCompleted(Action continuation)
-    {
-        SetCapturePolicy();
-        _task.GetAwaiter().OnCompleted(continuation);
-    }
-
-    public void UnsafeOnCompleted(Action continuation)
-    {
-        SetCapturePolicy();
-        _task.GetAwaiter().UnsafeOnCompleted(continuation);
-    }
-
-    private void SetCapturePolicy()
-    {
-        if (_task._taskSource != null)
-            LuminTaskMarshal.GetTaskItem(_task._id).ContinueOnCapturedContext = _continueOnCapturedContext;
+        LuminTaskCoreSource.SetContinueOnCapturedContext(_handle, continueOnCapturedContext);
+        return this;
     }
 }

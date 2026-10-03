@@ -2,84 +2,34 @@ using System;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using System.Threading;
 using System.Threading.Tasks;
 using LuminThread.CompilerServices;
 using LuminThread.Interface;
 using LuminThread.TaskSource;
+using LuminThread.Utility;
 
 namespace LuminThread;
 
-public enum LuminTaskModel
-{
-    Safe,
-    Unsafe,
-}
-
-[StructLayout(LayoutKind.Explicit)]
-public unsafe struct VTable
-{
-    public static readonly unsafe VTable* Null = AllocNull();
-    private static unsafe VTable* AllocNull()
-    {
-#if NET5_0_OR_GREATER
-        return (VTable*)System.Runtime.InteropServices.NativeMemory.AllocZeroed((nuint)System.Runtime.CompilerServices.Unsafe.SizeOf<VTable>());
-#else
-        var p = (VTable*)System.Runtime.InteropServices.Marshal.AllocHGlobal(System.Runtime.CompilerServices.Unsafe.SizeOf<VTable>()).ToPointer();
-        System.Runtime.CompilerServices.Unsafe.InitBlock(p, 0, (uint)System.Runtime.CompilerServices.Unsafe.SizeOf<VTable>());
-        return p;
-#endif
-    }
-
-    [FieldOffset(0)]
-    public delegate*<void*, short, void> GetResult;
-    [FieldOffset(8)]
-    public delegate*<void*, short, LuminTaskStatus> GetStatus;
-    [FieldOffset(16)]
-    public delegate*<void*, LuminTaskStatus> UnsafeGetStatus;
-    [FieldOffset(24)]
-    public delegate*<void*, Action<object>, object, short, void> OnCompleted;
-    [FieldOffset(32)]
-    public delegate*<void*, bool> TrySetResult;
-    [FieldOffset(40)]
-    public delegate*<void*, Exception, bool> TrySetException;
-    [FieldOffset(48)]
-    public delegate*<void*, bool> TrySetCanceled;
-    [FieldOffset(56)]
-    public delegate*<void*, void> Dispose;
-
-    // Value-returning counterpart of GetResult. Kept at its own offset so the void
-    // GetResult thunk is a genuine void-returning function: a large-struct T (e.g. a
-    // 16-byte LuminTask<T>) is returned through a hidden buffer that would otherwise
-    // clobber the args of a void-signature call on the same slot.
-    [FieldOffset(64)]
-    public void* GetResultValue;
-}
-
+// A task is nothing but a 64-bit slot handle (see LuminTask.Handle.cs); a zero handle means the
+// task completed synchronously and holds no slot at all. Compared with the previous
+// {VTable*, void* source, short id} triple this drops the struct from 24 to 8 bytes, removes every
+// unmanaged source block and every per-T vtable, and - most importantly - leaves no raw pointer
+// alive: all operations validate the slot generation before touching the slot, so a stale handle
+// fails fast instead of reading recycled memory.
 [AsyncMethodBuilder(typeof(AsyncLuminTaskMethodBuilder))]
 [StructLayout(LayoutKind.Sequential)]
 public readonly unsafe partial struct LuminTask : ICriticalNotifyCompletion
 {
-    internal readonly VTable* _vTable;
-    internal readonly void* _taskSource;
-    internal readonly short _id;
+    internal readonly LuminTaskHandle _handle;
 
-    public short Id => _id;
-
-    public static volatile LuminTaskModel Model = LuminTaskModel.Safe;
-
-    /// <summary>
-    /// Enables token and lifecycle validation in Release builds. Disabled by default to preserve
-    /// the library's normal low-overhead behavior.
-    /// </summary>
-    public static volatile bool EnableRuntimeValidation;
+    public short Id => (short)(_handle.SlotRaw() - 1);
 
     [DebuggerHidden]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public LuminTask(VTable* vTable, void* taskSource, short id)
+    internal LuminTask(LuminTaskHandle handle)
     {
-        _vTable = vTable;
-        _taskSource = taskSource;
-        _id = id;
+        _handle = handle;
     }
 
     [DebuggerHidden]
@@ -90,33 +40,29 @@ public readonly unsafe partial struct LuminTask : ICriticalNotifyCompletion
     {
         [DebuggerHidden]
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        get
-        {
-            if (_taskSource == null)
-                return true;
-            return _vTable->GetStatus(_taskSource, _id).IsCompleted();
-        }
+        get => _handle.IsNull() || LuminTaskCoreSource.IsCompleted(_handle);
     }
 
     [DebuggerHidden]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void GetResult()
     {
-        if (_taskSource == null)
+        if (_handle.IsNull())
             return;
-        _vTable->GetResult(_taskSource, _id);
+
+        LuminTaskCoreSource.ConsumeVoid(_handle);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void OnCompleted(Action continuation)
     {
-        if (_taskSource == null)
+        if (_handle.IsNull())
         {
             continuation();
         }
         else
         {
-            _vTable->OnCompleted(_taskSource, static s => ((Action)s)(), continuation, _id);
+            LuminTaskCoreSource.OnCompleted(_handle, static s => ((Action)s)(), continuation);
         }
     }
 
@@ -124,13 +70,13 @@ public readonly unsafe partial struct LuminTask : ICriticalNotifyCompletion
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void SourceOnCompleted(Action<object> continuation, object state)
     {
-        if (_taskSource == null)
+        if (_handle.IsNull())
         {
             continuation(state);
         }
         else
         {
-            _vTable->OnCompleted(_taskSource, continuation, state, _id);
+            LuminTaskCoreSource.OnCompleted(_handle, continuation, state);
         }
     }
 
@@ -141,31 +87,30 @@ public readonly unsafe partial struct LuminTask : ICriticalNotifyCompletion
     {
         [DebuggerHidden]
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        get => _taskSource == null ? LuminTaskStatus.Succeeded : _vTable->GetStatus(_taskSource, _id);
+        get => _handle.IsNull() ? LuminTaskStatus.Succeeded : LuminTaskCoreSource.GetStatus(_handle);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static implicit operator ValueTask(in LuminTask self)
     {
-        if (self._taskSource is null)
+        if (self._handle.IsNull())
         {
             return default;
         }
 
-        return new ValueTask(new ValueTaskSource(self._vTable, self._taskSource), self._id);
+        return new ValueTask(new ValueTaskSource(self._handle), 0);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool Equals(LuminTask other)
     {
-        return other._taskSource == _taskSource && other._id == _id;
+        return other._handle == _handle;
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public override string ToString()
+    public override string? ToString()
     {
-        if (_taskSource is null) return "()";
-        return "(" + _vTable->UnsafeGetStatus(_taskSource) + ")";
+        return _handle.IsNull() ? "()" : "(" + LuminTaskCoreSource.GetStatus(_handle) + ")";
     }
 }
 
@@ -173,35 +118,33 @@ public readonly unsafe partial struct LuminTask : ICriticalNotifyCompletion
 [StructLayout(LayoutKind.Sequential)]
 public readonly unsafe partial struct LuminTask<T> : ICriticalNotifyCompletion
 {
-    internal readonly VTable* _vTable;
-    internal readonly void* _taskSource;
-    internal readonly short _id;
+    internal readonly LuminTaskHandle _handle;
+
+    // Only meaningful on the synchronous completion path, where no slot exists at all.
     internal readonly T? _result;
 
-    public T? Result => _taskSource is null
+    internal static readonly bool IsValueType = typeof(T).IsValueType;
+
+    public short Id => (short)(_handle.SlotRaw() - 1);
+
+    public T? Result => _handle.IsNull()
         ? _result
         : throw new InvalidOperationException(
             "LuminTask<T>.Result is only valid for a synchronously-completed task (e.g. FromResult); " +
             "await the task or use GetAwaiter().GetResult() instead.");
 
-    public short Id => _id;
-
     [DebuggerHidden]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public LuminTask(VTable* vTable, void* taskSource, short id)
+    internal LuminTask(LuminTaskHandle handle)
     {
-        _vTable = vTable;
-        _taskSource = taskSource;
-        _id = id;
+        _handle = handle;
     }
 
     [DebuggerHidden]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public LuminTask(T result)
     {
-        _vTable = VTable.Null;
-        _taskSource = null;
-        _id = 0;
+        _handle = 0;
         _result = result;
     }
 
@@ -213,33 +156,29 @@ public readonly unsafe partial struct LuminTask<T> : ICriticalNotifyCompletion
     {
         [DebuggerHidden]
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        get
-        {
-            if (_taskSource == null)
-                return true;
-            return _vTable->GetStatus(_taskSource, _id).IsCompleted();
-        }
+        get => _handle.IsNull() || LuminTaskCoreSource.IsCompleted(_handle);
     }
 
     [DebuggerHidden]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public T GetResult()
     {
-        if (_taskSource == null)
+        if (_handle.IsNull())
             return _result!;
-        return ((delegate*<void*, short, T>)_vTable->GetResultValue)(_taskSource, _id);
+
+        return LuminTaskResultBridge.Get<T>(_handle);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void OnCompleted(Action continuation)
     {
-        if (_taskSource == null)
+        if (_handle.IsNull())
         {
             continuation();
         }
         else
         {
-            _vTable->OnCompleted(_taskSource, static s => ((Action)s)(), continuation, _id);
+            LuminTaskCoreSource.OnCompleted(_handle, static s => ((Action)s)(), continuation);
         }
     }
 
@@ -247,13 +186,13 @@ public readonly unsafe partial struct LuminTask<T> : ICriticalNotifyCompletion
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void SourceOnCompleted(Action<object> continuation, object state)
     {
-        if (_taskSource == null)
+        if (_handle.IsNull())
         {
             continuation(state);
         }
         else
         {
-            _vTable->OnCompleted(_taskSource, continuation, state, _id);
+            LuminTaskCoreSource.OnCompleted(_handle, continuation, state);
         }
     }
 
@@ -264,47 +203,47 @@ public readonly unsafe partial struct LuminTask<T> : ICriticalNotifyCompletion
     {
         [DebuggerHidden]
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        get => _taskSource == null ? LuminTaskStatus.Succeeded : _vTable->GetStatus(_taskSource, _id);
+        get => _handle.IsNull() ? LuminTaskStatus.Succeeded : LuminTaskCoreSource.GetStatus(_handle);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static implicit operator LuminTask(LuminTask<T> self)
     {
-        if (self._taskSource is null)
+        if (self._handle.IsNull())
         {
             return LuminTask.CompletedTask();
         }
 
-        return new LuminTask(self._vTable, self._taskSource, self._id);
+        return new LuminTask(self._handle);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static implicit operator ValueTask<T>(LuminTask<T> self)
     {
-        if (self._taskSource is null)
+        if (self._handle.IsNull())
         {
             return new ValueTask<T>(self._result!);
         }
 
-        return new ValueTask<T>(new ValueTaskSource<T>(self._vTable, self._taskSource), self._id);
+        return new ValueTask<T>(new ValueTaskSource<T>(self._handle), 0);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool Equals(LuminTask<T> other)
     {
-        return other._taskSource == _taskSource && other._id == _id;
+        return other._handle == _handle;
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool Equals(LuminTask other)
     {
-        return other._taskSource == _taskSource && other._id == _id;
+        return other._handle == _handle;
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public override string? ToString()
     {
-        return _taskSource is null ? _result?.ToString()
-            : "(" + _vTable->UnsafeGetStatus(_taskSource) + ")";
+        return _handle.IsNull() ? _result?.ToString()
+            : "(" + LuminTaskCoreSource.GetStatus(_handle) + ")";
     }
 }

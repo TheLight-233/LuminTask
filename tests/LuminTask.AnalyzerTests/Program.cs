@@ -48,6 +48,14 @@ public static class Program
         Run("WaitAsync 链式 + await → 干净", "var t = GetTask(); await t.WaitAsync(ct);", Array.Empty<string>());
         Run("AsTask 消费 → 干净", "var t = GetTask(); await t.AsTask();", Array.Empty<string>());
         Run("AsValueTask 消费 → 干净", "var t = GetTask(); await t.AsValueTask();", Array.Empty<string>());
+        Run("ConfigureAwait(false) 后 await → 干净", "var t = GetTask(); await t.ConfigureAwait(false);", Array.Empty<string>());
+        Run("泛型 ConfigureAwait 后 await → 干净", "var t = GetTask(); await t.ConfigureAwait(true);", Array.Empty<string>());
+        Run("Unwrap 消费外层任务 → 干净", "var o = GetOuter(); await o.Unwrap();", Array.Empty<string>());
+        Run("TCS 经 Handle + SetResult 完成 → 干净", "var tcs = new LuminTaskCompletionSource<int>(); LuminTaskSource.SetResult(tcs.Handle, 1); await tcs.Task;", Array.Empty<string>());
+        Run("TCS 经 Handle + SetCanceled 完成 → 干净", "var tcs = new LuminTaskCompletionSource<int>(); LuminTaskSource.SetCanceled(tcs.Handle, ct); await tcs.Task;", Array.Empty<string>());
+        Run("Rent + 回调 SetResult + ToTask 消费 → 干净", "LuminTaskSource.Rent<int>(out var h); Action cb = () => LuminTaskSource.SetResult(h, 1); cb(); var t = LuminTaskSource.ToTask<int>(h); await t;", Array.Empty<string>());
+        Run("Rent + 直接 SetResult 完成 → 干净", "LuminTaskSource.Rent<int>(out var h); LuminTaskSource.SetResult(h, 1);", Array.Empty<string>());
+        Run("普通 out var 不受 LUM1008 检查 → 干净", "int.TryParse(\"1\", out var parsed);", Array.Empty<string>());
         Run("ContinueWith 消费 → 干净", "var t = GetTask(); await t.ContinueWith(_ => { });", Array.Empty<string>());
         Run("Timeout 消费 → 干净", "var t = GetTask(); await t.Timeout(TimeSpan.FromSeconds(1));", Array.Empty<string>());
         Run("AttachExternalCancellation 消费 → 干净", "var t = GetTask(); await t.AttachExternalCancellation(ct);", Array.Empty<string>());
@@ -79,6 +87,9 @@ public static class Program
         Run("丢弃符 → LUM1005", "var t = GetTask(); _ = t;", new[] { "LUM1005", "LUM1001" });
         Run("裸 GetTask() 调用 → LUM1001", "GetTask();", new[] { "LUM1001" });
         Run("裸 tcs.Task 访问 → LUM1001", "var tcs = new LuminTaskCompletionSource<int>(); tcs.Task;", new[] { "LUM1001", "LUM1004" });
+        Run("LuminTaskSource.Create 后未消费 → LUM1001", "var t = LuminTaskSource.Create<int>(out var h); LuminTaskSource.SetResult(h, 1);", new[] { "LUM1001" });
+        Run("Rent 后句柄从未被引用 → LUM1008", "LuminTaskSource.Rent<int>(out var h);", new[] { "LUM1008" });
+        Run("Create 消费任务但句柄未引用 → LUM1008", "var t = LuminTaskSource.Create<int>(out var h); await t;", new[] { "LUM1008" });
         Run("循环内声明后未消费 → LUM1001", "while (c) { var x = GetTask(); }", new[] { "LUM1001" });
         Run("if/else 双消费同一分支 → LUM1002", "var t = GetTask(); if (a) { await t; await t; } else { await t; }", new[] { "LUM1002" });
         Run("lambda 仅捕获未消费 → LUM1001", "var t = GetTask(); Action f = () => Console.WriteLine(t.Id); f();", new[] { "LUM1001" });
@@ -113,6 +124,7 @@ public static class Program
             IEnumerable<LuminTask> tasks = Array.Empty<LuminTask>();
 
             static LuminTask<int> GetTask() => LuminTask.FromResult(1);
+            static LuminTask<LuminTask<int>> GetOuter() => LuminTask.FromResult(GetTask());
 
             static void Sink(LuminTask task) => task.Forget();
             static void SinkTcs(LuminTaskCompletionSource<int> tcs) => tcs.TrySetResult(1);

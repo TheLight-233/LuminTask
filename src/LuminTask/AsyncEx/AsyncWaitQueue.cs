@@ -33,7 +33,7 @@ internal sealed class WaitNode
     internal WaitNode? Next;
     internal WaitNode? Previous;
     internal IWaitNodeOwner? Owner;
-    internal IntPtr CorePtr;
+    internal LuminTaskHandle Handle;
     internal CancellationTokenRegistration Registration;
     internal CancellationToken CancellationToken;
     internal bool HasRegistration;
@@ -82,7 +82,7 @@ internal static class WaitNodePool
     internal static void Return(WaitNode node)
     {
         node.Owner = null;
-        node.CorePtr = IntPtr.Zero;
+        node.Handle = 0;
         node.Registration = default;
         node.CancellationToken = default;
         node.HasRegistration = false;
@@ -152,12 +152,11 @@ internal sealed unsafe class DefaultAsyncWaitQueue<T> : IAsyncWaitQueue<T>, IWai
             node.IsQueued = false;
         }
 
-        var ptr = node.CorePtr.ToPointer();
-        LuminTaskSourceCore<T>.TrySetCanceled(ptr, node.CancellationToken);
+        LuminTaskCoreSource.TrySetCanceled(node.Handle, node.CancellationToken);
 
         // 回调自身在执行中：不入池，仅清除引用，避免与后续租用者纠缠。
         node.Owner = null;
-        node.CorePtr = IntPtr.Zero;
+        node.Handle = 0;
         node.Registration = default;
         node.CancellationToken = default;
         node.HasRegistration = false;
@@ -172,13 +171,13 @@ internal sealed unsafe class DefaultAsyncWaitQueue<T> : IAsyncWaitQueue<T>, IWai
     {
         lock (_queueLock)
         {
-            var core = LuminTaskSourceCore<T>.Create();
+            var handle = LuminTask.RentSlot();
             var node = WaitNodePool.Rent();
             node.Owner = this;
-            node.CorePtr = new IntPtr(core);
+            node.Handle = handle;
             node.IsQueued = true;
             AppendLocked(node);
-            return new LuminTask<T>(LuminTaskSourceCore<T>.MethodTableAutoDisposePtr, core, core->Id);
+            return new LuminTask<T>(handle);
         }
     }
 
@@ -279,7 +278,7 @@ internal sealed unsafe class DefaultAsyncWaitQueue<T> : IAsyncWaitQueue<T>, IWai
         {
             for (var current = _head; current != null; current = current.Next)
             {
-                if (current.CorePtr.ToPointer() != task._taskSource)
+                if (current.Handle != task._handle)
                     continue;
 
                 if (current.Previous == null)
@@ -303,8 +302,7 @@ internal sealed unsafe class DefaultAsyncWaitQueue<T> : IAsyncWaitQueue<T>, IWai
             return false;
 
         ReleaseRegistration(node);
-        var ptr = node.CorePtr.ToPointer();
-        LuminTaskSourceCore<T>.TrySetCanceled(ptr, cancellationToken);
+        LuminTaskCoreSource.TrySetCanceled(node.Handle, cancellationToken);
         WaitNodePool.Return(node);
         return true;
     }
@@ -321,8 +319,7 @@ internal sealed unsafe class DefaultAsyncWaitQueue<T> : IAsyncWaitQueue<T>, IWai
         {
             var next = node.Next;
             ReleaseRegistration(node);
-            var ptr = node.CorePtr.ToPointer();
-            LuminTaskSourceCore<T>.TrySetCanceled(ptr, cancellationToken);
+            LuminTaskCoreSource.TrySetCanceled(node.Handle, cancellationToken);
             WaitNodePool.Return(node);
             node = next;
         }
@@ -332,8 +329,7 @@ internal sealed unsafe class DefaultAsyncWaitQueue<T> : IAsyncWaitQueue<T>, IWai
     private static void CompleteNode(WaitNode node, T? result)
     {
         ReleaseRegistration(node);
-        var ptr = node.CorePtr.ToPointer();
-        LuminTaskSourceCore<T>.TrySetResult(ptr, result);
+        LuminTaskResultBridge.TrySetResult(node.Handle, in result);
         WaitNodePool.Return(node);
     }
 
@@ -349,13 +345,13 @@ internal sealed unsafe class DefaultAsyncWaitQueue<T> : IAsyncWaitQueue<T>, IWai
 
         lock (_queueLock)
         {
-            var core = LuminTaskSourceCore<T>.Create();
+            var handle = LuminTask.RentSlot();
             node = WaitNodePool.Rent();
             node.Owner = this;
-            node.CorePtr = new IntPtr(core);
+            node.Handle = handle;
             node.IsQueued = true;
             AppendLocked(node);
-            task = new LuminTask<T>(LuminTaskSourceCore<T>.MethodTableAutoDisposePtr, core, core->Id);
+            task = new LuminTask<T>(handle);
 
             if (cancellationToken.CanBeCanceled)
             {

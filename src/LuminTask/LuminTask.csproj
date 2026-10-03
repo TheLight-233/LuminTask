@@ -4,10 +4,10 @@
         <Nullable>enable</Nullable>
         <LangVersion>13</LangVersion>
         <TargetFrameworks>netstandard2.1;net8.0;net9.0;net10.0</TargetFrameworks>
-        <NoWarn>$(NoWarn);CS1591;CA2255;LUM1001;LUM1002;LUM1003;LUM1004;LUM1005;LUM1006;LUM1007;LUM9999</NoWarn>
+        <NoWarn>$(NoWarn);CS1591;CA2255;LUM1001;LUM1002;LUM1003;LUM1004;LUM1005;LUM1006;LUM1007;LUM1008;LUM9999</NoWarn>
         <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
         <PackageId>LuminTask</PackageId>
-        <Version>1.0.6</Version>
+        <Version>1.0.7</Version>
         <Authors>TheLight233</Authors>
         <Description>High-performance custom async/await task-like types for .NET.</Description>
         <PackageTags>async;task;awaitable;zero-allocation</PackageTags>
@@ -44,10 +44,6 @@
         <Generator>TextTemplatingFileGenerator</Generator>
         <LastGenOutput>WhenAllPromise.cs</LastGenOutput>
       </None>
-      <None Update="Utility\LuminTuple.tt">
-        <Generator>TextTemplatingFileGenerator</Generator>
-        <LastGenOutput>LuminTuple.cs</LastGenOutput>
-      </None>
       <None Update="TaskSource\Promise\WhenAnyPromise.tt">
         <Generator>TextTemplatingFileGenerator</Generator>
         <LastGenOutput>WhenAnyPromise.cs</LastGenOutput>
@@ -57,11 +53,6 @@
     <ItemGroup>
       <Compile Update="TaskSource\Promise\WhenAllPromise.cs">
         <DependentUpon>WhenAllPromise.tt</DependentUpon>
-      </Compile>
-      <Compile Update="Utility\LuminTuple.cs">
-        <AutoGen>True</AutoGen>
-        <DesignTime>True</DesignTime>
-        <DependentUpon>LuminTuple.tt</DependentUpon>
       </Compile>
       <Compile Update="TaskSource\Promise\WhenAnyPromise.cs">
         <DependentUpon>WhenAnyPromise.tt</DependentUpon>

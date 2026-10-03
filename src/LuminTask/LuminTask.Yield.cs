@@ -1,6 +1,6 @@
 using LuminThread.Interface;
+using LuminThread.TaskSource;
 using LuminThread.TaskSource.Promise;
-using LuminThread.Utility;
 
 namespace LuminThread;
 
@@ -23,17 +23,28 @@ public readonly partial struct LuminTask
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static unsafe LuminTask Yield(CancellationToken cancellationToken, bool cancelImmediately = false)
+    public static LuminTask Yield(CancellationToken cancellationToken, bool cancelImmediately = false)
     {
-        var ptr = YieldPromise.Create(PlayerLoopTiming.Update, cancellationToken, cancelImmediately, out var id);
-        return new LuminTask(YieldPromise.MethodTablePtr, ptr, id);
+        return Yield(PlayerLoopTiming.Update, cancellationToken, cancelImmediately);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static unsafe LuminTask Yield(PlayerLoopTiming timing, CancellationToken cancellationToken, bool cancelImmediately = false)
+    public static LuminTask Yield(PlayerLoopTiming timing, CancellationToken cancellationToken, bool cancelImmediately = false)
     {
-        var ptr = YieldPromise.Create(timing, cancellationToken, cancelImmediately, out var id);
-        return new LuminTask(YieldPromise.MethodTablePtr, ptr, id);
+        var handle = RentSlot();
+
+        if (cancellationToken.IsCancellationRequested)
+        {
+            LuminTaskCoreSource.TrySetCanceled(handle, cancellationToken);
+            return new LuminTask(handle);
+        }
+
+        if (cancelImmediately && cancellationToken.CanBeCanceled)
+            AttachCancellation(handle, cancellationToken);
+
+        PlayerLoopHelper.AddAction(timing, new LuminTaskState(handle, cancellationToken), YieldPromise.MoveNextAction);
+
+        return new LuminTask(handle);
     }
 
     public readonly struct YieldAwaitable

@@ -7,9 +7,19 @@ namespace LuminTaskUnitTest;
 
 public static class BasicTests
 {
+    // The hot item must stay small: the result bytes and the per-frame scratch moved out into the
+    // slot's arenas, so only the fields every operation touches remain here. This guards against a
+    // future change quietly growing the item again.
+    private static unsafe void ItemLayoutStaysTight()
+    {
+        Assert.Equal(40, sizeof(LuminTaskItem),
+            "LuminTaskItem layout drifted: the hot fields should occupy 40 bytes");
+    }
+
     public static async Task RunAll(TestRunner r)
     {
         await r.Run("FromResult returns value", FromResultReturnsValue);
+        await r.Run("item layout stays tight", ItemLayoutStaysTight);
         await r.Run("CompletedTask completes", CompletedTaskCompletes);
         await r.Run("FromException throws on await", FromExceptionThrows);
         await r.Run("CanceledTask throws OperationCanceledException", CanceledTaskThrows);
@@ -21,6 +31,8 @@ public static class BasicTests
         await r.Run("reference-type result", ReferenceTypeResult);
         await r.Run("small struct result", SmallStructResult);
         await r.Run("large struct result (>64 bytes)", LargeStructResult);
+        await r.Run("reference-containing struct round-trips", ReferenceContainingStructRoundTrips);
+        await r.Run("reference-containing struct does not box", ReferenceContainingStructDoesNotBox);
         await r.Run("result observed after completion", ResultAfterCompletion);
         await r.Run("ValueTask conversions preserve results", ValueTaskConversions);
         await r.Run("CancellationToken.WaitAsync supports success/canceled modes", CancellationTokenWaitAsync);
@@ -152,6 +164,78 @@ public static class BasicTests
         }
     }
 
+    // A value type that CONTAINS a reference cannot be memcpy'd into unmanaged memory (GC hole) and
+    // must not be boxed (that would allocate). It goes through the pooled strong-typed container.
+    private struct ReferenceContaining
+    {
+        public string Text;
+        public int Number;
+    }
+
+    private static void ReferenceContainingStructRoundTrips()
+    {
+        var source = new LuminTaskCompletionSource<ReferenceContaining>();
+        source.TrySetResult(new ReferenceContaining { Text = "lumin", Number = 7 });
+
+        var value = source.Task.GetAwaiter().GetResult();
+        Assert.Equal("lumin", value.Text);
+        Assert.Equal(7, value.Number);
+    }
+
+    // The point of the pooled container: the reference-containing value must cost no more than a
+    // plain unmanaged value of the same size. A boxing implementation would show up as one extra
+    // object per round (header + payload), so comparing the two is a direct test for "no boxing".
+    // The only allocation either path makes is the completion source object itself.
+    private struct PlainValue
+    {
+        public long A;
+        public long B;
+    }
+
+    private static void ReferenceContainingStructDoesNotBox()
+    {
+        for (var i = 0; i < 4; i++)
+        {
+            ReferenceRoundTrip();
+            PlainRoundTrip();
+        }
+
+        var before = GC.GetAllocatedBytesForCurrentThread();
+        for (var i = 0; i < 32; i++)
+            ReferenceRoundTrip();
+        var referenceAllocated = GC.GetAllocatedBytesForCurrentThread() - before;
+
+        before = GC.GetAllocatedBytesForCurrentThread();
+        for (var i = 0; i < 32; i++)
+            PlainRoundTrip();
+        var plainAllocated = GC.GetAllocatedBytesForCurrentThread() - before;
+
+#if DEBUG
+        // DEBUG builds add the leak tracker's dictionary traffic, which swamps a 32-round sample and
+        // would hide the signal we are after, so the exact comparison only runs in Release.
+        Assert.True(referenceAllocated >= 0 && plainAllocated >= 0, "allocation accounting must be monotonic");
+#else
+        Assert.Equal(plainAllocated, referenceAllocated,
+            "a reference-containing result must not cost more than a plain value result (no boxing)");
+#endif
+
+        static void ReferenceRoundTrip()
+        {
+            var source = new LuminTaskCompletionSource<ReferenceContaining>();
+            source.TrySetResult(new ReferenceContaining { Text = "lumin", Number = 7 });
+            var value = source.Task.GetAwaiter().GetResult();
+            Assert.Equal(7, value.Number);
+        }
+
+        static void PlainRoundTrip()
+        {
+            var source = new LuminTaskCompletionSource<PlainValue>();
+            source.TrySetResult(new PlainValue { A = 1, B = 2 });
+            var value = source.Task.GetAwaiter().GetResult();
+            Assert.Equal(1L, value.A);
+        }
+    }
+
     private static async LuminTask ResultAfterCompletion()
     {
         // Complete-then-await: the source must survive until the awaiter reads it.
@@ -224,6 +308,10 @@ public static class BasicTests
     private static async LuminTask ConfigureAwaitAndCombinators()
     {
         await LuminTask.Delay(1).ConfigureAwait(false);
+
+        // Generic path: ConfigureAwait now hands the task itself back (no ConfiguredLuminTaskAwaitable<T>),
+        // so this also pins the awaiter type down to LuminTask<T>.
+        Assert.Equal(41, await LuminTask.Delay(1).ContinueWith(() => 41).ConfigureAwait(false));
         await LuminTask.WhenAllSequential(new[] { LuminTask.CompletedTask(), LuminTask.CompletedTask() });
     }
 

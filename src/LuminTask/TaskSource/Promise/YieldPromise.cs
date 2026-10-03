@@ -1,170 +1,22 @@
-﻿using System;
-using System.Runtime.CompilerServices;
-using System.Threading;
 using LuminThread.Interface;
-using LuminThread.Utility;
 
 namespace LuminThread.TaskSource.Promise;
 
-public unsafe struct YieldPromise
+// Yields once: carries no per-frame state, checks the token each frame and lets the core publish
+// the completion.
+internal static class YieldPromise
 {
-    public static readonly VTable MethodTable = new VTable
+    internal static readonly MoveNext MoveNextAction = MoveNext;
+
+    private static bool MoveNext(in LuminTaskState state)
     {
-        GetResult    = &GetResult,
-        GetStatus    = &GetStatus,
-        UnsafeGetStatus = &UnsafeGetStatus,
-        OnCompleted  = &OnCompleted,
-        Dispose = &Dispose,
-    };
-    public static readonly unsafe VTable* MethodTablePtr = AllocMethodTablePtr();
-    private static unsafe VTable* AllocMethodTablePtr()
-    {
-#if NET5_0_OR_GREATER
-        var p = (VTable*)System.Runtime.InteropServices.NativeMemory.Alloc((nuint)System.Runtime.CompilerServices.Unsafe.SizeOf<VTable>());
-#else
-        var p = (VTable*)System.Runtime.InteropServices.Marshal.AllocHGlobal(System.Runtime.CompilerServices.Unsafe.SizeOf<VTable>()).ToPointer();
-#endif
-        *p = MethodTable;
-        return p;
-    }
-
-    bool cancelImmediately;
-    CancellationTokenRegistration _registration;
-    short Id;
-
-    public static YieldPromise* Create(PlayerLoopTiming timing, CancellationToken cancellationToken, bool cancelImmediately, out short token)
-    {
-        YieldPromise* ptr = (YieldPromise*)MemoryHelper.Alloc((nuint)sizeof(YieldPromise));
-
-        ptr->Id = LuminTaskBag.GetId();
-
-        ref var item = ref LuminTaskMarshal.GetTaskItem(ptr->Id);
-
-        item.Reset();
-        
-        if (cancellationToken.IsCancellationRequested)
+        if (state.CancellationToken.IsCancellationRequested)
         {
-            item.Status = LuminTaskStatus.Canceled;
+            LuminTaskCoreSource.TrySetCanceled(state.Handle, state.CancellationToken);
+            return false;
         }
 
-        item.CancellationToken = cancellationToken;
-        ptr->cancelImmediately = cancelImmediately;
-
-        if (cancelImmediately && cancellationToken.CanBeCanceled)
-        {
-            // Keep the registration so Dispose can unregister it, avoiding both a leaked
-            // registration and a late cancellation callback touching the freed source pointer.
-            ptr->_registration = cancellationToken.RegisterWithoutCaptureExecutionContext(static state =>
-            {
-                ref var promise = ref Unsafe.AsRef<YieldPromise>(((IntPtr)state).ToPointer());
-                ref var item = ref LuminTaskMarshal.GetTaskItem(promise.Id);
-                item.Error = new OperationCanceledException(item.CancellationToken);
-
-                var cont = Interlocked.Exchange(ref item.Continuation, null);
-                cont?.Invoke(item.State!);
-            }, new IntPtr(ptr));
-        }
-
-        PlayerLoopHelper.AddAction(timing, new LuminTaskState(ptr), MoveNext);
-
-        token = ptr->Id;
-
-        return ptr;
-    }
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static void GetResult(void* ptr, short token)
-    {
-        ref var source = ref Unsafe.AsRef<YieldPromise>(ptr);
-        ref var item = ref LuminTaskMarshal.GetTaskItem(source.Id);
-
-        if (token != source.Id) LuminTaskExceptionHelper.ThrowTokenMismatch();
-
-        try
-        {
-            if (item.Error != null)
-            {
-                if (item.Error is OperationCanceledException oce)
-                {
-                    throw oce;
-                }
-
-                LuminTaskExceptionHelper.ThrowInvalidError();
-            }
-        }
-        finally
-        {
-            if (!(source.cancelImmediately && item.CancellationToken.IsCancellationRequested))
-            {
-                Dispose(ptr);
-            }
-        }
-    }
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static LuminTaskStatus GetStatus(void* ptr, short token)
-    {
-        ref var source = ref Unsafe.AsRef<YieldPromise>(ptr);
-
-        if (token != source.Id) return LuminTaskStatus.Faulted;
-
-        return LuminTaskMarshal.GetTaskItem(source.Id).Status;
-    }
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static LuminTaskStatus UnsafeGetStatus(void* ptr) =>
-        LuminTaskMarshal.GetTaskItem(Unsafe.AsRef<YieldPromise>(ptr).Id).Status;
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static void OnCompleted(void* ptr, Action<object> continuation, object state, short token)
-    {
-        ref var source = ref Unsafe.AsRef<YieldPromise>(ptr);
-        ref var item = ref LuminTaskMarshal.GetTaskItem(source.Id);
-
-        if (token != source.Id) LuminTaskExceptionHelper.ThrowTokenMismatch();
-
-        object? oldContinuation = item.Continuation;
-
-        if (oldContinuation is null)
-        {
-            item.State = state;
-            oldContinuation = Interlocked.CompareExchange(ref item.Continuation, continuation, null);
-        }
-
-        if (oldContinuation != null)
-        {
-            continuation(state);
-        }
-    }
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static bool MoveNext(in LuminTaskState state)
-    {
-        ref var source = ref Unsafe.AsRef<YieldPromise>(state.Source);
-        ref var item = ref LuminTaskMarshal.GetTaskItem(source.Id);
-
-        if (item.CancellationToken.IsCancellationRequested)
-        {
-            item.Error = new OperationCanceledException(item.CancellationToken);
-        }
-
-        var cont = Interlocked.Exchange(ref item.Continuation, null);
-        cont?.Invoke(item.State!);
-
+        LuminTaskCoreSource.TrySetResult(state.Handle);
         return false;
-    }
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    static void Dispose(void* ptr)
-    {
-        ref var source = ref Unsafe.AsRef<YieldPromise>(ptr);
-        ref var item = ref LuminTaskMarshal.GetTaskItem(source.Id);
-
-        // Unregister before freeing so a late cancellation can no longer dereference the pointer.
-        source._registration.Dispose();
-
-        LuminTaskBag.ResetId(item.Id);
-        
-        MemoryHelper.Free(ptr);
     }
 }

@@ -69,47 +69,12 @@ namespace LuminThread
 
         public static void UnregisterMainThread() => MainThreadSynchronizationContext = null;
 
-        public static void AddAction(PlayerLoopTiming timing, IPlayLoopItem item)
-        {
-            var strategy = _strategies[(byte)timing];
-            if (strategy is null)
-                ThrowInvalidLoopTiming(timing);
-            strategy!.AddAction(item);
-        }
-
         public static void AddAction(PlayerLoopTiming timing, LuminTaskState state, MoveNext moveNext)
         {
             var strategy = _strategies[(byte)timing];
             if (strategy is null)
                 ThrowInvalidLoopTiming(timing);
             strategy!.AddAction(state, moveNext);
-        }
-
-        public static unsafe void AddAction(PlayerLoopTiming timing, LuminTaskState state, delegate*<in LuminTaskState, bool> moveNext)
-        {
-            var strategy = _strategies[(byte)timing];
-            if (strategy is null)
-                ThrowInvalidLoopTiming(timing);
-            if (strategy is not IFunctionPointerPlayLoopStrategy pointerStrategy)
-                throw new PlatformNotSupportedException("The selected PlayerLoop strategy does not support function-pointer dispatch.");
-            pointerStrategy.AddAction(state, new IntPtr(moveNext));
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static unsafe void AddAction(
-            PlayerLoopTiming timing,
-            LuminTaskState state,
-            MoveNext managedMoveNext,
-            delegate*<in LuminTaskState, bool> functionPointer)
-        {
-            var strategy = _strategies[(byte)timing];
-            if (strategy is null)
-                ThrowInvalidLoopTiming(timing);
-
-            if (strategy is IFunctionPointerPlayLoopStrategy pointerStrategy)
-                pointerStrategy.AddAction(state, new IntPtr(functionPointer));
-            else
-                strategy!.AddAction(state, managedMoveNext);
         }
 
         public static void AddContinuation(PlayerLoopTiming timing, Action continuation)
@@ -139,17 +104,13 @@ namespace LuminThread
             }
         }
 
-        private sealed class StandardPlayLoopStrategy : IPlayLoopStrategy, IFunctionPointerPlayLoopStrategy
+        private sealed class StandardPlayLoopStrategy : IPlayLoopStrategy
         {
             private const int MaxTasksPerFrame = 1000;
             private const int ActivePollIntervalMilliseconds = 1;
 
-            private readonly ConcurrentQueue<IPlayLoopItem> _incomingQueue1 = new();
-            private readonly ConcurrentQueue<(LuminTaskState, MoveNext)> _incomingQueue2 = new();
-            private readonly ConcurrentQueue<(LuminTaskState, IntPtr)> _incomingQueue3 = new();
-            private readonly List<IPlayLoopItem> _activeTasks1 = new();
-            private readonly List<(LuminTaskState, MoveNext)> _activeTasks2 = new();
-            private readonly List<(LuminTaskState, IntPtr)> _activeTasks3 = new();
+            private readonly ConcurrentQueue<(LuminTaskState, MoveNext)> _incomingTasks = new();
+            private readonly List<(LuminTaskState, MoveNext)> _activeTasks = new();
             private readonly ConcurrentQueue<Action> _continuations = new();
             private readonly CancellationTokenSource _cts = new();
             private readonly System.Threading.Timer _timer;
@@ -165,24 +126,10 @@ namespace LuminThread
                     Timeout.Infinite, Timeout.Infinite);
             }
 
-            void IPlayLoopStrategy.AddAction(IPlayLoopItem item)
+            void IPlayLoopStrategy.AddAction(LuminTaskState state, MoveNext moveNext)
             {
                 ThrowIfDisposed();
-                _incomingQueue1.Enqueue(item);
-                ArmTimer();
-            }
-
-            void IPlayLoopStrategy.AddAction(LuminTaskState state, MoveNext item)
-            {
-                ThrowIfDisposed();
-                _incomingQueue2.Enqueue((state, item));
-                ArmTimer();
-            }
-
-            void IFunctionPointerPlayLoopStrategy.AddAction(LuminTaskState state, IntPtr item)
-            {
-                ThrowIfDisposed();
-                _incomingQueue3.Enqueue((state, item));
+                _incomingTasks.Enqueue((state, moveNext));
                 ArmTimer();
             }
 
@@ -254,84 +201,30 @@ namespace LuminThread
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             private bool HasActiveTasks()
-                => _activeTasks1.Count != 0 || _activeTasks2.Count != 0 || _activeTasks3.Count != 0;
+                => _activeTasks.Count != 0;
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             private bool HasImmediateWork()
-                => !_incomingQueue1.IsEmpty || !_incomingQueue2.IsEmpty || !_incomingQueue3.IsEmpty ||
-                   !_continuations.IsEmpty;
+                => !_incomingTasks.IsEmpty || !_continuations.IsEmpty;
 
             private void ProcessIncomingTasks()
             {
-                for (int i = 0; i < MaxTasksPerFrame && _incomingQueue1.TryDequeue(out var item); i++)
+                for (int i = 0; i < MaxTasksPerFrame && _incomingTasks.TryDequeue(out var item); i++)
                 {
-                    _activeTasks1.Add(item);
-                }
-
-                for (int i = 0; i < MaxTasksPerFrame && _incomingQueue2.TryDequeue(out var item); i++)
-                {
-                    _activeTasks2.Add(item);
-                }
-
-                for (int i = 0; i < MaxTasksPerFrame && _incomingQueue3.TryDequeue(out var item); i++)
-                {
-                    _activeTasks3.Add(item);
+                    _activeTasks.Add(item);
                 }
             }
 
             private void ProcessActiveTasks()
             {
-                ProcessActiveTasks1();
-                ProcessActiveTasks2();
-                ProcessActiveTasks3();
-            }
-
-            private void ProcessActiveTasks1()
-            {
-                if (_activeTasks1.Count == 0) return;
+                if (_activeTasks.Count == 0) return;
 
                 int writeIndex = 0;
-                for (int readIndex = 0; readIndex < _activeTasks1.Count; readIndex++)
+                for (int readIndex = 0; readIndex < _activeTasks.Count; readIndex++)
                 {
                     if (_cts.IsCancellationRequested) break;
 
-                    var task = _activeTasks1[readIndex];
-                    bool shouldContinue = false;
-
-                    try
-                    {
-                        shouldContinue = task.MoveNext();
-                    }
-                    catch (Exception ex)
-                    {
-                        Console.WriteLine($"Task execution error: {ex}");
-                        shouldContinue = false;
-                    }
-
-                    if (shouldContinue)
-                    {
-                        _activeTasks1[writeIndex++] = task;
-                    }
-                    else
-                    {
-                        if (task is IDisposable disposable)
-                            disposable.Dispose();
-                    }
-                }
-
-                _activeTasks1.RemoveRange(writeIndex, _activeTasks1.Count - writeIndex);
-            }
-
-            private void ProcessActiveTasks2()
-            {
-                if (_activeTasks2.Count == 0) return;
-
-                int writeIndex = 0;
-                for (int readIndex = 0; readIndex < _activeTasks2.Count; readIndex++)
-                {
-                    if (_cts.IsCancellationRequested) break;
-
-                    var (state, moveNext) = _activeTasks2[readIndex];
+                    var (state, moveNext) = _activeTasks[readIndex];
                     bool shouldContinue = false;
 
                     try
@@ -341,55 +234,20 @@ namespace LuminThread
                     catch (Exception ex)
                     {
                         Console.WriteLine($"Task execution error: {ex}");
-                        // The promise escaped before releasing its pooled state. Return it now so
-                        // the dropped item doesn't leak a StateTuple; a fault cannot be delivered
-                        // generically because the scheduler has no knowledge of the result type T.
-                        (state.StateTuple as IDisposable)?.Dispose();
+                        // The promise escaped before completing its task. Drop the item and release
+                        // its helper state; a fault cannot be delivered generically because the
+                        // scheduler has no knowledge of the result type T.
                         (state.State as IDisposable)?.Dispose();
                         shouldContinue = false;
                     }
 
                     if (shouldContinue)
                     {
-                        _activeTasks2[writeIndex++] = (state, moveNext);
+                        _activeTasks[writeIndex++] = (state, moveNext);
                     }
                 }
 
-                _activeTasks2.RemoveRange(writeIndex, _activeTasks2.Count - writeIndex);
-            }
-
-            private unsafe void ProcessActiveTasks3()
-            {
-                if (_activeTasks3.Count == 0) return;
-
-                int writeIndex = 0;
-                for (int readIndex = 0; readIndex < _activeTasks3.Count; readIndex++)
-                {
-                    if (_cts.IsCancellationRequested) break;
-
-                    var (state, ptr) = _activeTasks3[readIndex];
-                    bool shouldContinue = false;
-
-                    try
-                    {
-                        shouldContinue = ((delegate*<in LuminTaskState, bool>)ptr)(state);
-                    }
-                    catch (Exception ex)
-                    {
-                        Console.WriteLine($"Task execution error: {ex}");
-                        // Same last-resort release as queue 2: return pooled state of a dropped item.
-                        (state.StateTuple as IDisposable)?.Dispose();
-                        (state.State as IDisposable)?.Dispose();
-                        shouldContinue = false;
-                    }
-
-                    if (shouldContinue)
-                    {
-                        _activeTasks3[writeIndex++] = (state, ptr);
-                    }
-                }
-
-                _activeTasks3.RemoveRange(writeIndex, _activeTasks3.Count - writeIndex);
+                _activeTasks.RemoveRange(writeIndex, _activeTasks.Count - writeIndex);
             }
 
             private void ProcessContinuations()
@@ -412,22 +270,8 @@ namespace LuminThread
 
             private void Cleanup()
             {
-                while (_incomingQueue1.TryDequeue(out var item))
-                {
-                    (item as IDisposable)?.Dispose();
-                }
-
-                while (_incomingQueue2.TryDequeue(out _)) { }
-                while (_incomingQueue3.TryDequeue(out _)) { }
-
-                foreach (var task in _activeTasks1)
-                {
-                    (task as IDisposable)?.Dispose();
-                }
-
-                _activeTasks1.Clear();
-                _activeTasks2.Clear();
-                _activeTasks3.Clear();
+                while (_incomingTasks.TryDequeue(out _)) { }
+                _activeTasks.Clear();
             }
 
             public void Dispose()

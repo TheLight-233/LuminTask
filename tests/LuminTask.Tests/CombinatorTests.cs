@@ -12,7 +12,9 @@ public static class CombinatorTests
         await r.Run("WhenAll (array) waits for all", WhenAllArray);
         await r.Run("WhenAll (variadic) waits for all", WhenAllVariadic);
         await r.Run("WhenAll surfaces a faulting task", WhenAllFault);
+        await r.Run("WhenAll (tuple) aggregates typed results", WhenAllTuple);
         await r.Run("WhenAny (two) returns a valid winner", WhenAnyTwo);
+        await r.Run("WhenAny (tuple) reports the winner and its value", WhenAnyTuple);
         await r.Run("WhenAny (array) returns a valid index", WhenAnyArray);
         await r.Run("Delay honours cancellation", DelayCancellation);
     }
@@ -54,6 +56,32 @@ public static class CombinatorTests
     private static LuminTask WhenAllFault()
         => Assert.ThrowsAsync<InvalidOperationException>(() =>
             LuminTask.WhenAll(Ok(), Boom(), Ok()));
+
+    private static async LuminTask WhenAllTuple()
+    {
+        var (a, b, c) = await LuminTask.WhenAll(DelayValue(30, 1), DelayValue(10, 2), DelayValue(50, 3));
+        Assert.True(a == 1 && b == 2 && c == 3, $"unexpected tuple ({a}, {b}, {c})");
+
+        // Externally (synchronously) completed inputs take the fast path.
+        var (x, y) = await LuminTask.WhenAll(LuminTask.FromResult(7), LuminTask.FromResult(8));
+        Assert.True(x == 7 && y == 8, $"unexpected sync tuple ({x}, {y})");
+    }
+
+    private static async LuminTask WhenAnyTuple()
+    {
+        var (index, r1, r2) = await LuminTask.WhenAny(DelayValue(200, 1), DelayValue(20, 2));
+        Assert.True(index is 0 or 1, $"unexpected winner index {index}");
+
+        var winnerValue = index == 0 ? r1 : r2;
+        var expectedValue = index == 0 ? 1 : 2;
+        Assert.Equal(expectedValue, winnerValue);
+    }
+
+    private static async LuminTask<int> DelayValue(int milliseconds, int value)
+    {
+        await LuminTask.Delay(milliseconds);
+        return value;
+    }
 
     private static async LuminTask WhenAnyTwo()
     {

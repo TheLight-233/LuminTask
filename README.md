@@ -11,7 +11,7 @@ LuminTask 是一个面向 .NET 的高性能异步任务库，为 C# 提供可直
 * 支持 `LuminTask` 与 `LuminTask<T>` 自定义 awaitable 类型
 * 支持同步完成、异常、取消、延迟和让出执行权
 * 提供 `WhenAll`、`WhenAny`、`WhenEach` 等异步组合操作
-* 提供 `LuminTaskCompletionSource<T>`，便于桥接回调式 API
+* 提供 `LuminTaskCompletionSource<T>` 与句柄入口 `LuminTaskSource`（`Rent` / `Create` / `ToTask` / `SetResult`），便于桥接回调式 API 且不产生额外分配
 * 提供 `Forget`、`ContinueWith`、`Timeout` 和外部取消令牌绑定
 * 支持 `ConfigureAwait`、顺序 `WhenAll`、可取消重试和嵌套任务 `Unwrap`
 * 支持 `Task`、`ValueTask` 与 `LuminTask` 之间的互操作
@@ -27,7 +27,7 @@ LuminTask 是一个面向 .NET 的高性能异步任务库，为 C# 提供可直
 从 NuGet 安装稳定版本：
 
 ```bash
-dotnet add package LuminTask --version 1.0.5
+dotnet add package LuminTask --version 1.0.7
 ```
 
 > 安装即自带编译期契约分析器（见下文「契约分析器」），违反消费契约的代码会直接编译报错。
@@ -125,7 +125,7 @@ await luminTask.WaitAsync(TimeSpan.FromSeconds(5), cancellationToken);
 
 由 `OperationCanceledException` 结束的异步方法、完成源和 `AsTask()` 转换都会保留取消状态与原始取消令牌。
 
-任务源采用“完成后发布、首次消费后释放”的生命周期，并为每个结果类型保留一个无锁原生快槽；顺序异步工作负载在预热后可避免反复调用原生内存分配器。`WhenAll` / `WhenAny` 的回调状态使用有界池复用。
+任务源采用“完成后发布、首次消费后释放”的生命周期：热字段按 256 槽 chunk 存放，冷字段（结果、异常、取消令牌、注册）以 64 槽子块按需分配，槽内不预留任何常驻字节，结果超出内联范围时按实际大小分配原生块并由槽位统一归还；顺序异步工作负载在预热后可避免反复调用原生内存分配器。`WhenAll` / `WhenAny` 的回调状态使用有界池复用。
 
 对于只需要忽略结果的后台任务，可以使用 `Forget()`。如果需要处理后台任务异常，可以传入异常处理回调。
 
@@ -142,6 +142,7 @@ await luminTask.WaitAsync(TimeSpan.FromSeconds(5), cancellationToken);
 | `LUM1005` | Error | 将 LuminTask 赋给丢弃符 `_`（不会释放任务源） |
 | `LUM1006` | Warning | LuminTaskCompletionSource 在同一路径上被多次完成 |
 | `LUM1007` | Warning | LuminTask 存储在字段中，无法静态跟踪单次消费生命周期 |
+| `LUM1008` | Error | `LuminTaskSource.Rent` / `Create` 租出的句柄从未被使用（不存在任何完成路径） |
 | `LUM9999` | Warning | 分析器内部错误（请提交可复现代码） |
 
 ### 自动生效（无需任何配置）
@@ -150,7 +151,7 @@ await luminTask.WaitAsync(TimeSpan.FromSeconds(5), cancellationToken);
 
 ```bash
 dotnet add package LuminTask
-# 完成。违反契约的代码现在会编译报错 LUM1001~LUM1006
+# 完成。违反契约的代码现在会编译报错 LUM1001~LUM1008
 ```
 
 主库自身构建时同样启用分析器（dogfooding，通过 ProjectReference 引用分析器项目，仅作用于库自身的编译）。
@@ -198,9 +199,18 @@ LuminTask 遵循类似 `ValueTask` 的单次消费约定：一个任务实例应
 
 任务槽位 id 采用 `short`，同时存活的任务源上限为 32767。达到上限时库会抛出包含当前存活数量的诊断异常；这也是库面向客户端/游戏高频短任务场景的容量边界。
 
-Release 构建默认关闭 token 生命周期校验以保持低开销。需要在生产环境捕获重复消费或 token 失配时，可设置 `LuminTask.EnableRuntimeValidation = true`。
+句柄自带槽位 generation：重复消费、已被回收的陈旧句柄在所有构建配置下都会被拒绝并抛出，不需要任何开关（校验永远开启）。
 
-库内部使用非托管内存和 `unsafe` 代码，但普通调用方不需要在业务代码中开启 `unsafe`。
+库内部使用 `unsafe` 代码，并且超过 64 字节的非托管结果会落在原生块上（由槽位统一归还），但普通调用方不需要在业务代码中开启 `unsafe`。
+
+### 1.0.7 API 变更
+
+* `ConfigureAwait(bool)` 直接返回 `LuminTask` / `LuminTask<T>` 自身（捕获策略存在槽位里），原先公开的
+  `ConfiguredLuminTaskAwaitable[<T>]` / `ConfiguredLuminTaskAwaiter[<T>]` 已移除；
+  `await task.ConfigureAwait(false)` 的写法与语义不变，但每个 `T` 少两个泛型类型和一组 await 方法实例化。
+* 泛型 `ForgetBlock<T>` 已移除：`Forget<T>()` 复用非泛型块并经 `ConsumeVoid` 退出（结果本就被丢弃），
+  每个 `T` 少一个泛型类型与每线程 16 个保留对象。
+* 冷侧存储改为 64 槽子块按需分配：每个被触达字段的驻留从 2,080 B 降到 592 B（16 字节元素为 4,128 → 1,104 B）。
 
 ## 🤖 AI 使用技能（`skills/lumintask`）
 

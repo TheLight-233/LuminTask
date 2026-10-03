@@ -13,73 +13,62 @@ using LuminThread.Utility;
 namespace LuminThread.TaskSource.Promise;
 
 <#
-// 生成泛型元组版本的 WhenAllPromise (2-15)
-for (int i = 2; i <= 15; i++)
+// 生成泛型元组版本的 WhenAllPromise (2-4)。更高 arity 的异构 overload 已按架构文档 §8/§9 删除。
+for (int i = 2; i <= 4; i++)
 {
     var typeParams = string.Join(", ", Enumerable.Range(1, i).Select(n => $"T{n}"));
-    var tupleType = $"({typeParams})";
     var taskParams = string.Join(", ", Enumerable.Range(1, i).Select(n => $"LuminTask<T{n}> task{n}"));
     var createParams = string.Join(", ", Enumerable.Range(1, i).Select(n => $"task{n}"));
+    var resultTuple = string.Join(", ", Enumerable.Range(1, i).Select(n => $"self.t{n}"));
 #>
-public sealed unsafe class WhenAllPromise<<#= typeParams #>>
+internal sealed class WhenAllPromise<<#= typeParams #>> : CombinerNode
 {
 <# for (int j = 1; j <= i; j++) { #>
-    T<#= j #> t<#= j #> = default;
+    T<#= j #> t<#= j #> = default!;
 <# } #>
-    int completedCount;
-    int completionState;
-    internal LuminTaskSourceCore<<#= tupleType #>>* core;
+<# for (int j = 1; j <= i; j++) { #>
+    private LuminTask<T<#= j #>> _task<#= j #>;
+<# } #>
 
     public static WhenAllPromise<<#= typeParams #>> Create(<#= taskParams #>)
     {
         return new WhenAllPromise<<#= typeParams #>>(<#= createParams #>);
     }
-    
+
     public WhenAllPromise(<#= taskParams #>)
     {
-        core = LuminTaskSourceCore<<#= tupleType #>>.Create();
-        
-        this.completedCount = 0;
 <# for (int j = 1; j <= i; j++) { #>
         {
-            var awaiter = task<#= j #>.GetAwaiter();
-            if (awaiter.IsCompleted)
+            _task<#= j #> = task<#= j #>;
+            if (task<#= j #>.IsCompleted)
             {
-                TryInvokeContinuationT<#= j #>(this, awaiter);
+                TryInvokeContinuationT<#= j #>(this);
             }
             else
             {
-                awaiter.SourceOnCompleted(static state =>
-                {
-                    var t = (StateTuple<(WhenAllPromise<<#= typeParams #>>, LuminTask<T<#= j #>>)>)state;
-                    var owner = t.Item.Item1;
-                    var awaiter = t.Item.Item2;
-                    t.Dispose();
-                    TryInvokeContinuationT<#= j #>(owner, awaiter);
-                }, StateTuple.Create(this, awaiter));
+                task<#= j #>.SourceOnCompleted(static state => TryInvokeContinuationT<#= j #>((WhenAllPromise<<#= typeParams #>>)state), this);
             }
         }
 <# } #>
     }
 
 <# for (int j = 1; j <= i; j++) { #>
-    static void TryInvokeContinuationT<#= j #>(WhenAllPromise<<#= typeParams #>> self, in LuminTask<T<#= j #>> awaiter)
+    static void TryInvokeContinuationT<#= j #>(WhenAllPromise<<#= typeParams #>> self)
     {
         try
         {
-            self.t<#= j #> = awaiter.GetResult();
+            self.t<#= j #> = self._task<#= j #>.GetResult();
         }
         catch (Exception ex)
         {
-            if (Interlocked.CompareExchange(ref self.completionState, 1, 0) == 0)
-                LuminTaskSourceCore<<#= tupleType #>>.TrySetException(self.core, ex);
+            self.Fault(ex);
             return;
         }
-                
-        if (Interlocked.Increment(ref self.completedCount) == <#= i #> &&
-            Interlocked.CompareExchange(ref self.completionState, 1, 0) == 0)
+
+        if (self.IncrementCompleted(<#= i #>))
         {
-            LuminTaskSourceCore<<#= tupleType #>>.TrySetResult(self.core, (self.t1<# for (int k = 2; k <= i; k++) { #>, self.t<#= k #><# } #>));
+            var result = (<#= resultTuple #>);
+            self.Complete(in result);
         }
     }
 
@@ -87,111 +76,90 @@ public sealed unsafe class WhenAllPromise<<#= typeParams #>>
 }
 
 <# } #>
-
 <#
-// 生成非泛型 WhenAllPromise 的 1-15 个参数版本
-for (int i = 1; i <= 15; i++)
+// 生成非泛型 WhenAllPromise 的 1-4 个参数版本
+for (int i = 1; i <= 4; i++)
 {
     var taskParams = string.Join(", ", Enumerable.Range(1, i).Select(n => $"LuminTask task{n}"));
-    var taskParamsWithType = string.Join(", ", Enumerable.Range(1, i).Select(n => $"LuminTask task{n}"));
 #>
-public sealed unsafe class WhenAllPromise<#= i #>
+internal sealed class WhenAllPromise<#= i #> : CombinerNode
 {
-    private int _completedCount;
     private int _totalCount = <#= i #>;
-    private int _completionState;
-    internal LuminTaskSourceCore<bool>* _core;
+<# for (int j = 1; j <= i; j++) { #>
+    private LuminTask _task<#= j #>;
+<# } #>
 
     public WhenAllPromise<#= i #>(<#= taskParams #>)
     {
-        _core = LuminTaskSourceCore<bool>.Create();
-        _completedCount = 0;
-
 <# for (int j = 1; j <= i; j++) { #>
         {
-            var awaiter = task<#= j #>.GetAwaiter();
-            if (awaiter.IsCompleted)
+            _task<#= j #> = task<#= j #>;
+            if (task<#= j #>.IsCompleted)
             {
-                TryInvokeContinuationT<#= j #>(this, awaiter);
+                TryInvokeContinuationT<#= j #>(this);
             }
             else
             {
-                awaiter.SourceOnCompleted(static state =>
-                {
-                    var t = (StateTuple<(WhenAllPromise<#= i #>, LuminTask)>)state;
-                    var owner = t.Item.Item1;
-                    var awaiter = t.Item.Item2;
-                    t.Dispose();
-                    TryInvokeContinuationT<#= j #>(owner, awaiter);
-                }, StateTuple.Create(this, awaiter));
+                task<#= j #>.SourceOnCompleted(static state => TryInvokeContinuationT<#= j #>((WhenAllPromise<#= i #>)state), this);
             }
         }
 <# } #>
     }
 
 <# for (int j = 1; j <= i; j++) { #>
-    static void TryInvokeContinuationT<#= j #>(WhenAllPromise<#= i #> self, in LuminTask awaiter)
+    static void TryInvokeContinuationT<#= j #>(WhenAllPromise<#= i #> self)
     {
         try
         {
-            awaiter.GetResult();
+            self._task<#= j #>.GetResult();
         }
         catch (Exception ex)
         {
-            if (Interlocked.CompareExchange(ref self._completionState, 1, 0) == 0)
-                LuminTaskSourceCore<bool>.TrySetException(self._core, ex);
+            self.Fault(ex);
             return;
         }
-                
-        if (Interlocked.Increment(ref self._completedCount) == self._totalCount &&
-            Interlocked.CompareExchange(ref self._completionState, 1, 0) == 0)
+
+        if (self.IncrementCompleted(self._totalCount))
         {
-            LuminTaskSourceCore<bool>.TrySetResult(self._core, true);
+            self.Complete();
         }
     }
 <# } #>
 }
 
 <# } #>
-
-public sealed unsafe class WhenAllPromise<T>
+internal sealed class WhenAllPromise<T> : CombinerNode
 {
     private T[] _results;
-    private int _completedCount;
     private int _totalCount;
-    private int _completionState;
-    internal LuminTaskSourceCore<T[]>* _core;
 
     public static WhenAllPromise<T> Create(params LuminTask<T>[] tasks)
     {
         return new WhenAllPromise<T>(tasks);
     }
-    
+
     public static WhenAllPromise<T> Create(IEnumerable<LuminTask<T>> tasks)
     {
         return new WhenAllPromise<T>(tasks.ToArray());
     }
-    
+
     public WhenAllPromise(LuminTask<T>[]? tasks)
     {
         if (tasks == null || tasks.Length == 0)
         {
             _results = Array.Empty<T>();
-            _core = LuminTaskSourceCore<T[]>.Create();
-            LuminTaskSourceCore<T[]>.TrySetResult(_core, _results);
+            Complete(in _results);
             return;
         }
 
         _totalCount = tasks.Length;
         _results = new T[_totalCount];
-        _core = LuminTaskSourceCore<T[]>.Create();
-        _completedCount = 0;
 
         for (int i = 0; i < tasks.Length; i++)
         {
             var index = i;
             var awaiter = tasks[i].GetAwaiter();
-            
+
             if (awaiter.IsCompleted)
             {
                 TryInvokeContinuation(this, awaiter, index);
@@ -219,53 +187,45 @@ public sealed unsafe class WhenAllPromise<T>
         }
         catch (Exception ex)
         {
-            if (Interlocked.CompareExchange(ref self._completionState, 1, 0) == 0)
-                LuminTaskSourceCore<T[]>.TrySetException(self._core, ex);
+            self.Fault(ex);
             return;
         }
-                
-        if (Interlocked.Increment(ref self._completedCount) == self._totalCount &&
-            Interlocked.CompareExchange(ref self._completionState, 1, 0) == 0)
+
+        if (self.IncrementCompleted(self._totalCount))
         {
-            LuminTaskSourceCore<T[]>.TrySetResult(self._core, self._results);
+            self.Complete(in self._results);
         }
     }
 }
 
-public sealed unsafe class WhenAllPromise
+internal sealed class WhenAllPromise : CombinerNode
 {
-    private int _completedCount;
     private int _totalCount;
-    private int _completionState;
-    internal LuminTaskSourceCore<bool>* _core;
 
     public static WhenAllPromise Create(params LuminTask[] tasks)
     {
         return new WhenAllPromise(tasks);
     }
-    
+
     public static WhenAllPromise Create(IEnumerable<LuminTask> tasks)
     {
         return new WhenAllPromise(tasks.ToArray());
     }
-    
+
     public WhenAllPromise(LuminTask[]? tasks)
     {
         if (tasks == null || tasks.Length == 0)
         {
-            _core = LuminTaskSourceCore<bool>.Create();
-            LuminTaskSourceCore<bool>.TrySetResult(_core, true);
+            Complete();
             return;
         }
 
         _totalCount = tasks.Length;
-        _core = LuminTaskSourceCore<bool>.Create();
-        _completedCount = 0;
 
         for (int i = 0; i < tasks.Length; i++)
         {
             var awaiter = tasks[i].GetAwaiter();
-            
+
             if (awaiter.IsCompleted)
             {
                 TryInvokeContinuation(this, awaiter);
@@ -292,15 +252,13 @@ public sealed unsafe class WhenAllPromise
         }
         catch (Exception ex)
         {
-            if (Interlocked.CompareExchange(ref self._completionState, 1, 0) == 0)
-                LuminTaskSourceCore<bool>.TrySetException(self._core, ex);
+            self.Fault(ex);
             return;
         }
-                
-        if (Interlocked.Increment(ref self._completedCount) == self._totalCount &&
-            Interlocked.CompareExchange(ref self._completionState, 1, 0) == 0)
+
+        if (self.IncrementCompleted(self._totalCount))
         {
-            LuminTaskSourceCore<bool>.TrySetResult(self._core, true);
+            self.Complete();
         }
     }
 }

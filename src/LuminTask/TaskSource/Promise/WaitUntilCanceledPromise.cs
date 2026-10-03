@@ -1,89 +1,21 @@
-using System;
-using System.Runtime.CompilerServices;
-using System.Threading;
 using LuminThread.Interface;
-using LuminThread.Utility;
 
 namespace LuminThread.TaskSource.Promise;
 
-public unsafe struct WaitUntilCanceledPromise<T>
+// Completes successfully once the token is canceled (note: for this source cancellation is
+// success, not failure).
+internal static class WaitUntilCanceledPromise
 {
-    CancellationToken _cancellationToken;
-    CancellationTokenRegistration _cancellationTokenRegistration;
-    bool _cancelImmediately;
-
-    LuminTaskSourceCore<T>* _core;
-
-    internal LuminTaskSourceCore<T>* Source => _core;
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static WaitUntilCanceledPromise<T> Create(CancellationToken cancellationToken, PlayerLoopTiming timing, bool cancelImmediately, out short token)
-    {
-        var core = LuminTaskSourceCore<T>.Create();
-
-        var waitPromise = new WaitUntilCanceledPromise<T>();
-        waitPromise._core = core;
-        waitPromise._cancellationToken = cancellationToken;
-        waitPromise._cancelImmediately = cancelImmediately;
-
-        token = core->Id;
-
-        PlayerLoopHelper.AddAction(timing, new LuminTaskState(core, cancellationToken), MoveNext, &MoveNext);
-
-        return waitPromise;
-    }
-
-    public void GetResult(short token)
-    {
-        try
-        {
-            LuminTaskSourceCore<T>.GetResult(_core, token);
-        }
-        finally
-        {
-            if (!(_cancelImmediately && _cancellationToken.IsCancellationRequested))
-            {
-                Dispose();
-            }
-        }
-    }
-
-    public LuminTaskStatus GetStatus(short token)
-    {
-        return LuminTaskSourceCore<T>.GetStatus(_core, token);
-    }
-
-    public LuminTaskStatus UnsafeGetStatus()
-    {
-        return LuminTaskSourceCore<T>.UnsafeGetStatus(_core);
-    }
-
-    public void OnCompleted(Action<object> continuation, object state, short token)
-    {
-        LuminTaskSourceCore<T>.OnCompleted(_core, continuation, state, token);
-    }
+    internal static readonly MoveNext MoveNextAction = MoveNext;
 
     private static bool MoveNext(in LuminTaskState state)
     {
         if (state.CancellationToken.IsCancellationRequested)
         {
-            LuminTaskSourceCore<T>.TrySetResult(state.Source);
-            LuminTaskSourceCore<T>.Dispose(state.Source);
+            LuminTaskCoreSource.TrySetResult(state.Handle);
             return false;
         }
 
         return true;
-    }
-
-    void Dispose()
-    {
-        _cancellationToken = default;
-        _cancellationTokenRegistration.Dispose();
-        _cancelImmediately = default;
-
-        if (_core != null)
-        {
-            LuminTaskSourceCore<T>.Dispose(_core);
-        }
     }
 }

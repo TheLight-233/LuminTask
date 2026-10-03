@@ -317,7 +317,7 @@ namespace LuminThread.Unity
 
         #region AsyncTmpTextSelectionLuminTaskEventHandler（文本选择事件处理器）
 
-        public unsafe sealed class AsyncTmpTextSelectionLuminTaskEventHandler : 
+        public sealed class AsyncTmpTextSelectionLuminTaskEventHandler : 
             IAsyncTextSelectionLuminTaskEventHandler<(string, int, int)>, 
             IAsyncEndTextSelectionLuminTaskEventHandler<(string, int, int)>
         {
@@ -325,7 +325,7 @@ namespace LuminThread.Unity
             private readonly CancellationToken _cancellationToken;
             private readonly bool _callOnce;
 
-            private LuminTaskSourceCore<(string, int, int)>* _core;
+            private ulong _handle;
             private UnityEngine.Events.UnityAction<string, int, int> _continuation;
             private CancellationTokenRegistration _registration;
             private bool _disposed;
@@ -338,7 +338,7 @@ namespace LuminThread.Unity
                 _selectionEvent = selectionEvent ?? throw new ArgumentNullException(nameof(selectionEvent));
                 _cancellationToken = cancellationToken;
                 _callOnce = callOnce;
-                _core = default;
+                _handle = 0;
                 _continuation = null;
                 _registration = default;
                 _disposed = false;
@@ -386,19 +386,19 @@ namespace LuminThread.Unity
                 if (_disposed)
                     return LuminTask.FromCanceled<(string, int, int)>(new CancellationToken(canceled: true));
 
-                if (_core == null)
-                    _core = LuminTaskSourceCore<(string, int, int)>.Create();
+                if (_handle == 0)
+                    LuminTaskSource.Rent<(string, int, int)>(out _handle);
 
-                return new LuminTask<(string, int, int)>(LuminTaskSourceCore<(string, int, int)>.MethodTablePtr, _core, _core->Id);
+                return LuminTaskSource.ToTask<(string, int, int)>(_handle);
             }
 
             private void Invoke(string text, int start, int end)
             {
                 if (!_cancellationToken.IsCancellationRequested)
                 {
-                    var core = _core;
-                    if (core == null) return;
-                    _core = null;
+                    var handle = _handle;
+                    if (handle == 0) return;
+                    _handle = 0;
 
                     if (_callOnce)
                     {
@@ -406,7 +406,7 @@ namespace LuminThread.Unity
                         Detach();
                     }
 
-                    LuminTaskSourceCore<(string, int, int)>.TrySetResult(core, (text, start, end));
+                    LuminTaskSource.SetResult(handle, (text, start, end));
                 }
             }
 
@@ -416,10 +416,10 @@ namespace LuminThread.Unity
                 _disposed = true;
                 Detach();
 
-                var core = _core;
-                _core = null;
-                if (core != null)
-                    LuminTaskSourceCore<(string, int, int)>.TrySetCanceled(core, _cancellationToken);
+                var handle = _handle;
+                _handle = 0;
+                if (handle != 0)
+                    LuminTaskSource.SetCanceled(handle, _cancellationToken);
             }
 
             private void DisposeFromCancellation()
@@ -428,10 +428,10 @@ namespace LuminThread.Unity
                 _disposed = true;
                 Detach(disposeRegistration: false);
 
-                var core = _core;
-                _core = null;
-                if (core != null)
-                    LuminTaskSourceCore<(string, int, int)>.TrySetCanceled(core, _cancellationToken);
+                var handle = _handle;
+                _handle = 0;
+                if (handle != 0)
+                    LuminTaskSource.SetCanceled(handle, _cancellationToken);
             }
 
             private void Detach(bool disposeRegistration = true)
@@ -447,7 +447,7 @@ namespace LuminThread.Unity
                 _registration = default;
             }
 
-            #region ILuminTaskSource<(string, int, int)> 实现
+            #region LuminTaskSource 实现
 
             #endregion
         }

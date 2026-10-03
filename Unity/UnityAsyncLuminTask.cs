@@ -7,6 +7,7 @@ using System.Runtime.InteropServices;
 using System.Threading;
 using UnityEngine;
 using LuminThread.TaskSource;
+using LuminThread.Interface;
 
 namespace LuminThread.Unity
 {
@@ -89,19 +90,21 @@ namespace LuminThread.Unity
                 public bool Completed;
                 public bool IsCancellationRequested;
                 public CancellationTokenRegistration Registration;
+                public ulong Handle;
             }
 
             public static unsafe LuminTask Create(AsyncOperation asyncOperation, PlayerLoopTiming timing, IProgress<float> progress, CancellationToken cancellationToken, bool cancelImmediately)
             {
-                var core = LuminTaskSourceCore<AsyncUnit>.Create();
+                var task = LuminTaskSource.Create(out ulong handle);
                 var stateData = new StateData
                 {
                     Completed = false,
-                    IsCancellationRequested = false
+                    IsCancellationRequested = false,
+                    Handle = handle
                 };
 
-                var stateTuple = StateTuple.Create(stateData);
-                var state = new LuminTaskState(core, cancellationToken, asyncOperation, stateTuple);
+                var stateTuple = StateTuple.Create(stateData, asyncOperation);
+                var state = new LuminTaskState(handle, cancellationToken, stateTuple);
                 
                 Action<AsyncOperation> continuation = null;
                 continuation = _ =>
@@ -111,16 +114,16 @@ namespace LuminThread.Unity
                         
                     stateData.Completed = true;
                     stateData.IsCancellationRequested = cancellationToken.IsCancellationRequested;
-                    stateTuple.Item.Completed = true;
-                    stateTuple.Item.IsCancellationRequested = stateData.IsCancellationRequested;
+                    stateTuple.Item.Item1.Completed = true;
+                    stateTuple.Item.Item1.IsCancellationRequested = stateData.IsCancellationRequested;
                     
                     if (cancellationToken.IsCancellationRequested)
                     {
-                        LuminTaskSourceCore<AsyncUnit>.TrySetCanceled(core);
+                        LuminTaskSource.SetCanceled(handle, cancellationToken);
                     }
                     else
                     {
-                        LuminTaskSourceCore<AsyncUnit>.TrySetResult(core);
+                        LuminTaskSource.SetResult(handle);
                     }
                     
                     if (continuation != null)
@@ -129,7 +132,7 @@ namespace LuminThread.Unity
                         continuation = null;
                     }
 
-                    stateTuple.Item.Registration.Dispose();
+                    stateTuple.Item.Item1.Registration.Dispose();
                     stateTuple.Dispose();
                 };
 
@@ -137,50 +140,50 @@ namespace LuminThread.Unity
 
                 if (cancelImmediately && cancellationToken.CanBeCanceled)
                 {
-                    stateTuple.Item.Registration = cancellationToken.Register(() =>
+                    stateTuple.Item.Item1.Registration = cancellationToken.Register(() =>
                     {
                         stateData.Completed = true;
                         stateData.IsCancellationRequested = true;
-                        LuminTaskSourceCore<AsyncUnit>.TrySetCanceled(core);
+                        LuminTaskSource.SetCanceled(handle, cancellationToken);
                     });
                 }
 
-                PlayerLoopHelper.AddAction(timing, state, &MoveNext);
+                PlayerLoopHelper.AddAction(timing, state, MoveNextAction);
 
-                return new LuminTask(LuminTaskSourceCore<AsyncUnit>.MethodTablePtr, core, core->Id);
+                return task;
             }
 
-            public static unsafe bool MoveNext(in LuminTaskState state)
-            {
-                var asyncOperation = state.State as AsyncOperation;
-                if (asyncOperation == null)
-                    return false;
+            private static readonly MoveNext MoveNextAction = MoveNext;
 
-                var stateTuple = state.StateTuple as StateTuple<StateData>;
+            public static bool MoveNext(in LuminTaskState state)
+            {
+                var stateTuple = state.State as StateTuple<(StateData, AsyncOperation)>;
                 if (stateTuple == null)
                     return false;
 
-                if (stateTuple.Item.Completed)
+                var asyncOperation = stateTuple.Item.Item2;
+
+                if (stateTuple.Item.Item1.Completed)
                     return false;
 
                 if (state.CancellationToken.IsCancellationRequested)
                 {
-                    stateTuple.Item.Completed = true;
-                    stateTuple.Item.IsCancellationRequested = true;
-                    LuminTaskSourceCore<AsyncUnit>.TrySetCanceled(state.Source);
-                    stateTuple.Item.Registration.Dispose();
+                    stateTuple.Item.Item1.Completed = true;
+                    stateTuple.Item.Item1.IsCancellationRequested = true;
+                    LuminTaskSource.SetCanceled(stateTuple.Item.Item1.Handle, state.CancellationToken);
+                    stateTuple.Item.Item1.Registration.Dispose();
                     stateTuple.Dispose();
                     return false;
                 }
 
-                var progress = (state.StateTuple as StateTuple<(StateData, IProgress<float>)>)?.Item.Item2;
+                var progress = (state.State as StateTuple<(StateData, IProgress<float>)>)?.Item.Item2;
                 progress?.Report(asyncOperation.progress);
 
                 if (asyncOperation.isDone)
                 {
-                    stateTuple.Item.Completed = true;
-                    LuminTaskSourceCore<AsyncUnit>.TrySetResult(state.Source);
-                    stateTuple.Item.Registration.Dispose();
+                    stateTuple.Item.Item1.Completed = true;
+                    LuminTaskSource.SetResult(stateTuple.Item.Item1.Handle);
+                    stateTuple.Item.Item1.Registration.Dispose();
                     stateTuple.Dispose();
                     return false;
                 }
@@ -269,19 +272,21 @@ namespace LuminThread.Unity
                 public bool Completed;
                 public bool IsCancellationRequested;
                 public CancellationTokenRegistration Registration;
+                public ulong Handle;
             }
 
             public static unsafe LuminTask<UnityEngine.Object> Create(ResourceRequest asyncOperation, PlayerLoopTiming timing, IProgress<float> progress, CancellationToken cancellationToken, bool cancelImmediately)
             {
-                var core = LuminTaskSourceCore<UnityEngine.Object>.Create();
+                var task = LuminTaskSource.Create<UnityEngine.Object>(out ulong handle);
                 var stateData = new StateData
                 {
                     Completed = false,
-                    IsCancellationRequested = false
+                    IsCancellationRequested = false,
+                    Handle = handle
                 };
 
-                var stateTuple = StateTuple.Create(stateData, progress);
-                var state = new LuminTaskState(core, cancellationToken, asyncOperation, stateTuple);
+                var stateTuple = StateTuple.Create(stateData, progress, asyncOperation);
+                var state = new LuminTaskState(handle, cancellationToken, stateTuple);
                 
                 Action<AsyncOperation> continuation = null;
                 continuation = _ =>
@@ -296,11 +301,11 @@ namespace LuminThread.Unity
                     
                     if (cancellationToken.IsCancellationRequested)
                     {
-                        LuminTaskSourceCore<UnityEngine.Object>.TrySetCanceled(core);
+                        LuminTaskSource.SetCanceled(handle, cancellationToken);
                     }
                     else
                     {
-                        LuminTaskSourceCore<UnityEngine.Object>.TrySetResult(core, asyncOperation.asset);
+                        LuminTaskSource.SetResult(handle, asyncOperation.asset);
                     }
                     
                     if (continuation != null)
@@ -321,24 +326,24 @@ namespace LuminThread.Unity
                     {
                         stateData.Completed = true;
                         stateData.IsCancellationRequested = true;
-                        LuminTaskSourceCore<UnityEngine.Object>.TrySetCanceled(core);
+                        LuminTaskSource.SetCanceled(handle, cancellationToken);
                     });
                 }
 
-                PlayerLoopHelper.AddAction(timing, state, &MoveNext);
+                PlayerLoopHelper.AddAction(timing, state, MoveNextAction);
 
-                return new LuminTask<UnityEngine.Object>(LuminTaskSourceCore<UnityEngine.Object>.MethodTablePtr, core, core->Id);
+                return task;
             }
 
-            public static unsafe bool MoveNext(in LuminTaskState state)
-            {
-                var asyncOperation = state.State as ResourceRequest;
-                if (asyncOperation == null)
-                    return false;
+            private static readonly MoveNext MoveNextAction = MoveNext;
 
-                var stateTuple = state.StateTuple as StateTuple<(StateData, IProgress<float>)>;
+            public static bool MoveNext(in LuminTaskState state)
+            {
+                var stateTuple = state.State as StateTuple<(StateData, IProgress<float>, ResourceRequest)>;
                 if (stateTuple == null)
                     return false;
+
+                var asyncOperation = stateTuple.Item.Item3;
 
                 if (stateTuple.Item.Item1.Completed)
                     return false;
@@ -347,7 +352,7 @@ namespace LuminThread.Unity
                 {
                     stateTuple.Item.Item1.Completed = true;
                     stateTuple.Item.Item1.IsCancellationRequested = true;
-                    LuminTaskSourceCore<UnityEngine.Object>.TrySetCanceled(state.Source);
+                    LuminTaskSource.SetCanceled(stateTuple.Item.Item1.Handle, state.CancellationToken);
                     stateTuple.Item.Item1.Registration.Dispose();
                     stateTuple.Dispose();
                     return false;
@@ -359,7 +364,7 @@ namespace LuminThread.Unity
                 if (asyncOperation.isDone)
                 {
                     stateTuple.Item.Item1.Completed = true;
-                    LuminTaskSourceCore<UnityEngine.Object>.TrySetResult(state.Source, asyncOperation.asset);
+                    LuminTaskSource.SetResult(stateTuple.Item.Item1.Handle, asyncOperation.asset);
                     stateTuple.Item.Item1.Registration.Dispose();
                     stateTuple.Dispose();
                     return false;
@@ -449,19 +454,21 @@ namespace LuminThread.Unity
                 public bool Completed;
                 public bool IsCancellationRequested;
                 public CancellationTokenRegistration Registration;
+                public ulong Handle;
             }
 
             public static unsafe LuminTask<UnityEngine.Object> Create(AssetBundleRequest asyncOperation, PlayerLoopTiming timing, IProgress<float> progress, CancellationToken cancellationToken, bool cancelImmediately)
             {
-                var core = LuminTaskSourceCore<UnityEngine.Object>.Create();
+                var task = LuminTaskSource.Create<UnityEngine.Object>(out ulong handle);
                 var stateData = new StateData
                 {
                     Completed = false,
-                    IsCancellationRequested = false
+                    IsCancellationRequested = false,
+                    Handle = handle
                 };
 
-                var stateTuple = StateTuple.Create(stateData, progress);
-                var state = new LuminTaskState(core, cancellationToken, asyncOperation, stateTuple);
+                var stateTuple = StateTuple.Create(stateData, progress, asyncOperation);
+                var state = new LuminTaskState(handle, cancellationToken, stateTuple);
                 
                 Action<AsyncOperation> continuation = null;
                 continuation = _ =>
@@ -476,11 +483,11 @@ namespace LuminThread.Unity
                     
                     if (cancellationToken.IsCancellationRequested)
                     {
-                        LuminTaskSourceCore<UnityEngine.Object>.TrySetCanceled(core);
+                        LuminTaskSource.SetCanceled(handle, cancellationToken);
                     }
                     else
                     {
-                        LuminTaskSourceCore<UnityEngine.Object>.TrySetResult(core, asyncOperation.asset);
+                        LuminTaskSource.SetResult(handle, asyncOperation.asset);
                     }
                     
                     if (continuation != null)
@@ -501,24 +508,24 @@ namespace LuminThread.Unity
                     {
                         stateData.Completed = true;
                         stateData.IsCancellationRequested = true;
-                        LuminTaskSourceCore<UnityEngine.Object>.TrySetCanceled(core);
+                        LuminTaskSource.SetCanceled(handle, cancellationToken);
                     });
                 }
 
-                PlayerLoopHelper.AddAction(timing, state, &MoveNext);
+                PlayerLoopHelper.AddAction(timing, state, MoveNextAction);
 
-                return new LuminTask<UnityEngine.Object>(LuminTaskSourceCore<UnityEngine.Object>.MethodTablePtr, core, core->Id);
+                return task;
             }
 
-            public static unsafe bool MoveNext(in LuminTaskState state)
-            {
-                var asyncOperation = state.State as AssetBundleRequest;
-                if (asyncOperation == null)
-                    return false;
+            private static readonly MoveNext MoveNextAction = MoveNext;
 
-                var stateTuple = state.StateTuple as StateTuple<(StateData, IProgress<float>)>;
+            public static bool MoveNext(in LuminTaskState state)
+            {
+                var stateTuple = state.State as StateTuple<(StateData, IProgress<float>, AssetBundleRequest)>;
                 if (stateTuple == null)
                     return false;
+
+                var asyncOperation = stateTuple.Item.Item3;
 
                 if (stateTuple.Item.Item1.Completed)
                     return false;
@@ -527,7 +534,7 @@ namespace LuminThread.Unity
                 {
                     stateTuple.Item.Item1.Completed = true;
                     stateTuple.Item.Item1.IsCancellationRequested = true;
-                    LuminTaskSourceCore<UnityEngine.Object>.TrySetCanceled(state.Source);
+                    LuminTaskSource.SetCanceled(stateTuple.Item.Item1.Handle, state.CancellationToken);
                     stateTuple.Item.Item1.Registration.Dispose();
                     stateTuple.Dispose();
                     return false;
@@ -539,7 +546,7 @@ namespace LuminThread.Unity
                 if (asyncOperation.isDone)
                 {
                     stateTuple.Item.Item1.Completed = true;
-                    LuminTaskSourceCore<UnityEngine.Object>.TrySetResult(state.Source, asyncOperation.asset);
+                    LuminTaskSource.SetResult(stateTuple.Item.Item1.Handle, asyncOperation.asset);
                     stateTuple.Item.Item1.Registration.Dispose();
                     stateTuple.Dispose();
                     return false;
@@ -629,19 +636,21 @@ namespace LuminThread.Unity
                 public bool Completed;
                 public bool IsCancellationRequested;
                 public CancellationTokenRegistration Registration;
+                public ulong Handle;
             }
 
             public static unsafe LuminTask<AssetBundle> Create(AssetBundleCreateRequest asyncOperation, PlayerLoopTiming timing, IProgress<float> progress, CancellationToken cancellationToken, bool cancelImmediately)
             {
-                var core = LuminTaskSourceCore<AssetBundle>.Create();
+                var task = LuminTaskSource.Create<AssetBundle>(out ulong handle);
                 var stateData = new StateData
                 {
                     Completed = false,
-                    IsCancellationRequested = false
+                    IsCancellationRequested = false,
+                    Handle = handle
                 };
 
-                var stateTuple = StateTuple.Create(stateData, progress);
-                var state = new LuminTaskState(core, cancellationToken, asyncOperation, stateTuple);
+                var stateTuple = StateTuple.Create(stateData, progress, asyncOperation);
+                var state = new LuminTaskState(handle, cancellationToken, stateTuple);
                 
                 Action<AsyncOperation> continuation = null;
                 continuation = _ =>
@@ -656,11 +665,11 @@ namespace LuminThread.Unity
                     
                     if (cancellationToken.IsCancellationRequested)
                     {
-                        LuminTaskSourceCore<AssetBundle>.TrySetCanceled(core);
+                        LuminTaskSource.SetCanceled(handle, cancellationToken);
                     }
                     else
                     {
-                        LuminTaskSourceCore<AssetBundle>.TrySetResult(core, asyncOperation.assetBundle);
+                        LuminTaskSource.SetResult(handle, asyncOperation.assetBundle);
                     }
                     
                     if (continuation != null)
@@ -681,24 +690,24 @@ namespace LuminThread.Unity
                     {
                         stateData.Completed = true;
                         stateData.IsCancellationRequested = true;
-                        LuminTaskSourceCore<AssetBundle>.TrySetCanceled(core);
+                        LuminTaskSource.SetCanceled(handle, cancellationToken);
                     });
                 }
 
-                PlayerLoopHelper.AddAction(timing, state, &MoveNext);
+                PlayerLoopHelper.AddAction(timing, state, MoveNextAction);
 
-                return new LuminTask<AssetBundle>(LuminTaskSourceCore<AssetBundle>.MethodTablePtr, core, core->Id);
+                return task;
             }
 
-            public static unsafe bool MoveNext(in LuminTaskState state)
-            {
-                var asyncOperation = state.State as AssetBundleCreateRequest;
-                if (asyncOperation == null)
-                    return false;
+            private static readonly MoveNext MoveNextAction = MoveNext;
 
-                var stateTuple = state.StateTuple as StateTuple<(StateData, IProgress<float>)>;
+            public static bool MoveNext(in LuminTaskState state)
+            {
+                var stateTuple = state.State as StateTuple<(StateData, IProgress<float>, AssetBundleCreateRequest)>;
                 if (stateTuple == null)
                     return false;
+
+                var asyncOperation = stateTuple.Item.Item3;
 
                 if (stateTuple.Item.Item1.Completed)
                     return false;
@@ -707,7 +716,7 @@ namespace LuminThread.Unity
                 {
                     stateTuple.Item.Item1.Completed = true;
                     stateTuple.Item.Item1.IsCancellationRequested = true;
-                    LuminTaskSourceCore<AssetBundle>.TrySetCanceled(state.Source);
+                    LuminTaskSource.SetCanceled(stateTuple.Item.Item1.Handle, state.CancellationToken);
                     stateTuple.Item.Item1.Registration.Dispose();
                     stateTuple.Dispose();
                     return false;
@@ -719,7 +728,7 @@ namespace LuminThread.Unity
                 if (asyncOperation.isDone)
                 {
                     stateTuple.Item.Item1.Completed = true;
-                    LuminTaskSourceCore<AssetBundle>.TrySetResult(state.Source, asyncOperation.assetBundle);
+                    LuminTaskSource.SetResult(stateTuple.Item.Item1.Handle, asyncOperation.assetBundle);
                     stateTuple.Item.Item1.Registration.Dispose();
                     stateTuple.Dispose();
                     return false;
@@ -820,19 +829,21 @@ namespace LuminThread.Unity
                 public bool Completed;
                 public bool IsCancellationRequested;
                 public CancellationTokenRegistration Registration;
+                public ulong Handle;
             }
 
             public static unsafe LuminTask<UnityWebRequest> Create(UnityWebRequestAsyncOperation asyncOperation, PlayerLoopTiming timing, IProgress<float> progress, CancellationToken cancellationToken, bool cancelImmediately)
             {
-                var core = LuminTaskSourceCore<UnityWebRequest>.Create();
+                var task = LuminTaskSource.Create<UnityWebRequest>(out ulong handle);
                 var stateData = new StateData
                 {
                     Completed = false,
-                    IsCancellationRequested = false
+                    IsCancellationRequested = false,
+                    Handle = handle
                 };
 
-                var stateTuple = StateTuple.Create(stateData, progress);
-                var state = new LuminTaskState(core, cancellationToken, asyncOperation, stateTuple);
+                var stateTuple = StateTuple.Create(stateData, progress, asyncOperation);
+                var state = new LuminTaskState(handle, cancellationToken, stateTuple);
                 
                 Action<AsyncOperation> continuation = null;
                 continuation = _ =>
@@ -847,15 +858,15 @@ namespace LuminThread.Unity
                     
                     if (cancellationToken.IsCancellationRequested)
                     {
-                        LuminTaskSourceCore<UnityWebRequest>.TrySetCanceled(core);
+                        LuminTaskSource.SetCanceled(handle, cancellationToken);
                     }
                     else if (IsError(asyncOperation.webRequest))
                     {
-                        LuminTaskSourceCore<UnityWebRequest>.TrySetException(core, new UnityWebRequestLuminTaskException(asyncOperation.webRequest));
+                        LuminTaskSource.SetException(handle, new UnityWebRequestLuminTaskException(asyncOperation.webRequest));
                     }
                     else
                     {
-                        LuminTaskSourceCore<UnityWebRequest>.TrySetResult(core, asyncOperation.webRequest);
+                        LuminTaskSource.SetResult(handle, asyncOperation.webRequest);
                     }
                     
                     if (continuation != null)
@@ -877,24 +888,24 @@ namespace LuminThread.Unity
                         stateData.Completed = true;
                         stateData.IsCancellationRequested = true;
                         asyncOperation.webRequest.Abort();
-                        LuminTaskSourceCore<UnityWebRequest>.TrySetCanceled(core);
+                        LuminTaskSource.SetCanceled(handle, cancellationToken);
                     });
                 }
 
-                PlayerLoopHelper.AddAction(timing, state, &MoveNext);
+                PlayerLoopHelper.AddAction(timing, state, MoveNextAction);
 
-                return new LuminTask<UnityWebRequest>(LuminTaskSourceCore<UnityWebRequest>.MethodTablePtr, core, core->Id);
+                return task;
             }
 
-            public static unsafe bool MoveNext(in LuminTaskState state)
-            {
-                var asyncOperation = state.State as UnityWebRequestAsyncOperation;
-                if (asyncOperation == null)
-                    return false;
+            private static readonly MoveNext MoveNextAction = MoveNext;
 
-                var stateTuple = state.StateTuple as StateTuple<(StateData, IProgress<float>)>;
+            public static bool MoveNext(in LuminTaskState state)
+            {
+                var stateTuple = state.State as StateTuple<(StateData, IProgress<float>, UnityWebRequestAsyncOperation)>;
                 if (stateTuple == null)
                     return false;
+
+                var asyncOperation = stateTuple.Item.Item3;
 
                 if (stateTuple.Item.Item1.Completed)
                     return false;
@@ -904,7 +915,7 @@ namespace LuminThread.Unity
                     stateTuple.Item.Item1.Completed = true;
                     stateTuple.Item.Item1.IsCancellationRequested = true;
                     asyncOperation.webRequest.Abort();
-                    LuminTaskSourceCore<UnityWebRequest>.TrySetCanceled(state.Source);
+                    LuminTaskSource.SetCanceled(stateTuple.Item.Item1.Handle, state.CancellationToken);
                     stateTuple.Item.Item1.Registration.Dispose();
                     stateTuple.Dispose();
                     return false;
@@ -919,11 +930,11 @@ namespace LuminThread.Unity
                     
                     if (IsError(asyncOperation.webRequest))
                     {
-                        LuminTaskSourceCore<UnityWebRequest>.TrySetException(state.Source, new UnityWebRequestLuminTaskException(asyncOperation.webRequest));
+                        LuminTaskSource.SetException(stateTuple.Item.Item1.Handle, new UnityWebRequestLuminTaskException(asyncOperation.webRequest));
                     }
                     else
                     {
-                        LuminTaskSourceCore<UnityWebRequest>.TrySetResult(state.Source, asyncOperation.webRequest);
+                        LuminTaskSource.SetResult(stateTuple.Item.Item1.Handle, asyncOperation.webRequest);
                     }
                     
                     stateTuple.Item.Item1.Registration.Dispose();

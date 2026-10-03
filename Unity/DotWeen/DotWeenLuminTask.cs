@@ -138,12 +138,13 @@ namespace LuminThread.Unity
             }
         }
 
-        public unsafe struct TweenLuminTaskConfiguredSource
+        public struct TweenLuminTaskConfiguredSource
         {
             struct PromiseState
             {
                 public bool Canceled;
                 public CancellationTokenRegistration Registration;
+                public ulong Handle;
             }
 
             public static LuminTask Create(Tween tween, TweenLuminTaskCancelBehaviour cancelBehaviour, CancellationToken cancellationToken, CallbackType callbackType)
@@ -154,11 +155,12 @@ namespace LuminThread.Unity
                     return LuminTask.FromCanceled(cancellationToken);
                 }
 
-                var core = LuminTaskSourceCore<AsyncUnit>.Create();
+                var task = LuminTaskSource.Create(out ulong handle);
                 
                 var promiseState = new PromiseState
                 {
-                    Canceled = false
+                    Canceled = false,
+                    Handle = handle
                 };
 
                 // Save original callback
@@ -178,7 +180,7 @@ namespace LuminThread.Unity
                     promiseState, 
                     (tween, cancelBehaviour, callbackType, originalCallback)
                 );
-                var state = new LuminTaskState(core, cancellationToken, stateTuple);
+                var state = new LuminTaskState(handle, cancellationToken, stateTuple);
 
                 // Setup completion callback
                 Action onCompleteCallback = () => OnCompleted(state);
@@ -212,7 +214,7 @@ namespace LuminThread.Unity
                     stateTuple.Item.Item1.Registration = cancellationToken.Register(static s =>
                     {
                         var taskState = (LuminTaskState)s;
-                        var tuple = Unsafe.As<StateTuple<(PromiseState, (Tween, TweenLuminTaskCancelBehaviour, CallbackType, TweenCallback))>>(taskState.StateTuple);
+                        var tuple = (StateTuple<(PromiseState, (Tween, TweenLuminTaskCancelBehaviour, CallbackType, TweenCallback))>)taskState.State!;
                         
                         var (tween, cancelBehaviour, callbackType, originalCallback) = tuple.Item.Item2;
                         
@@ -249,7 +251,7 @@ namespace LuminThread.Unity
                                 break;
                             case TweenLuminTaskCancelBehaviour.CancelAwait:
                                 RestoreOriginalCallback(tween, callbackType, originalCallback);
-                                LuminTaskSourceCore<AsyncUnit>.TrySetCanceled(taskState.Source);
+                                LuminTaskSource.SetCanceled(tuple.Item.Item1.Handle, taskState.CancellationToken);
                                 break;
                         }
 
@@ -258,12 +260,12 @@ namespace LuminThread.Unity
                     }, state);
                 }
 
-                return new LuminTask(LuminTaskSourceCore<AsyncUnit>.MethodTablePtr, core, core->Id);
+                return task;
             }
 
             static void OnCompleted(LuminTaskState state)
             {
-                var tuple = Unsafe.As<StateTuple<(PromiseState, (Tween, TweenLuminTaskCancelBehaviour, CallbackType, TweenCallback))>>(state.StateTuple);
+                var tuple = (StateTuple<(PromiseState, (Tween, TweenLuminTaskCancelBehaviour, CallbackType, TweenCallback))>)state.State!;
                 
                 var (tween, cancelBehaviour, callbackType, originalCallback) = tuple.Item.Item2;
                 
@@ -281,18 +283,17 @@ namespace LuminThread.Unity
                 
                 if (tuple.Item.Item1.Canceled)
                 {
-                    LuminTaskSourceCore<AsyncUnit>.TrySetCanceled(state.Source);
+                    LuminTaskSource.SetCanceled(tuple.Item.Item1.Handle, state.CancellationToken);
                 }
                 else
                 {
                     originalCallback?.Invoke();
-                    LuminTaskSourceCore<AsyncUnit>.TrySetResult(state.Source);
+                    LuminTaskSource.SetResult(tuple.Item.Item1.Handle);
                 }
                 
                 RestoreOriginalCallback(tween, callbackType, originalCallback);
                 tuple.Item.Item1.Registration.Dispose();
                 tuple.Dispose();
-                LuminTaskSourceCore<AsyncUnit>.Dispose(state.Source);
             }
 
             static void RestoreOriginalCallback(Tween tween, CallbackType callbackType, TweenCallback originalCallback)
@@ -358,27 +359,60 @@ namespace LuminThread.Unity
 
     sealed class PooledTweenCallback
     {
-        readonly PooledDelegateBody body;
+        // Bounded per-thread free list: the instance is its own delegate target, so Create does not
+        // allocate once the list has warmed up. It is returned before the continuation runs, because
+        // the continuation may immediately create another pooled callback of this shape.
+        const int MaxRetainedPerThread = 16;
+
+        [ThreadStatic] static PooledTweenCallback _freeList;
+        [ThreadStatic] static int _freeCount;
+
+        PooledTweenCallback next;
+        Action continuation;
         readonly TweenCallback runDelegate;
 
-        PooledTweenCallback(PooledDelegateBody body)
+        PooledTweenCallback()
         {
-            this.body = body;
             runDelegate = Run;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static TweenCallback Create(Action continuation)
         {
-            var body = PooledDelegateCore.Rent(continuation);
-            var item = new PooledTweenCallback(body);
+            var item = _freeList;
+            if (item != null)
+            {
+                _freeList = item.next;
+                item.next = null;
+                _freeCount--;
+            }
+            else
+            {
+                item = new PooledTweenCallback();
+            }
+
+            item.continuation = continuation;
             return item.runDelegate;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         void Run()
         {
-            body.Invoke();
+            var call = continuation;
+            continuation = null;
+
+            if (_freeCount < MaxRetainedPerThread)
+            {
+                next = _freeList;
+                _freeList = this;
+                _freeCount++;
+            }
+            else
+            {
+                next = null;
+            }
+
+            call?.Invoke();
         }
     }
 }

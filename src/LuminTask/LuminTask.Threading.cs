@@ -233,8 +233,8 @@ public readonly struct SwitchToThreadPoolAwaitable
 
         public void UnsafeOnCompleted(Action continuation)
         {
-#if NETCOREAPP3_1
-                ThreadPool.UnsafeQueueUserWorkItem(ThreadPoolWorkItem.Create(continuation), false);
+#if NET5_0_OR_GREATER
+            ThreadPool.UnsafeQueueUserWorkItem(ThreadPoolWorkItem.Create(continuation), preferLocal: false);
 #else
             ThreadPool.UnsafeQueueUserWorkItem(switchToCallback, continuation);
 #endif
@@ -247,45 +247,90 @@ public readonly struct SwitchToThreadPoolAwaitable
         }
     }
 
-#if NETCOREAPP3_1
+#if NET5_0_OR_GREATER
 
-        sealed class ThreadPoolWorkItem : IThreadPoolWorkItem, ITaskPoolNode<ThreadPoolWorkItem>
+    // IThreadPoolWorkItem lets the runtime enqueue this instance directly. The WaitCallback overload
+    // allocates an internal work item on every call, while this path allocates nothing once the pool
+    // has warmed up - which is what makes a steady-state SwitchToThreadPool GC-free.
+    //
+    // Only .NET 5+ exposes the interface; on netstandard2.1 (Unity) the WaitCallback path above is
+    // kept as-is.
+    sealed class ThreadPoolWorkItem : IThreadPoolWorkItem
+    {
+        // Bounded: one lock-free fast slot plus a small locked overflow list.
+        const int MaxRetained = 32;
+
+        static ThreadPoolWorkItem? fastItem;
+        static ThreadPoolWorkItem? overflow;
+        static int overflowCount;
+        static SpinLock overflowLock = new(enableThreadOwnerTracking: false);
+
+        ThreadPoolWorkItem? next;
+        Action? continuation;
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static ThreadPoolWorkItem Create(Action continuation)
         {
-            static TaskPool<ThreadPoolWorkItem> pool;
-            ThreadPoolWorkItem nextNode;
-            public ref ThreadPoolWorkItem NextNode => ref nextNode;
-
-            static ThreadPoolWorkItem()
+            var item = Interlocked.Exchange(ref fastItem, null);
+            if (item == null)
             {
-                TaskPool.RegisterSizeGetter(typeof(ThreadPoolWorkItem), () => pool.Size);
-            }
-
-            Action continuation;
-
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public static ThreadPoolWorkItem Create(Action continuation)
-            {
-                if (!pool.TryPop(out var item))
+                var lockTaken = false;
+                try
                 {
-                    item = new ThreadPoolWorkItem();
+                    overflowLock.Enter(ref lockTaken);
+                    item = overflow;
+                    if (item != null)
+                    {
+                        overflow = item.next;
+                        overflowCount--;
+                        item.next = null;
+                    }
                 }
-
-                item.continuation = continuation;
-                return item;
-            }
-
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public void Execute()
-            {
-                var call = continuation;
-                continuation = null;
-                if (call != null)
+                finally
                 {
-                    pool.TryPush(this);
-                    call.Invoke();
+                    if (lockTaken)
+                        overflowLock.Exit(useMemoryBarrier: false);
                 }
             }
+
+            item ??= new ThreadPoolWorkItem();
+            item.continuation = continuation;
+            return item;
         }
+
+        void IThreadPoolWorkItem.Execute()
+        {
+            var call = continuation;
+            continuation = null;
+
+            // Return before invoking: the continuation may queue more work of this shape.
+            if (Interlocked.CompareExchange(ref fastItem, this, null) != null)
+            {
+                var lockTaken = false;
+                try
+                {
+                    overflowLock.Enter(ref lockTaken);
+                    if (overflowCount < MaxRetained)
+                    {
+                        next = overflow;
+                        overflow = this;
+                        overflowCount++;
+                    }
+                    else
+                    {
+                        next = null;
+                    }
+                }
+                finally
+                {
+                    if (lockTaken)
+                        overflowLock.Exit(useMemoryBarrier: false);
+                }
+            }
+
+            call?.Invoke();
+        }
+    }
 
 #endif
 }

@@ -1,124 +1,61 @@
 using System;
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
-using System.Threading;
 using LuminThread.Interface;
-using LuminThread.Utility;
 
 namespace LuminThread.TaskSource.Promise;
 
-public unsafe struct WaitUntilValueChangedPromise<TTarget, TValue>
+// Watches a target value until it changes. The helper (target, monitor function, comparer and the
+// current value) hangs off LuminTaskState.State and only lives while the source is pending: it is
+// dropped together with the player-loop item.
+internal sealed class WaitUntilValueChangedState<TTarget, TValue>
 {
-    CancellationToken _cancellationToken;
-    bool _cancelImmediately;
+    internal readonly TTarget Target;
+    internal readonly Func<TTarget, TValue> MonitorFunction;
+    internal readonly IEqualityComparer<TValue> EqualityComparer;
+    internal TValue CurrentValue;
 
-    LuminTaskSourceCore<TValue>* _core;
-
-    internal LuminTaskSourceCore<TValue>* Source => _core;
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static WaitUntilValueChangedPromise<TTarget, TValue> Create(
+    internal WaitUntilValueChangedState(
         TTarget target,
         Func<TTarget, TValue> monitorFunction,
         IEqualityComparer<TValue> equalityComparer,
-        PlayerLoopTiming timing,
-        CancellationToken cancellationToken,
-        bool cancelImmediately,
-        out short token)
+        TValue currentValue)
     {
-        var core = LuminTaskSourceCore<TValue>.Create();
-
-        var waitPromise = new WaitUntilValueChangedPromise<TTarget, TValue>();
-        waitPromise._core = core;
-        waitPromise._cancellationToken = cancellationToken;
-        waitPromise._cancelImmediately = cancelImmediately;
-
-        token = core->Id;
-
-        var currentValue = monitorFunction(target);
-        var comparer = equalityComparer;
-
-        var stateTuple = StateTuple.Create((target, currentValue, comparer));
-
-        PlayerLoopHelper.AddAction(timing, new LuminTaskState(core, cancellationToken, monitorFunction, stateTuple), MoveNext, &MoveNext);
-
-        return waitPromise;
+        Target = target;
+        MonitorFunction = monitorFunction;
+        EqualityComparer = equalityComparer;
+        CurrentValue = currentValue;
     }
+}
 
-    public TValue GetResult(short token)
-    {
-        try
-        {
-            return LuminTaskSourceCore<TValue>.GetResultValue(_core, token);
-        }
-        finally
-        {
-            if (!(_cancelImmediately && _cancellationToken.IsCancellationRequested))
-            {
-                Dispose();
-            }
-        }
-    }
-
-    public LuminTaskStatus GetStatus(short token)
-    {
-        return LuminTaskSourceCore<TValue>.GetStatus(_core, token);
-    }
-
-    public LuminTaskStatus UnsafeGetStatus()
-    {
-        return LuminTaskSourceCore<TValue>.UnsafeGetStatus(_core);
-    }
-
-    public void OnCompleted(Action<object> continuation, object state, short token)
-    {
-        LuminTaskSourceCore<TValue>.OnCompleted(_core, continuation, state, token);
-    }
+internal static class WaitUntilValueChangedPromise<TTarget, TValue>
+{
+    internal static readonly MoveNext MoveNextAction = MoveNext;
 
     private static bool MoveNext(in LuminTaskState state)
     {
-        Func<TTarget, TValue> func = Unsafe.As<Func<TTarget, TValue>>(state.State);
-        StateTuple<(TTarget, TValue, IEqualityComparer<TValue>)> stateTuple =
-            Unsafe.As<StateTuple<(TTarget, TValue, IEqualityComparer<TValue>)>>(state.StateTuple);
+        var helper = (WaitUntilValueChangedState<TTarget, TValue>)state.State!;
 
         if (state.CancellationToken.IsCancellationRequested)
         {
-            LuminTaskSourceCore<TValue>.TrySetCanceled(state.Source);
-            LuminTaskSourceCore<TValue>.Dispose(state.Source);
-            stateTuple.Dispose();
+            LuminTaskCoreSource.TrySetCanceled(state.Handle, state.CancellationToken);
             return false;
         }
 
         try
         {
-            var nextValue = func(stateTuple.Item.Item1);
-            if (stateTuple.Item.Item3.Equals(stateTuple.Item.Item2, nextValue))
-            {
-                return true;
-            }
+            TValue next = helper.MonitorFunction(helper.Target);
 
-            LuminTaskSourceCore<TValue>.TrySetResult(state.Source, nextValue);
-            LuminTaskSourceCore<TValue>.Dispose(state.Source);
-            stateTuple.Dispose();
+            if (helper.EqualityComparer.Equals(helper.CurrentValue, next))
+                return true;
+
+            LuminTaskResultBridge.TrySetResult(state.Handle, in next);
             return false;
         }
         catch (Exception ex)
         {
-            LuminTaskSourceCore<TValue>.TrySetException(state.Source, ex);
-            LuminTaskSourceCore<TValue>.Dispose(state.Source);
-            stateTuple.Dispose();
+            LuminTaskCoreSource.TrySetException(state.Handle, ex);
             return false;
-        }
-    }
-
-    void Dispose()
-    {
-        _cancellationToken = default;
-        _cancelImmediately = default;
-
-        if (_core != null)
-        {
-            LuminTaskSourceCore<TValue>.Dispose(_core);
         }
     }
 }

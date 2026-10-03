@@ -95,7 +95,7 @@ internal unsafe class SingleConsumerUnboundedLuminChannel<T> : LuminChannel<T>, 
 {
     readonly Queue<T> items;
     readonly SingleConsumerUnboundedLuminChannelReader readerSource;
-    LuminTaskSourceCore<AsyncUnit>* completedTaskSource;
+    LuminTaskHandle completedTaskSource;
 
     Exception completionError;
     bool closed;
@@ -122,7 +122,7 @@ internal unsafe class SingleConsumerUnboundedLuminChannel<T> : LuminChannel<T>, 
         if (_isDisposed) return;
         _isDisposed = true;
 
-        LuminTaskSourceCore<AsyncUnit>* completionSource;
+        LuminTaskHandle completionSource;
         lock (items)
         {
 
@@ -140,12 +140,12 @@ internal unsafe class SingleConsumerUnboundedLuminChannel<T> : LuminChannel<T>, 
             }
 
             completionSource = completedTaskSource;
-            completedTaskSource = null;
+            completedTaskSource = 0;
             closed = true;
         }
 
-        if (completionSource != null)
-            LuminTaskSourceCore<AsyncUnit>.TrySetCanceled(completionSource);
+        if (completionSource != 0)
+            LuminTaskCoreSource.TrySetCanceled(completionSource);
 
         readerSource.CancelPendingWaiter();
     }
@@ -182,7 +182,7 @@ internal unsafe class SingleConsumerUnboundedLuminChannel<T> : LuminChannel<T>, 
         {
             bool waiting;
             bool completeNow;
-            LuminTaskSourceCore<AsyncUnit>* completionSource = null;
+            LuminTaskHandle completionSource = 0;
             lock (parent.items)
             {
                 if (parent.closed) return false;
@@ -194,18 +194,18 @@ internal unsafe class SingleConsumerUnboundedLuminChannel<T> : LuminChannel<T>, 
                 {
                     if (error == null)
                     {
-                        if (parent.completedTaskSource != null)
+                        if (parent.completedTaskSource != 0)
                         {
                             completionSource = parent.completedTaskSource;
-                            parent.completedTaskSource = null;
+                            parent.completedTaskSource = 0;
                         }
                     }
                     else
                     {
-                        if (parent.completedTaskSource != null)
+                        if (parent.completedTaskSource != 0)
                         {
                             completionSource = parent.completedTaskSource;
-                            parent.completedTaskSource = null;
+                            parent.completedTaskSource = 0;
                         }
                     }
 
@@ -214,12 +214,12 @@ internal unsafe class SingleConsumerUnboundedLuminChannel<T> : LuminChannel<T>, 
                 parent.completionError = error;
             }
 
-            if (completionSource != null)
+            if (completionSource != 0)
             {
                 if (error == null)
-                    LuminTaskSourceCore<AsyncUnit>.TrySetResult(completionSource);
+                    LuminTaskCoreSource.TrySetResult(completionSource);
                 else
-                    LuminTaskSourceCore<AsyncUnit>.TrySetException(completionSource, error);
+                    LuminTaskCoreSource.TrySetException(completionSource, error);
             }
 
             if (waiting && completeNow)
@@ -236,7 +236,7 @@ internal unsafe class SingleConsumerUnboundedLuminChannel<T> : LuminChannel<T>, 
 
         CancellationToken cancellationToken;
         CancellationTokenRegistration cancellationTokenRegistration;
-        LuminTaskSourceCore<bool>* core;
+        LuminTaskHandle core;
         internal bool isWaiting;
 
         public SingleConsumerUnboundedLuminChannelReader(SingleConsumerUnboundedLuminChannel<T> parent)
@@ -256,8 +256,8 @@ internal unsafe class SingleConsumerUnboundedLuminChannel<T> : LuminChannel<T>, 
             {
                 lock (parent.items)
                 {
-                    if (parent.completedTaskSource != null)
-                        return new LuminTask(LuminTaskSourceCore<AsyncUnit>.MethodTablePtr, parent.completedTaskSource, parent.completedTaskSource->Id);
+                    if (parent.completedTaskSource != 0)
+                        return new LuminTask(parent.completedTaskSource);
 
                     if (parent.closed)
                     {
@@ -268,15 +268,15 @@ internal unsafe class SingleConsumerUnboundedLuminChannel<T> : LuminChannel<T>, 
                             : LuminTask.FromException(parent.completionError);
                     }
 
-                    parent.completedTaskSource = LuminTaskSourceCore<AsyncUnit>.Create();
-                    return new LuminTask(LuminTaskSourceCore<AsyncUnit>.MethodTablePtr, parent.completedTaskSource, parent.completedTaskSource->Id);
+                    parent.completedTaskSource = LuminTask.RentSlot();
+                    return new LuminTask(parent.completedTaskSource);
                 }
             }
         }
 
         public override bool TryRead(out T item)
         {
-            LuminTaskSourceCore<AsyncUnit>* completionSource = null;
+            LuminTaskHandle completionSource = 0;
             lock (parent.items)
             {
                 if (parent.items.Count != 0)
@@ -287,18 +287,18 @@ internal unsafe class SingleConsumerUnboundedLuminChannel<T> : LuminChannel<T>, 
                     {
                         if (parent.completionError != null)
                         {
-                            if (parent.completedTaskSource != null)
+                            if (parent.completedTaskSource != 0)
                             {
                                 completionSource = parent.completedTaskSource;
-                                parent.completedTaskSource = null;
+                                parent.completedTaskSource = 0;
                             }
                         }
                         else
                         {
-                            if (parent.completedTaskSource != null)
+                            if (parent.completedTaskSource != 0)
                             {
                                 completionSource = parent.completedTaskSource;
-                                parent.completedTaskSource = null;
+                                parent.completedTaskSource = 0;
                             }
                         }
                     }
@@ -311,12 +311,12 @@ internal unsafe class SingleConsumerUnboundedLuminChannel<T> : LuminChannel<T>, 
             }
 
 
-            if (completionSource != null)
+            if (completionSource != 0)
             {
                 if (parent.completionError == null)
-                    LuminTaskSourceCore<AsyncUnit>.TrySetResult(completionSource);
+                    LuminTaskCoreSource.TrySetResult(completionSource);
                 else
-                    LuminTaskSourceCore<AsyncUnit>.TrySetException(completionSource, parent.completionError);
+                    LuminTaskCoreSource.TrySetException(completionSource, parent.completionError);
             }
 
             return true;
@@ -348,11 +348,11 @@ internal unsafe class SingleConsumerUnboundedLuminChannel<T> : LuminChannel<T>, 
                     }
                 }
 
-                if (core != null)
+                if (core != 0)
                     throw new InvalidOperationException("Only one pending WaitToReadAsync operation is allowed.");
 
-                core = LuminTaskSourceCore<bool>.Create();
-                var task = new LuminTask<bool>(LuminTaskSourceCore<bool>.MethodTablePtr, core, core->Id);
+                core = LuminTask.RentSlot();
+                var task = new LuminTask<bool>(core);
 
                 isWaiting = true;
 
@@ -360,7 +360,7 @@ internal unsafe class SingleConsumerUnboundedLuminChannel<T> : LuminChannel<T>, 
                 if (this.cancellationToken.CanBeCanceled)
                 {
                     var registration = this.cancellationToken.RegisterWithoutCaptureExecutionContext(CancellationCallbackDelegate, this);
-                    if (isWaiting && core != null)
+                    if (isWaiting && core != 0)
                         cancellationTokenRegistration = registration;
                     else
                         registration.Dispose();
@@ -390,15 +390,15 @@ internal unsafe class SingleConsumerUnboundedLuminChannel<T> : LuminChannel<T>, 
 
         private void CompletePendingWaiter(bool result, Exception error)
         {
-            LuminTaskSourceCore<bool>* source;
+            LuminTaskHandle source;
             CancellationToken token;
             lock (parent.items)
             {
-                if (!isWaiting || core == null)
+                if (!isWaiting || core == 0)
                     return;
 
                 source = core;
-                core = null;
+                core = 0;
                 isWaiting = false;
                 token = cancellationToken;
                 cancellationToken = default;
@@ -407,11 +407,11 @@ internal unsafe class SingleConsumerUnboundedLuminChannel<T> : LuminChannel<T>, 
             cancellationTokenRegistration.Release();
 
             if (error is OperationCanceledException)
-                LuminTaskSourceCore<bool>.TrySetCanceled(source, token);
+                LuminTaskCoreSource.TrySetCanceled(source, token);
             else if (error != null)
-                LuminTaskSourceCore<bool>.TrySetException(source, error);
+                LuminTaskCoreSource.TrySetException(source, error);
             else
-                LuminTaskSourceCore<bool>.TrySetResult(source, result);
+                LuminTaskResultBridge.TrySetResult(source, in result);
         }
 
         public override ILuminTaskAsyncEnumerable<T> ReadAllAsync(CancellationToken cancellationToken = default)
