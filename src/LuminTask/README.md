@@ -1,20 +1,48 @@
 # LuminTask
 
-LuminTask 是一个面向 .NET 的高性能异步任务库，为 C# 提供可直接用于 `async` / `await` 的 `LuminTask` 与 `LuminTask<T>` 类型。
+LuminTask 是一款面向 .NET 与 Unity 的高性能 async/await 库。用 `LuminTask` / `LuminTask<T>`（命名空间 `LuminThread`）替代 `Task` / `ValueTask`，`await`、`try/catch` 与 `CancellationToken` 用法完全不变，但异步热路径的开销被压到接近零。
 
-项目通过自定义异步方法构建器、任务源池和非托管任务状态存储，减少高频异步路径中的托管堆分配。
+它的设计初衷是同时解决移动端最关心的两件事：**包体**与**帧率稳定性**。泛型异步代码会为每个具体类型生成元数据与机器码，游戏里每一个 `async` 方法都会让 `global-metadata.dat` 与 `GameAssembly.dll` 变大——小游戏平台对首包体积极其敏感；而 `Task` 在异步路径上的每次分配最终都要由 GC 回收，移动端一次 GC 就是一次掉帧风险。LuminTask 围绕**极致性能、0 GC、更少的元数据、可控的缓存池内存驻留**设计，让中小型游戏项目直接受益。
 
-> 项目公开 API 的命名空间是 `LuminThread`，NuGet 包名称是 `LuminTask`。
+> 项目公开 API 的命名空间是 `LuminThread`，NuGet 包名称是 `LuminTask`。包内自带编译期契约分析器。
 
-## 主要特性
+## 📊 与 UniTask 的对比
 
-* 自定义 `LuminTask` 与 `LuminTask<T>` awaitable 类型
-* 支持同步完成、异常、取消、延迟和让出执行权
-* 支持 `WhenAll`、`WhenAny`、`WhenEach` 等组合操作
-* 支持 `Task`、`ValueTask` 与 `LuminTask` 互操作
-* 支持 `CancellationToken.WaitAsync()` 异步桥接
-* 提供异步锁、信号量、事件、倒计时和懒加载工具
-* 支持 .NET Standard 2.1、.NET 8、.NET 9 和 .NET 10
+对比对象为 UniTask 2.5.10。两臂使用同一份同构负载源码（仅机械替换库名），在同一台机器上以 IL2CPP + StandaloneWindows64 做 clean build，运行时数据交错运行 3 次取中位数。
+
+| 构建产物 | LuminTask | UniTask | 差异 |
+| --- | ---: | ---: | ---: |
+| `global-metadata.dat` | 2.75 MB | 4.64 MB | **−40.8%** |
+| `GameAssembly.dll` | 16.20 MB | 39.80 MB | **−59.3%** |
+| 随包总体积（22 个文件） | 70.75 MB | 96.27 MB | **−26.5%** |
+| clean build 耗时 | 52.0 s | 100.6 s | **−48.3%** |
+
+| 运行时 | LuminTask | UniTask | 差异 |
+| --- | ---: | ---: | ---: |
+| 进程保留内存 | 135.1 MB | 151.9 MB | **−11.0%** |
+| 进程已分配内存 | 53.87 MB | 61.00 MB | **−11.7%** |
+| 运行期净 GC 分配 | 3.39 MB | 4.66 MB | **−27.4%** |
+| 托管堆存活（full GC 后） | 991 KB | 991 KB | 持平 |
+| 负载 pipeline 耗时 | 1594.0 ms | 1674.4 ms | −4.8% |
+
+> 进程内存取自 `Profiler.GetTotalReservedMemoryLong` / `GetTotalAllocatedMemoryLong`；托管堆取自 `GC.GetTotalMemory(true)`。
+
+优势集中在静态产物规模与分配流量上；托管堆存量持平，因为 LuminTask 把每次操作的分配换成了有界的池化驻留，换来一条预热后零分配的热路径。
+
+## ✨ 主要特性
+
+* 0 GC 异步热路径：同步完成不分配，会挂起的异步方法在预热后也不再产生托管分配
+* 更少的泛型元数据与生成代码，显著缩小 IL2CPP 包体与构建耗时
+* 缓存池均有上限，内存驻留可控，不随负载峰值增长
+* 8 字节结构体任务值，不持有托管引用，拷贝与传递近乎免费
+* 子任务已完成的组合子直接同步返回，不创建对象
+* 随包提供契约分析器（`LUM1001`–`LUM1008`），漏消费 / 重复消费在编译期报错
+* 回调式 API 的零对象桥接：`LuminTaskSource` 句柄入口（`Rent` / `Create` / `ToTask` / `SetResult`）
+* 完整组合子：`WhenAll`（1–4 参数 / 数组 / `IEnumerable`）、`WhenAny`、`WhenEach`、元组并发、`ContinueWith`、`Timeout`、`AttachExternalCancellation`、`WaitAsync`、`Unwrap`、`Retry`
+* AOT / IL2CPP 友好，无反射与运行时代码生成
+* AsyncEx 异步同步原语：`AsyncLock`、`AsyncSemaphore`、`AsyncLazy`、异步事件等
+* DEBUG 构建会在进程退出时报告未被消费的任务及创建位置
+* 支持 `netstandard2.1`、`net8.0`、`net9.0`、`net10.0`
 
 ## 安装
 
@@ -22,7 +50,7 @@ LuminTask 是一个面向 .NET 的高性能异步任务库，为 C# 提供可直
 dotnet add package LuminTask
 ```
 
-契约分析器（Roslyn 源生成器）随包提供于 `analyzers/dotnet/cs`，安装后自动生效，无需额外引用。
+契约分析器随主包发布（包内 `analyzers/dotnet/cs/`），安装后自动生效，无需额外引用。Unity 项目需启用 .NET Standard 2.1 兼容级别。
 
 ## 快速开始
 
@@ -39,40 +67,38 @@ var result = await CalculateAsync();
 ```
 
 ```csharp
-using LuminThread.Utility;
+// 组合、取消与超时
+(int a, string b) = await LuminTask.WhenAll(TaskA(), TaskB());
+await task.Timeout(TimeSpan.FromSeconds(5));
+await task.AttachExternalCancellation(ct);
+await task.ConfigureAwait(false);
 
-LuminTask<int> task = new ValueTask<int>(42).AsLuminTask();
-await cancellationToken.WaitAsync(completeAsCanceled: true);
-await task.WaitAsync(TimeSpan.FromSeconds(5), cancellationToken);
+// 句柄入口：由回调驱动完成，不产生额外对象
+var task2 = LuminTaskSource.Create<int>(out var handle);
+LuminTaskSource.SetResult(handle, 42);
+await task2;
 ```
 
 ## 使用注意
 
-LuminTask 遵循类似 `ValueTask` 的单次消费约定：一个任务实例应被 `await` 或 `Forget()` 消费一次，不应重复等待同一个实例。
-任务槽位由 `LuminTaskBag` 管理，**没有 GC 兜底**，漏消费即泄漏；DEBUG 构建下 `LuminTaskLeakTracker` 会在进程退出时报告泄漏槽位及其创建栈。
+LuminTask 遵循类似 `ValueTask` 的单次消费约定：一个任务实例应被 `await` 或 `Forget()` 消费一次，不应重复等待同一个实例。任务源**没有 GC 兜底**，漏消费即泄漏；DEBUG 构建会在进程退出时报告未被消费的任务及其创建位置。
 
-契约分析器在编译期强制该约定：
+`LuminTask<T>.Result` 仅对同步完成的任务有效；可能异步挂起的任务必须 `await` 或 `GetAwaiter().GetResult()`。同时存活的任务源上限为 32767。
 
-| 规则 | 含义 |
+契约分析器在编译期强制该约定（`LuminTask.Contract` 分类）：
+
+| 规则 | 触发场景 |
 | --- | --- |
-| `LUM1001` | 任务从未被消费（或仅在部分路径上被消费） |
-| `LUM1002` | 任务被重复消费 |
-| `LUM1003` | 读取 `LuminTask<T>.Result`，但任务并非同步完成 |
-| `LUM1004` | 完成源从未被完成 |
+| `LUM1001` | 任务从未被消费，或只在部分路径上被消费 |
+| `LUM1002` | 任务被重复消费（含别名副本） |
+| `LUM1003` | 对非同步完成的任务读取 `.Result` |
+| `LUM1004` | `LuminTaskCompletionSource` 从未完成 |
 | `LUM1005` | 把任务赋给丢弃符 `_` |
 | `LUM1006` | 完成源在同一路径上被多次完成 |
-| `LUM1007` | 任务存放在字段中，逃逸出方法级生命周期跟踪 |
+| `LUM1007` | 任务存进字段，逃逸出方法级生命周期跟踪 |
 | `LUM1008` | `LuminTaskSource.Rent` / `Create` 租出的句柄从未被使用 |
 
-### 1.0.7 变更
-
-* `ConfigureAwait(bool)` 直接返回 `LuminTask` / `LuminTask<T>` 自身（捕获策略写在槽位里），原先公开的
-  `ConfiguredLuminTaskAwaitable[<T>]` / `ConfiguredLuminTaskAwaiter[<T>]` 已移除。
-  `await task.ConfigureAwait(false)` 的写法与语义不变，但每个 `T` 少两个泛型类型与一组 await 方法实例化。
-* 移除泛型 `ForgetBlock<T>`：`Forget<T>()` 复用非泛型块并经 `ConsumeVoid` 退出（结果本就被丢弃），
-  每个 `T` 少一个泛型类型与每线程 16 个保留对象。
-* `LuminTaskCold` 的冷侧存储改为 64 槽子块按需分配：每个被触达字段的驻留从 2,080 B 降到 592 B
-  （16 字节元素为 4,128 → 1,104 B）。
+`await`、`Forget()`、`GetAwaiter().GetResult()`、`ConfigureAwait()`、`Unwrap()`、组合子参数传递、`return` 转发、`yield return`、被 `await` 的 lambda 捕获都算合法消费，不会误报。
 
 ## 许可证
 
