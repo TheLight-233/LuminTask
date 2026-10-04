@@ -234,6 +234,82 @@ internal static class LuminTaskCoreSource
         return true;
     }
 
+    // ---------------------------------------------------------------- builder completion
+    //
+    // When an async method finishes, the builder has to do two things on the very same slot: hand its
+    // state machine box back to the box pool and publish the completion. Both read that slot, so they
+    // share one Resolve instead of one each - the previous shape walked the chunk table and
+    // re-validated the generation twice per completed method.
+    //
+    // The order is unchanged: the box goes back before the completion is published. That stays safe
+    // because the drain reads the continuation delegate, which is a field of the box that Return()
+    // never clears (Return only zeroes the state machine), so the delegate is intact even if another
+    // thread re-rents the box in between.
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static bool ClaimWithBoxReturn(ref LuminTaskItem item, LuminTaskCold cold, int index, uint generation)
+    {
+        (cold.BoxAt(index) as IStateMachineBox)?.Return();
+        return TryBeginCompletion(ref item, generation);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal static bool TrySetResultAndReturnBox(LuminTaskHandle handle)
+    {
+        ref var item = ref TryResolve(handle, out var cold, out int index);
+
+        if (Unsafe.IsNullRef(ref item))
+            return false;
+
+        if (!ClaimWithBoxReturn(ref item, cold, index, handle.Generation()))
+            return false;
+
+        PublishStatus(ref item, LuminTaskStatus.Succeeded);
+        Drain(ref item);
+
+        return true;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal static bool TrySetExceptionAndReturnBox(LuminTaskHandle handle, Exception exception)
+    {
+        LuminTaskExceptionHelper.ThrowArgumentNullException(exception, nameof(exception));
+
+        if (exception is OperationCanceledException canceled)
+            return TrySetCanceledAndReturnBox(handle, canceled.CancellationToken);
+
+        ref var item = ref TryResolve(handle, out var cold, out int index);
+
+        if (Unsafe.IsNullRef(ref item))
+            return false;
+
+        if (!ClaimWithBoxReturn(ref item, cold, index, handle.Generation()))
+            return false;
+
+        cold.SetException(index, ExceptionDispatchInfo.Capture(exception));
+        PublishStatus(ref item, LuminTaskStatus.Faulted);
+        Drain(ref item);
+
+        return true;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal static bool TrySetCanceledAndReturnBox(LuminTaskHandle handle, CancellationToken cancellationToken = default)
+    {
+        ref var item = ref TryResolve(handle, out var cold, out int index);
+
+        if (Unsafe.IsNullRef(ref item))
+            return false;
+
+        if (!ClaimWithBoxReturn(ref item, cold, index, handle.Generation()))
+            return false;
+
+        cold.SetCancellationToken(index, cancellationToken);
+        PublishStatus(ref item, LuminTaskStatus.Canceled);
+        Drain(ref item);
+
+        return true;
+    }
+
     // ---------------------------------------------------------------- awaitable side
 
     // ConfigureAwait(false/true) sets the capture policy before the continuation is registered. A
@@ -265,6 +341,16 @@ internal static class LuminTaskCoreSource
             return;
 
         cold.SetBox(index, box);
+    }
+
+    // First suspension: the builder has just rented this slot in the same call and no other thread
+    // knows the handle yet, so the chunk walk and generation check of TryResolve cannot fail and are
+    // skipped. Only the same-thread layout lookups remain.
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal static void SetBoxForOwnedSlot(LuminTaskHandle handle, IStateMachineBox box)
+    {
+        int id = (int)handle.SlotRaw() - 1;
+        LuminTaskBag.GetCold(id).SetBox(id & LuminTaskBag.CHUNK_MASK, box);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]

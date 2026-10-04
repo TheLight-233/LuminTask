@@ -17,6 +17,12 @@ namespace LuminThread.CompilerServices
         // second suspension reads the existing box back through the handle; when the handle is stale
         // (an abandoned task whose slot was already consumed) the box is rented anyway so the method
         // can keep running, and the collector reclaims it instead of the pool.
+        //
+        // The two branches park the box differently on purpose. A second suspension must validate the
+        // handle, because the task value was published after the first suspension and its consumer may
+        // have abandoned the task already. The first suspension rented the slot a few instructions
+        // earlier and no other thread has the handle yet, so it can address the cold side by id and
+        // skip the resolve entirely.
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static IStateMachineBox GetOrCreateBox<TStateMachine>(ref LuminTaskHandle handle, ref TStateMachine stateMachine)
             where TStateMachine : IAsyncStateMachine
@@ -27,31 +33,21 @@ namespace LuminThread.CompilerServices
 
                 if (existing != null)
                     return existing;
-            }
-            else
-            {
-                handle = LuminTask.RentSlot();
+
+                var replacement = StateMachineBox<TStateMachine>.Rent();
+                LuminTaskCoreSource.SetBox(handle, replacement);
+
+                // The copy is taken AFTER the handle is written, so the state machine in the box carries
+                // the handle (and, on a first suspension, the box itself) for its later resumes.
+                replacement.StateMachine = stateMachine;
+                return replacement;
             }
 
+            handle = LuminTask.RentSlot();
             var box = StateMachineBox<TStateMachine>.Rent();
-
-            LuminTaskCoreSource.SetBox(handle, box);
-
-            // The copy is taken AFTER the handle is written, so the state machine in the box carries
-            // the handle (and, on a first suspension, the box itself) for its later resumes.
+            LuminTaskCoreSource.SetBoxForOwnedSlot(handle, box);
             box.StateMachine = stateMachine;
-
             return box;
-        }
-
-        // Returns the box of a completed state machine to its pool and releases the slot's reference
-        // to it. Must be called before the completion is published: it zeroes the state machine that
-        // hosts the builder, so the caller has to keep everything it still needs (handle, result) in
-        // locals first.
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static void ReturnBox(LuminTaskHandle handle)
-        {
-            LuminTaskCoreSource.BoxAt(handle)?.Return();
         }
     }
 }

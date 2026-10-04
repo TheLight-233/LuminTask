@@ -156,9 +156,9 @@ public unsafe partial struct LuminTask : ICriticalNotifyCompletion
             return;
 
         // Read everything needed first: returning the box zeroes the state machine that hosts this
-        // builder, so nothing may be read off `this` afterwards.
-        LuminTaskBuilder.ReturnBox(handle);
-        LuminTaskCoreSource.TrySetResult(handle);
+        // builder, so nothing may be read off `this` afterwards. The box return and the completion
+        // share one slot resolve (see LuminTaskCoreSource.TrySetResultAndReturnBox).
+        LuminTaskCoreSource.TrySetResultAndReturnBox(handle);
     }
 
     [DebuggerHidden]
@@ -172,8 +172,7 @@ public unsafe partial struct LuminTask : ICriticalNotifyCompletion
         if (handle.IsNull())
             handle = _handle = RentSlot();
 
-        LuminTaskBuilder.ReturnBox(handle);
-        LuminTaskCoreSource.TrySetException(handle, exception);
+        LuminTaskCoreSource.TrySetExceptionAndReturnBox(handle, exception);
     }
 
     [DebuggerHidden]
@@ -337,9 +336,9 @@ public unsafe partial struct LuminTask<T> : ICriticalNotifyCompletion
         }
 
         // `result` is a parameter, so it survives returning the box (which zeroes the state machine
-        // that hosts this builder); the handle is captured before that as well.
-        LuminTaskBuilder.ReturnBox(handle);
-        LuminTaskResultBridge.TrySetResult(handle, in result);
+        // that hosts this builder); the handle is captured before that as well. The box return and
+        // the completion share one slot resolve.
+        LuminTaskResultBridge.TrySetResultAndReturnBox(handle, in result);
     }
 
     [DebuggerHidden]
@@ -351,8 +350,7 @@ public unsafe partial struct LuminTask<T> : ICriticalNotifyCompletion
         if (handle.IsNull())
             handle = _handle = LuminTask.RentSlot();
 
-        LuminTaskBuilder.ReturnBox(handle);
-        LuminTaskCoreSource.TrySetException(handle, exception);
+        LuminTaskCoreSource.TrySetExceptionAndReturnBox(handle, exception);
     }
 
     [DebuggerHidden]

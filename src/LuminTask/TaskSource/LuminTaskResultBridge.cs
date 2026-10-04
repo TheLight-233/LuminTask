@@ -1,5 +1,6 @@
 using System;
 using System.Runtime.CompilerServices;
+using LuminThread.CompilerServices;
 using LuminThread.Interface;
 using LuminThread.Utility;
 
@@ -45,11 +46,32 @@ internal static unsafe class LuminTaskResultBridge
         return true;
     }
 
+    // The async method builder's completion: hand the state machine box back to its pool and publish
+    // the result off a single slot resolve. See LuminTaskCoreSource.TrySetResultAndReturnBox for why
+    // returning the box before the completion is safe.
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal static bool TrySetResultAndReturnBox<T>(LuminTaskHandle handle, in T value)
+    {
+        ref var item = ref LuminTaskCoreSource.TryResolve(handle, out var cold, out int index);
+
+        if (Unsafe.IsNullRef(ref item))
+            return false;
+
+        (cold.BoxAt(index) as IStateMachineBox)?.Return();
+
+        if (!LuminTaskCoreSource.TryBeginCompletion(ref item, handle.Generation()))
+            return false;
+
+        Store(cold, index, in value);
+        LuminTaskCoreSource.PublishStatus(ref item, LuminTaskStatus.Succeeded);
+        LuminTaskCoreSource.Drain(ref item);
+
+        return true;
+    }
+
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal static void Store<T>(LuminTaskCold cold, int index, in T value)
     {
-        // RuntimeHelpers.IsReferenceOrContainsReferences and Unsafe.SizeOf are per-T intrinsics,
-        // so specialized code can fold these branches without a per-T metadata holder.
         if (RuntimeHelpers.IsReferenceOrContainsReferences<T>())
         {
             if (typeof(T).IsValueType)
