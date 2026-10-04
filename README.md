@@ -58,7 +58,7 @@ LuminTask 在早期设计和实现过程中学习、借鉴了 [UniTask](https://
 | `global-metadata.dat` | 2.66 MB | 4.86 MB | **−45.2%** |
 | `GameAssembly.dll` | 13.57 MB | 41.14 MB | **−67.0%** |
 | 随包总体积（22 个文件） | 68.03 MB | 97.81 MB | **−30.4%** |
-| clean build 耗时 | 50.0 s | 105.9 s | **−52.8%** |
+| clean build 耗时 | 47.3 s | 105.9 s | **−55.3%** |
 
 ### 运行时
 
