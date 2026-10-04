@@ -397,7 +397,13 @@ namespace LuminThread
             public static LuminTask Create(LuminTask task, CancellationToken cancellationToken)
             {
                 var handle = LuminTask.RentSlot();
-                var state = new LuminTaskState(handle, cancellationToken, task);
+
+                // The wrapped task travels as its handle, not as a boxed LuminTask: the state slot is an
+                // object, so storing the struct put a 24-byte box on every pending WaitAsync. The handle is
+                // 8 bytes of payload in a pooled container instead, and one pool serves every T (see also
+                // TimeoutPromise, which carries its inner handle the same way).
+                var stateTuple = StateTuple.Create(task._handle);
+                var state = new LuminTaskState(handle, cancellationToken, stateTuple);
 
                 PlayerLoopHelper.AddAction(PlayerLoopTiming.DotNet, state, MoveNextAction);
                 return new LuminTask(handle);
@@ -405,26 +411,31 @@ namespace LuminThread
 
             public static bool MoveNext(in LuminTaskState state)
             {
-                var innerTask = (LuminTask)state.State!;
+                var stateTuple = Unsafe.As<StateTuple<LuminTaskHandle>>(state.State!);
+                if (stateTuple == null) return false;
+
+                var innerHandle = stateTuple.Item;
 
                 if (state.CancellationToken.IsCancellationRequested)
                 {
-                    Drain(innerTask);
+                    Drain(innerHandle);
                     LuminTaskCoreSource.TrySetCanceled(state.Handle, state.CancellationToken);
+                    stateTuple.Dispose();
                     return false;
                 }
 
-                if (innerTask.Status != LuminTaskStatus.Pending)
+                if (LuminTaskCoreSource.GetStatus(innerHandle) != LuminTaskStatus.Pending)
                 {
                     try
                     {
-                        innerTask.GetAwaiter().GetResult();
+                        LuminTaskSource.ToTask(innerHandle).GetAwaiter().GetResult();
                         LuminTaskCoreSource.TrySetResult(state.Handle);
                     }
                     catch (Exception ex)
                     {
                         TrySetExceptionOrCanceled(state.Handle, ex);
                     }
+                    stateTuple.Dispose();
                     return false;
                 }
 
@@ -440,7 +451,11 @@ namespace LuminThread
             public static LuminTask<T> Create(LuminTask<T> task, CancellationToken cancellationToken)
             {
                 var handle = LuminTask.RentSlot();
-                var state = new LuminTaskState(handle, cancellationToken, task);
+
+                // Same as the non-generic promise: the inner task is a handle, so this promise adds no
+                // per-T container pool of its own - both share StatePool<LuminTaskHandle>.
+                var stateTuple = StateTuple.Create(task._handle);
+                var state = new LuminTaskState(handle, cancellationToken, stateTuple);
 
                 PlayerLoopHelper.AddAction(PlayerLoopTiming.DotNet, state, MoveNextAction);
                 return new LuminTask<T>(handle);
@@ -448,26 +463,31 @@ namespace LuminThread
 
             public static bool MoveNext(in LuminTaskState state)
             {
-                var innerTask = (LuminTask<T>)state.State!;
+                var stateTuple = Unsafe.As<StateTuple<LuminTaskHandle>>(state.State!);
+                if (stateTuple == null) return false;
+
+                var innerHandle = stateTuple.Item;
 
                 if (state.CancellationToken.IsCancellationRequested)
                 {
-                    Drain(innerTask);
+                    Drain(innerHandle);
                     LuminTaskCoreSource.TrySetCanceled(state.Handle, state.CancellationToken);
+                    stateTuple.Dispose();
                     return false;
                 }
 
-                if (innerTask.Status != LuminTaskStatus.Pending)
+                if (LuminTaskCoreSource.GetStatus(innerHandle) != LuminTaskStatus.Pending)
                 {
                     try
                     {
-                        var result = innerTask.GetAwaiter().GetResult();
+                        var result = LuminTaskSource.ToTask<T>(innerHandle).GetAwaiter().GetResult();
                         LuminTaskResultBridge.TrySetResult(state.Handle, in result);
                     }
                     catch (Exception ex)
                     {
                         TrySetExceptionOrCanceled(state.Handle, ex);
                     }
+                    stateTuple.Dispose();
                     return false;
                 }
 
