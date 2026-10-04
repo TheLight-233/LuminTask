@@ -1,4 +1,4 @@
-#if UNITY_2018_4 || UNITY_2019_4_OR_NEWER
+﻿#if UNITY_2018_4 || UNITY_2019_4_OR_NEWER
 
 using System;
 using System.Runtime.CompilerServices;
@@ -73,10 +73,8 @@ namespace LuminThread.Unity
                 // The handler removes itself when Unity raises it. A field written here would not be
                 // visible to the resumed GetResult: this awaiter is a struct, and the builder copies the
                 // state machine - and with it the awaiter - into its box before OnCompleted runs.
-                var operation = _asyncOperation;
-                Action<AsyncOperation> handler = null;
-                handler = _ => { operation.completed -= handler; continuation(); };
-                operation.completed += handler;
+                // Routed through the shared control block: see RegisterAwaiterContinuation.
+                AsyncOperationPromise.RegisterAwaiterContinuation(_asyncOperation, continuation);
             }
         }
     }
