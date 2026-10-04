@@ -47,6 +47,7 @@ public static class BasicTests
         await r.Run("Forget surfaces exceptions through the handler", ForgetExceptionHandler);
         await r.Run("ContinueWith chains a continuation", ContinueWithChains);
         await r.Run("Timeout aborts a hanging task", TimeoutAborts);
+        await r.Run("Timeout passes through a pending inner value", TimeoutPassesThroughPendingValues);
         await r.Run("WaitUntil and WaitUntilCanceled complete", WaitUntilCompletes);
         await r.Run("SuppressCancellationThrow preserves values", SuppressCancellationThrowPreserves);
         await r.Run("Create and DelayFrame", CreateAndDelayFrame);
@@ -432,6 +433,33 @@ public static class BasicTests
 
         var completed = await LuminTask.FromResult(42).Timeout(TimeSpan.FromMilliseconds(20));
         Assert.Equal(42, completed);
+    }
+
+    private readonly record struct TimeoutPayload(int Number, string Text);
+
+    // Timeout 的 promise 只保存内层任务的句柄，结果要由泛型方法从句柄重建任务后读出。
+    // 已完成的输入走快路径不进 promise，所以这里必须用“挂起后才完成”的输入。
+    private static async LuminTask TimeoutPassesThroughPendingValues()
+    {
+        // 注意：本测试方法自身会在 await 挂起的 promise 时挂起，因此它自己也占一个槽位，
+        // 不能在方法内断言 live 归零；槽位核算由 LeakTests 与退出时的全局检查负责。
+        var voidSource = new LuminTaskCompletionSource();
+        var timedVoid = voidSource.Task.Timeout(TimeSpan.FromSeconds(5));
+        voidSource.TrySetResult();
+        await timedVoid;
+
+        var textSource = new LuminTaskCompletionSource<string>();
+        var timedText = textSource.Task.Timeout(TimeSpan.FromSeconds(5));
+        textSource.TrySetResult("payload");
+        var text = await timedText;
+        Assert.True(text == "payload", "Timeout lost the inner string value");
+
+        // 含引用结构体走池化结果容器，同样经句柄重建读出。
+        var payloadSource = new LuminTaskCompletionSource<TimeoutPayload>();
+        var timedPayload = payloadSource.Task.Timeout(TimeSpan.FromSeconds(5));
+        payloadSource.TrySetResult(new TimeoutPayload(7, "struct"));
+        var payload = await timedPayload;
+        Assert.True(payload.Number == 7 && payload.Text == "struct", "Timeout lost the inner struct value");
     }
 
     private static async LuminTask WaitUntilCompletes()

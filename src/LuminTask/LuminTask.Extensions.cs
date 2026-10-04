@@ -227,6 +227,10 @@ namespace LuminThread
             }, awaiter);
         }
 
+        // 句柄版排空：进入 Timeout 的内层任务已确认 Pending，只保留句柄即可在放弃等待后
+        // 仍然消费掉它，让它的槽位（与池化结果容器）在完成时被释放。
+        private static void Drain(LuminTaskHandle handle) => Drain(LuminTaskSource.ToTask(handle));
+
         public static Task<T> AsTask<T>(this LuminTask<T> task)
         {
             var awaiter = task.GetAwaiter();
@@ -569,7 +573,7 @@ namespace LuminThread
                     TimeoutTimestampTicks = ToStopwatchTicks(timeout)
                 };
 
-                var stateTuple = StateTuple.Create((task, stateData));
+                var stateTuple = StateTuple.Create((task._handle, stateData));
                 var state = new LuminTaskState(handle, cancellationToken, stateTuple);
 
                 PlayerLoopHelper.AddAction(PlayerLoopTiming.DotNet, state, MoveNextAction);
@@ -578,15 +582,15 @@ namespace LuminThread
 
             public static bool MoveNext(in LuminTaskState state)
             {
-                var stateTuple = Unsafe.As<StateTuple<(LuminTask, TimeoutStateData)>>(state.State!);
+                var stateTuple = Unsafe.As<StateTuple<(LuminTaskHandle, TimeoutStateData)>>(state.State!);
                 if (stateTuple == null) return false;
 
-                var innerTask = stateTuple.Item.Item1;
+                var innerHandle = stateTuple.Item.Item1;
                 var data = stateTuple.Item.Item2;
 
                 if (state.CancellationToken.IsCancellationRequested)
                 {
-                    Drain(innerTask);
+                    Drain(innerHandle);
                     LuminTaskCoreSource.TrySetCanceled(state.Handle, state.CancellationToken);
                     stateTuple.Dispose();
                     return false;
@@ -594,17 +598,17 @@ namespace LuminThread
 
                 if (Stopwatch.GetTimestamp() - data.StartTimestamp >= data.TimeoutTimestampTicks)
                 {
-                    Drain(innerTask);
+                    Drain(innerHandle);
                     LuminTaskCoreSource.TrySetException(state.Handle, new TimeoutException());
                     stateTuple.Dispose();
                     return false;
                 }
 
-                if (innerTask.Status != LuminTaskStatus.Pending)
+                if (LuminTaskCoreSource.GetStatus(innerHandle) != LuminTaskStatus.Pending)
                 {
                     try
                     {
-                        innerTask.GetAwaiter().GetResult();
+                        LuminTaskSource.ToTask(innerHandle).GetAwaiter().GetResult();
                         LuminTaskCoreSource.TrySetResult(state.Handle);
                     }
                     catch (Exception ex)
@@ -634,7 +638,7 @@ namespace LuminThread
                     TimeoutTimestampTicks = ToStopwatchTicks(timeout)
                 };
 
-                var stateTuple = StateTuple.Create((task, stateData));
+                var stateTuple = StateTuple.Create((task._handle, stateData));
                 var state = new LuminTaskState(handle, cancellationToken, stateTuple);
 
                 PlayerLoopHelper.AddAction(PlayerLoopTiming.DotNet, state, MoveNextAction);
@@ -643,15 +647,15 @@ namespace LuminThread
 
             public static bool MoveNext(in LuminTaskState state)
             {
-                var stateTuple = Unsafe.As<StateTuple<(LuminTask<T>, TimeoutStateData)>>(state.State!);
+                var stateTuple = Unsafe.As<StateTuple<(LuminTaskHandle, TimeoutStateData)>>(state.State!);
                 if (stateTuple == null) return false;
 
-                var innerTask = stateTuple.Item.Item1;
+                var innerHandle = stateTuple.Item.Item1;
                 var data = stateTuple.Item.Item2;
 
                 if (state.CancellationToken.IsCancellationRequested)
                 {
-                    Drain(innerTask);
+                    Drain(innerHandle);
                     LuminTaskCoreSource.TrySetCanceled(state.Handle, state.CancellationToken);
                     stateTuple.Dispose();
                     return false;
@@ -659,17 +663,18 @@ namespace LuminThread
 
                 if (Stopwatch.GetTimestamp() - data.StartTimestamp >= data.TimeoutTimestampTicks)
                 {
-                    Drain(innerTask);
+                    Drain(innerHandle);
                     LuminTaskCoreSource.TrySetException(state.Handle, new TimeoutException());
                     stateTuple.Dispose();
                     return false;
                 }
 
-                if (innerTask.Status != LuminTaskStatus.Pending)
+                if (LuminTaskCoreSource.GetStatus(innerHandle) != LuminTaskStatus.Pending)
                 {
                     try
                     {
-                        var result = innerTask.GetAwaiter().GetResult();
+                        // 结果仍由泛型方法从槽位读出，句柄状态里不保存 T，也不装箱。
+                        var result = LuminTaskSource.ToTask<T>(innerHandle).GetAwaiter().GetResult();
                         LuminTaskResultBridge.TrySetResult(state.Handle, in result);
                     }
                     catch (Exception ex)
