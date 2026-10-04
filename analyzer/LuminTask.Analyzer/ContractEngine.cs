@@ -848,7 +848,7 @@ namespace LuminThread.Analyzer
                         return produces ? TaskKind.NewTask : TaskKind.NotTask;
                     }
 
-                    // Non-consuming member on a tracked task (Status / Id / GetAwaiter / Equals ...).
+                    // Non-consuming member on a tracked task (Status / GetId / GetAwaiter / Equals ...).
                     AnalyzeInvocationArguments(arguments, methodSymbol, env, assignedInLoop);
                     return TaskKind.NotTask;
                 }

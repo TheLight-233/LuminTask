@@ -92,7 +92,7 @@ public static class Program
         Run("Create 消费任务但句柄未引用 → LUM1008", "var t = LuminTaskSource.Create<int>(out var h); await t;", new[] { "LUM1008" });
         Run("循环内声明后未消费 → LUM1001", "while (c) { var x = GetTask(); }", new[] { "LUM1001" });
         Run("if/else 双消费同一分支 → LUM1002", "var t = GetTask(); if (a) { await t; await t; } else { await t; }", new[] { "LUM1002" });
-        Run("lambda 仅捕获未消费 → LUM1001", "var t = GetTask(); Action f = () => Console.WriteLine(t.Id); f();", new[] { "LUM1001" });
+        Run("lambda 仅捕获未消费 → LUM1001", "var t = GetTask(); Action f = () => Console.WriteLine(t.GetId()); f();", new[] { "LUM1001" });
         Run("跨方法吞掉任务 → LUM1001", "var t = GetTask(); Drop(t);", new[] { "LUM1001" });
         Run("default/null 任务句柄 → 干净", "LuminTask t = default; LuminTask? n = null;", Array.Empty<string>());
 
@@ -203,7 +203,7 @@ public static class Program
             bool c = true;
             bool a = true;
 
-            async LuminTask<int> M()
+            async LuminTask<LuminTask<int>> M()
             {
                 var t = GetTask();
         {BODY}
