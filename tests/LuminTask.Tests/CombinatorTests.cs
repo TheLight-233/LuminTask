@@ -16,6 +16,10 @@ public static class CombinatorTests
         await r.Run("WhenAny (two) returns a valid winner", WhenAnyTwo);
         await r.Run("WhenAny (tuple) reports the winner and its value", WhenAnyTuple);
         await r.Run("WhenAny (array) returns a valid index", WhenAnyArray);
+        await r.Run("WhenAll (array) drains suspended children after a fault", WhenAllArrayFaultDrains);
+        await r.Run("WhenAny (array) releases the losers' slots", WhenAnyArrayLosersReleased);
+        await r.Run("array combinators serve mixed result types from one state", ArrayCombinatorsMixedResults);
+        await r.Run("WhenAll (array) mixes inline and suspended children", WhenAllArrayMixedCompletion);
         await r.Run("Delay honours cancellation", DelayCancellation);
     }
 
@@ -94,6 +98,120 @@ public static class CombinatorTests
         var tasks = new[] { LuminTask.Delay(80), LuminTask.Delay(20), LuminTask.Delay(120) };
         var idx = await LuminTask.WhenAny(tasks);
         Assert.True(idx is >= 0 and < 3, $"index out of range: {idx}");
+    }
+
+    private readonly record struct Payload(int Number, string Text);
+
+    // 数组组合子的挂起孩子现在只把 (owner, 句柄, 下标) 交给共享续体状态，由 owner 从句柄重建
+    // 带 T 的任务。以下四项分别回归：失败后其余孩子仍会被消费、WhenAny 失败者被 Forget、
+    // 不同结果类型共用同一个池仍然正确、内联完成与挂起完成混在一起时计数正确。
+    private static async LuminTask WhenAllArrayFaultDrains()
+    {
+        var liveBefore = LuminTaskBag.GetLiveCount();
+
+        var sources = new LuminTaskCompletionSource[4];
+        var tasks = new LuminTask[4];
+        for (var i = 0; i < sources.Length; i++)
+        {
+            sources[i] = new LuminTaskCompletionSource();
+            tasks[i] = sources[i].Task;
+        }
+
+        var whenAll = LuminTask.WhenAll(tasks);
+
+        sources[1].TrySetException(new InvalidOperationException("boom"));
+        await Assert.ThrowsAsync<InvalidOperationException>(async () => await whenAll);
+
+        // 迟到的孩子仍然由自己的续体消费，槽位不能留在池里。
+        sources[0].TrySetResult();
+        sources[2].TrySetResult();
+        sources[3].TrySetResult();
+
+        Assert.Equal(liveBefore, LuminTaskBag.GetLiveCount(), "faulted array WhenAll left slots rented");
+    }
+
+    private static async LuminTask WhenAnyArrayLosersReleased()
+    {
+        var liveBefore = LuminTaskBag.GetLiveCount();
+
+        var sources = new LuminTaskCompletionSource<int>[3];
+        var tasks = new LuminTask<int>[3];
+        for (var i = 0; i < sources.Length; i++)
+        {
+            sources[i] = new LuminTaskCompletionSource<int>();
+            tasks[i] = sources[i].Task;
+        }
+
+        var whenAny = LuminTask.WhenAny(tasks);
+
+        sources[0].TrySetResult(42);
+        var (index, value) = await whenAny;
+        Assert.Equal(0, index);
+        Assert.Equal(42, value);
+
+        sources[1].TrySetResult(1);
+        sources[2].TrySetResult(2);
+
+        Assert.Equal(liveBefore, LuminTaskBag.GetLiveCount(), "WhenAny losers were not released");
+    }
+
+    private static async LuminTask ArrayCombinatorsMixedResults()
+    {
+        var liveBefore = LuminTaskBag.GetLiveCount();
+
+        for (var round = 0; round < 100; round++)
+        {
+            var i0 = new LuminTaskCompletionSource<int>();
+            var i1 = new LuminTaskCompletionSource<int>();
+            var intAll = LuminTask.WhenAll(new[] { i0.Task, i1.Task });
+            i1.TrySetResult(20);
+            i0.TrySetResult(22);
+            var ints = await intAll;
+            Assert.Equal(42, ints[0] + ints[1], "int results crossed");
+
+            var s0 = new LuminTaskCompletionSource<string>();
+            var s1 = new LuminTaskCompletionSource<string>();
+            var strAll = LuminTask.WhenAll(new[] { s0.Task, s1.Task });
+            s0.TrySetResult("a");
+            s1.TrySetResult("b");
+            var strs = await strAll;
+            Assert.True(strs[0] == "a" && strs[1] == "b", "string results crossed");
+
+            // 含引用结构体走池化结果容器，与上面的 T 共用同一份续体状态。
+            var r0 = new LuminTaskCompletionSource<Payload>();
+            var r1 = new LuminTaskCompletionSource<Payload>();
+            var payloadAll = LuminTask.WhenAll(new[] { r0.Task, r1.Task });
+            r1.TrySetResult(new Payload(2, "b"));
+            r0.TrySetResult(new Payload(1, "a"));
+            var payloads = await payloadAll;
+            Assert.True(payloads[0].Number == 1 && payloads[1].Number == 2, "struct results crossed");
+
+            // WhenAny 数组同样按 T 复用：赢家带值，失败者被消费。
+            var w0 = new LuminTaskCompletionSource<string>();
+            var w1 = new LuminTaskCompletionSource<string>();
+            var anyTask = LuminTask.WhenAny(new[] { w0.Task, w1.Task });
+            w1.TrySetResult("winner");
+            var (winnerIndex, winnerValue) = await anyTask;
+            w0.TrySetResult("loser");
+            Assert.Equal(1, winnerIndex);
+            Assert.True(winnerValue == "winner", "string winner value crossed");
+        }
+
+        Assert.Equal(liveBefore, LuminTaskBag.GetLiveCount(), "mixed result types leaked slots");
+    }
+
+    private static async LuminTask WhenAllArrayMixedCompletion()
+    {
+        var liveBefore = LuminTaskBag.GetLiveCount();
+
+        var src = new LuminTaskCompletionSource();
+        var tasks = new[] { LuminTask.CompletedTask(), src.Task, LuminTask.CompletedTask() };
+
+        var whenAll = LuminTask.WhenAll(tasks);
+        src.TrySetResult();
+        await whenAll;
+
+        Assert.Equal(liveBefore, LuminTaskBag.GetLiveCount(), "inline and suspended mix leaked slots");
     }
 
     private static LuminTask DelayCancellation()

@@ -2,6 +2,7 @@ using System;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using LuminThread.TaskSource;
+using LuminThread.Utility;
 
 namespace LuminThread.TaskSource.Promise;
 
@@ -36,9 +37,47 @@ internal abstract class CombinerNode
         Handle = LuminTask.RentSlot();
     }
 
-    // 仅固定元数组合子覆写；数组版组合子走各自的元组状态，不经过共享委托。
+    // 仅固定元数组合子覆写（数组版组合子走下面句柄状态的那条共享路径）。
     // 默认实现直接抛出，误接线时立刻暴露，而不是静默丢失一次完成。
     internal virtual void OnChildCompleted(int index) => throw new NotSupportedException();
+
+    // 数组组合子（WhenAll/WhenAny 的任务数组版）共用的挂起孩子状态：owner、孩子的句柄、下标。
+    //
+    // 挂起中的孩子必定拥有槽位（句柄 0 表示同步完成），所以句柄就能唯一确定它，结果类型 T
+    // 完全不进入这个状态。于是每种 T、两个组合子、泛型与非泛型版本都共用同一个 StatePool 与
+    // 同一个非泛型委托，而不是 N 种结果类型各带两份元组状态与各自的 lambda 缓存类型。
+    internal readonly struct ChildState
+    {
+        internal readonly CombinerNode Owner;
+        internal readonly LuminTaskHandle Handle;
+        internal readonly int Index;
+
+        internal ChildState(CombinerNode owner, LuminTaskHandle handle, int index)
+        {
+            Owner = owner;
+            Handle = handle;
+            Index = index;
+        }
+    }
+
+    private static readonly Action<object> ChildStateContinuationAction = OnChildStateCompleted;
+
+    // 状态是池化的 StateTuple<ChildState>；所有者必须自己消费孩子，完成权竞争与失败处理
+    // 仍留在各自的 TryInvokeContinuation 里。
+    internal static Action<object> ChildStateContinuation => ChildStateContinuationAction;
+
+    private static void OnChildStateCompleted(object state)
+    {
+        var tuple = (StateTuple<ChildState>)state;
+        var child = tuple.Item;
+        tuple.Dispose();
+
+        child.Owner.OnSuspendedChildCompleted(child.Handle, child.Index);
+    }
+
+    // 由数组组合子覆写：从孩子句柄重建带 T 的任务并消费它（含抢不到完成权时的 Forget）。
+    internal virtual void OnSuspendedChildCompleted(LuminTaskHandle handle, int index)
+        => throw new NotSupportedException();
 
     // Increments the child counter, returning true when the caller is the one that brought the
     // count up to expected (i.e. it owns the aggregate publication).

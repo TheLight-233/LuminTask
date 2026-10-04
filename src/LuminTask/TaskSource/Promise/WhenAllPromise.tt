@@ -170,18 +170,17 @@ internal sealed class WhenAllPromise<T> : CombinerNode
             }
             else
             {
-                awaiter.SourceOnCompleted(static state =>
-                {
-                    var tuple = (StateTuple<(WhenAllPromise<T>, LuminTask<T>, int)>)state;
-                    var owner = tuple.Item.Item1;
-                    var awaiter = tuple.Item.Item2;
-                    var index = tuple.Item.Item3;
-                    tuple.Dispose();
-                    TryInvokeContinuation(owner, awaiter, index);
-                }, StateTuple.Create((this, awaiter, index)));
+                // 挂起中的孩子必定拥有槽位（句柄 0 等于同步完成），所以句柄就能唯一确定它，
+                // 结果类型 T 不进入回调状态：与其它 T、其它数组组合子共用同一个池与同一个
+                // 非泛型委托，而不是每种 T 各有一份元组状态与 lambda 缓存。
+                awaiter.SourceOnCompleted(ChildStateContinuation,
+                    StateTuple.Create(new ChildState(this, awaiter._handle, index)));
             }
         }
     }
+
+    internal override void OnSuspendedChildCompleted(LuminTaskHandle handle, int index)
+        => TryInvokeContinuation(this, LuminTaskSource.ToTask<T>(handle), index);
 
     static void TryInvokeContinuation(WhenAllPromise<T> self, in LuminTask<T> awaiter, int index)
     {
@@ -226,17 +225,15 @@ internal sealed class WhenAllPromise : CombinerNode
             }
             else
             {
-                awaiter.SourceOnCompleted(static state =>
-                {
-                    var tuple = (StateTuple<(WhenAllPromise, LuminTask)>)state;
-                    var owner = tuple.Item.Item1;
-                    var awaiter = tuple.Item.Item2;
-                    tuple.Dispose();
-                    TryInvokeContinuation(owner, awaiter);
-                }, StateTuple.Create(this, awaiter));
+                // 无结果槽位，下标不使用；仍然走同一份共享状态，保持只有一个池。
+                awaiter.SourceOnCompleted(ChildStateContinuation,
+                    StateTuple.Create(new ChildState(this, awaiter._handle, 0)));
             }
         }
     }
+
+    internal override void OnSuspendedChildCompleted(LuminTaskHandle handle, int index)
+        => TryInvokeContinuation(this, LuminTaskSource.ToTask(handle));
 
     static void TryInvokeContinuation(WhenAllPromise self, in LuminTask awaiter)
     {
