@@ -267,7 +267,8 @@ public readonly struct SwitchToAwaitable : ICriticalNotifyCompletion
                 try
                 {
                     overflowLock.Enter(ref lockTaken);
-                    if (overflowCount < MaxRetained)
+                    // 快槽已经占用 1 个名额，溢出链只能补到上限 - 1。
+                    if (overflowCount < MaxRetained - 1)
                     {
                         next = overflow;
                         overflow = this;

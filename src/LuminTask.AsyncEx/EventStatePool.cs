@@ -23,6 +23,7 @@ namespace LuminThread.AsyncEx
     {
         // 固定上限，替代原来的 Math.Max(8, ProcessorCount * 2)：非常量初始化器会带来 per-TState 的
         // 静态构造；16 与原实现在 8 核机器上的取值一致。
+        // 快槽计入上限（与 StatePool 一致）：链条最多 MaxSize - 1，真实驻留恰好 MaxSize 个。
         private const int MaxSize = 16;
 
         private static TState?[]? _items;
@@ -62,7 +63,8 @@ namespace LuminThread.AsyncEx
 
             lock (Gate)
             {
-                if (_count >= MaxSize)
+                // 快槽已经占用 1 个名额，链条只能补到 MaxSize - 1。
+                if (_count >= MaxSize - 1)
                     return;
 
                 var items = _items;

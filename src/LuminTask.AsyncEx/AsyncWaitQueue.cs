@@ -94,7 +94,8 @@ internal static class WaitNodePool
 
         lock (s_poolGate)
         {
-            if (s_poolCount >= s_maxRetainedNodes)
+            // 快槽已经占用 1 个名额，链条只能补到上限 - 1，真实驻留才等于声明的上限。
+            if (s_poolCount >= s_maxRetainedNodes - 1)
                 return;
 
             node.Next = s_poolHead;
@@ -111,18 +112,20 @@ internal static class WaitNodePool
 }
 
 /// <summary>
-/// 侵入式等待队列：等待节点自身携带 Next/Previous 链接，队列与对象池零容器分配。
-/// 节点的 Next 指针同时充当池的空闲链；批量完成在锁外执行。等待节点与空闲链均非泛型共享。
+/// 队列机制的非泛型部分：侵入式链、锁、取消注册与批量摘链都与 T 无关，只有"写回结果"需要 T，
+/// 因此它们留在下面的泛型适配层。泛型层继承本类，字段与行为仍只有一份实例，不新增 core 对象；
+/// 每个封闭 T 只需再生成出队/入队的类型化薄层（原先每 T 要复制整份队列实现约 1.2 KB IL）。
+/// 等待节点与空闲链本身已由 WaitNodePool 非泛型共享。
 /// </summary>
-internal sealed unsafe class DefaultAsyncWaitQueue<T> : IAsyncWaitQueue<T>, IWaitNodeOwner
+internal abstract class AsyncWaitQueueCore : IWaitNodeOwner
 {
     private WaitNode? _head;
     private WaitNode? _tail;
-    private readonly object _queueLock = new();
+    protected readonly object _queueLock = new();
 
     /// <summary>释放注册：优先非阻塞 Unregister；仅回调已在途时回退到阻塞的 Dispose 保证安全。</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static void ReleaseRegistration(WaitNode node)
+    protected static void ReleaseRegistration(WaitNode node)
     {
         if (!node.HasRegistration)
             return;
@@ -138,18 +141,7 @@ internal sealed unsafe class DefaultAsyncWaitQueue<T> : IAsyncWaitQueue<T>, IWai
             if (!node.IsQueued)
                 return;
 
-            if (node.Previous == null)
-                _head = node.Next;
-            else
-                node.Previous.Next = node.Next;
-
-            if (node.Next == null)
-                _tail = node.Previous;
-            else
-                node.Next.Previous = node.Previous;
-
-            node.Next = node.Previous = null;
-            node.IsQueued = false;
+            UnlinkLocked(node);
         }
 
         LuminTaskCoreSource.TrySetCanceled(node.Handle, node.CancellationToken);
@@ -167,7 +159,8 @@ internal sealed unsafe class DefaultAsyncWaitQueue<T> : IAsyncWaitQueue<T>, IWai
         get { lock (_queueLock) return _head == null; }
     }
 
-    public LuminTask<T> Enqueue()
+    /// <summary>在锁内租用句柄与节点并追加到队尾，返回句柄供泛型层包装为任务。</summary>
+    protected LuminTaskHandle EnqueueCore()
     {
         lock (_queueLock)
         {
@@ -177,181 +170,28 @@ internal sealed unsafe class DefaultAsyncWaitQueue<T> : IAsyncWaitQueue<T>, IWai
             node.Handle = handle;
             node.IsQueued = true;
             AppendLocked(node);
-            return new LuminTask<T>(handle);
+            return handle;
         }
     }
 
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private void AppendLocked(WaitNode node)
-    {
-        if (_tail == null)
-        {
-            _head = _tail = node;
-        }
-        else
-        {
-            node.Previous = _tail;
-            _tail.Next = node;
-            _tail = node;
-        }
-    }
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private WaitNode? PopFrontLocked()
-    {
-        var node = _head;
-        if (node == null)
-            return null;
-
-        _head = node.Next;
-        if (_head == null)
-            _tail = null;
-        else
-            _head.Previous = null;
-
-        node.Next = node.Previous = null;
-        node.IsQueued = false;
-        return node;
-    }
-
-    /// <summary>锁内摘下整个队列，返回头节点；调用方在锁外逐个完成。</summary>
-    private WaitNode? DetachAllLocked()
-    {
-        var head = _head;
-        if (head == null)
-            return null;
-
-        for (var node = head; node != null; node = node.Next)
-            node.IsQueued = false;
-
-        _head = _tail = null;
-        return head;
-    }
-
-    public void Dequeue(T? result = default)
-    {
-        WaitNode? node;
-        lock (_queueLock)
-        {
-            node = PopFrontLocked();
-        }
-
-        if (node != null)
-            CompleteNode(node, result);
-    }
-
-    public bool TryDequeue(T? result = default)
-    {
-        WaitNode? node;
-        lock (_queueLock)
-        {
-            node = PopFrontLocked();
-        }
-
-        if (node == null)
-            return false;
-
-        CompleteNode(node, result);
-        return true;
-    }
-
-    public void DequeueAll(T? result = default)
-    {
-        WaitNode? head;
-        lock (_queueLock)
-        {
-            head = DetachAllLocked();
-        }
-
-        for (var node = head; node != null;)
-        {
-            var next = node.Next;
-            CompleteNode(node, result);
-            node = next;
-        }
-    }
-
-    public bool TryCancel(LuminTask task, CancellationToken cancellationToken)
-    {
-        WaitNode? node = null;
-        lock (_queueLock)
-        {
-            for (var current = _head; current != null; current = current.Next)
-            {
-                if (current.Handle != task._handle)
-                    continue;
-
-                if (current.Previous == null)
-                    _head = current.Next;
-                else
-                    current.Previous.Next = current.Next;
-
-                if (current.Next == null)
-                    _tail = current.Previous;
-                else
-                    current.Next.Previous = current.Previous;
-
-                current.Next = current.Previous = null;
-                current.IsQueued = false;
-                node = current;
-                break;
-            }
-        }
-
-        if (node == null)
-            return false;
-
-        ReleaseRegistration(node);
-        LuminTaskCoreSource.TrySetCanceled(node.Handle, cancellationToken);
-        WaitNodePool.Return(node);
-        return true;
-    }
-
-    public void CancelAll(CancellationToken cancellationToken)
-    {
-        WaitNode? head;
-        lock (_queueLock)
-        {
-            head = DetachAllLocked();
-        }
-
-        for (var node = head; node != null;)
-        {
-            var next = node.Next;
-            ReleaseRegistration(node);
-            LuminTaskCoreSource.TrySetCanceled(node.Handle, cancellationToken);
-            WaitNodePool.Return(node);
-            node = next;
-        }
-    }
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static void CompleteNode(WaitNode node, T? result)
-    {
-        ReleaseRegistration(node);
-        LuminTaskResultBridge.TrySetResult(node.Handle, in result);
-        WaitNodePool.Return(node);
-    }
-
-    public LuminTask<T> EnqueueWithCancellation(CancellationToken cancellationToken)
+    /// <summary>入队并（可选）登记取消。令牌已取消时返回 false，不租用任何槽位。</summary>
+    protected bool TryEnqueueWithCancellation(CancellationToken cancellationToken, out LuminTaskHandle handle)
     {
         if (cancellationToken.IsCancellationRequested)
         {
-            return LuminTask.FromCanceled<T>(cancellationToken);
+            handle = default;
+            return false;
         }
-
-        WaitNode node;
-        LuminTask<T> task;
 
         lock (_queueLock)
         {
-            var handle = LuminTask.RentSlot();
-            node = WaitNodePool.Rent();
+            var rented = LuminTask.RentSlot();
+            var node = WaitNodePool.Rent();
             node.Owner = this;
-            node.Handle = handle;
+            node.Handle = rented;
             node.IsQueued = true;
             AppendLocked(node);
-            task = new LuminTask<T>(handle);
+            handle = rented;
 
             if (cancellationToken.CanBeCanceled)
             {
@@ -372,7 +212,170 @@ internal sealed unsafe class DefaultAsyncWaitQueue<T> : IAsyncWaitQueue<T>, IWai
             }
         }
 
-        return task;
+        return true;
+    }
+
+    /// <summary>从队首摘下一个节点，未持有节点时为 null。</summary>
+    protected WaitNode? PopFrontNode()
+    {
+        lock (_queueLock)
+        {
+            var node = _head;
+            if (node == null)
+                return null;
+
+            _head = node.Next;
+            if (_head == null)
+                _tail = null;
+            else
+                _head.Previous = null;
+
+            node.Next = node.Previous = null;
+            node.IsQueued = false;
+            return node;
+        }
+    }
+
+    /// <summary>锁内摘下整个队列，返回头节点；调用方在锁外逐个完成。</summary>
+    protected WaitNode? DetachAllNodes()
+    {
+        lock (_queueLock)
+        {
+            var head = _head;
+            if (head == null)
+                return null;
+
+            for (var node = head; node != null; node = node.Next)
+                node.IsQueued = false;
+
+            _head = _tail = null;
+            return head;
+        }
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private void AppendLocked(WaitNode node)
+    {
+        if (_tail == null)
+        {
+            _head = _tail = node;
+        }
+        else
+        {
+            node.Previous = _tail;
+            _tail.Next = node;
+            _tail = node;
+        }
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private void UnlinkLocked(WaitNode node)
+    {
+        if (node.Previous == null)
+            _head = node.Next;
+        else
+            node.Previous.Next = node.Next;
+
+        if (node.Next == null)
+            _tail = node.Previous;
+        else
+            node.Next.Previous = node.Previous;
+
+        node.Next = node.Previous = null;
+        node.IsQueued = false;
+    }
+
+    public bool TryCancel(LuminTask task, CancellationToken cancellationToken)
+    {
+        WaitNode? node = null;
+        lock (_queueLock)
+        {
+            for (var current = _head; current != null; current = current.Next)
+            {
+                if (current.Handle != task._handle)
+                    continue;
+
+                UnlinkLocked(current);
+                node = current;
+                break;
+            }
+        }
+
+        if (node == null)
+            return false;
+
+        ReleaseRegistration(node);
+        LuminTaskCoreSource.TrySetCanceled(node.Handle, cancellationToken);
+        WaitNodePool.Return(node);
+        return true;
+    }
+
+    public void CancelAll(CancellationToken cancellationToken)
+    {
+        var head = DetachAllNodes();
+
+        for (var node = head; node != null;)
+        {
+            var next = node.Next;
+            ReleaseRegistration(node);
+            LuminTaskCoreSource.TrySetCanceled(node.Handle, cancellationToken);
+            WaitNodePool.Return(node);
+            node = next;
+        }
+    }
+}
+
+/// <summary>
+/// 泛型适配层：只负责"用 T 写回结果"和把句柄包装成 LuminTask&lt;T&gt;。
+/// 队列机制全部继承自非泛型基类，故每个封闭 T 的实例化体量大幅下降。
+/// </summary>
+internal sealed class DefaultAsyncWaitQueue<T> : AsyncWaitQueueCore, IAsyncWaitQueue<T>
+{
+    public LuminTask<T> Enqueue()
+    {
+        return new LuminTask<T>(EnqueueCore());
+    }
+
+    public LuminTask<T> EnqueueWithCancellation(CancellationToken cancellationToken)
+    {
+        return TryEnqueueWithCancellation(cancellationToken, out var handle)
+            ? new LuminTask<T>(handle)
+            : LuminTask.FromCanceled<T>(cancellationToken);
+    }
+
+    public void Dequeue(T? result = default)
+    {
+        var node = PopFrontNode();
+        if (node != null)
+            CompleteNode(node, result);
+    }
+
+    public bool TryDequeue(T? result = default)
+    {
+        var node = PopFrontNode();
+        if (node == null)
+            return false;
+
+        CompleteNode(node, result);
+        return true;
+    }
+
+    public void DequeueAll(T? result = default)
+    {
+        for (var node = DetachAllNodes(); node != null;)
+        {
+            var next = node.Next;
+            CompleteNode(node, result);
+            node = next;
+        }
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static void CompleteNode(WaitNode node, T? result)
+    {
+        ReleaseRegistration(node);
+        LuminTaskResultBridge.TrySetResult(node.Handle, in result);
+        WaitNodePool.Return(node);
     }
 }
 

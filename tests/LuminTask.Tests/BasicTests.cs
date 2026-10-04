@@ -408,8 +408,6 @@ public static class BasicTests
     // task back instead of awaiting it (only the Func<LuminTask<T>> shape awaits).
     private static async LuminTask RunFamilyOverloads()
     {
-        var callerThreadId = Environment.CurrentManagedThreadId;
-
         object captured = null;
         await LuminTask.Run(state => captured = state, "payload");
         Assert.Equal("payload", (string)captured);
@@ -433,9 +431,15 @@ public static class BasicTests
         Assert.Equal(6, await LuminTask.Run<int>((object state) => LuminTask.FromResult((int)state), 6));
         Assert.Equal(3, await LuminTask.Run<string, int>(text => LuminTask.FromResult(text.Length), "abc"));
 
+        // The caller's own thread is not a reliable reference after earlier awaits in this test: the body
+        // can already sit on a pool thread, and switching to the pool is free to resume on it. Assert
+        // the documented guarantee instead - the delegate runs on a thread-pool thread.
         var offThread = false;
-        await LuminTask.Run(() => offThread = Environment.CurrentManagedThreadId != callerThreadId, configureAwait: false);
-        Assert.True(offThread, "Run(Action, configureAwait: false) still runs off-thread");
+        await LuminTask.Run(() =>
+        {
+            offThread = Thread.CurrentThread.IsThreadPoolThread;
+        }, configureAwait: false);
+        Assert.True(offThread, "Run(Action, configureAwait: false) runs on a pool thread");
 
         await Assert.ThrowsAsync<InvalidOperationException>(
             () => LuminTask.Run(state => throw new InvalidOperationException("state-boom"), new object()));
@@ -447,13 +451,17 @@ public static class BasicTests
     {
         var context = new RecordingSynchronizationContext();
         var previous = SynchronizationContext.Current;
-        SynchronizationContext.SetSynchronizationContext(context);
         try
         {
+            // A SynchronizationContext is per-thread and this test resumes on whatever thread the
+            // previous await landed on, so the context is installed again right before each call -
+            // that thread is the one Run captures from.
+            SynchronizationContext.SetSynchronizationContext(context);
             var before = context.PostCount;
             await LuminTask.Run(() => { }, configureAwait: false);
             var withoutRestore = context.PostCount - before;
 
+            SynchronizationContext.SetSynchronizationContext(context);
             before = context.PostCount;
             await LuminTask.Run(() => { }, configureAwait: true);
             var withRestore = context.PostCount - before;
@@ -469,10 +477,8 @@ public static class BasicTests
 
     private static async LuminTask RunOnThreadPoolOverloads()
     {
-        var callerThreadId = Environment.CurrentManagedThreadId;
-
         var ran = false;
-        await LuminTask.RunOnThreadPool(() => ran = Environment.CurrentManagedThreadId != callerThreadId);
+        await LuminTask.RunOnThreadPool(() => ran = Thread.CurrentThread.IsThreadPoolThread);
         Assert.True(ran, "RunOnThreadPool(Action) runs on a pool thread");
 
         object captured = null;
