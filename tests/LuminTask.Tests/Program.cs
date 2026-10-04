@@ -17,7 +17,7 @@ public static class Program
 #if DEBUG
         Console.WriteLine("Build      : DEBUG  (leak tracker active — LiveCount is meaningful)");
 #else
-        Console.WriteLine("Build      : RELEASE (leak tracker compiled out — LiveCount always 0)");
+        Console.WriteLine("Build      : RELEASE (Bag live count remains active)");
 #endif
         Console.WriteLine($"Runtime    : {RuntimeInformation.FrameworkDescription}");
         Console.WriteLine($"Processors : {Environment.ProcessorCount}");
@@ -25,6 +25,10 @@ public static class Program
         Console.WriteLine();
 
         var r = new TestRunner();
+
+        Console.WriteLine("[ResultStorage]");
+        await ResultStorageTests.RunAll(r);
+        Console.WriteLine();
         
         Console.WriteLine("[Basic]");
         await BasicTests.RunAll(r);
@@ -59,14 +63,15 @@ public static class Program
                 Console.WriteLine("   - " + f);
         }
 
-        // Give any fire-and-forget continuations a beat to drain before the final leak snapshot.
+        // Let asynchronous cleanup drain before the final leak snapshot.
         await Task.Delay(100);
 
-        var live = LuminTaskLeakTracker.LiveCount;
+        var live = LuminTaskBag.GetLiveCount();
+        var tracked = LuminTaskLeakTracker.LiveCount;
         Console.WriteLine($"Outstanding LuminTask sources at exit: {live}");
-        if (live > 0)
+        if (live > 0 || tracked > 0)
         {
-            Console.WriteLine("(In DEBUG these are real leaks — stacks below. In RELEASE this is always 0.)");
+            Console.WriteLine($"DEBUG tracker outstanding: {tracked}");
             LuminTaskLeakTracker.DumpLeaks();
         }
         Console.WriteLine("==============================================================");
@@ -74,6 +79,6 @@ public static class Program
         Console.WriteLine(LuminTaskBag.GetAvailableCount());
         
 
-        return r.Failed == 0 ? 0 : 1;
+        return r.Failed == 0 && live == 0 && tracked == 0 ? 0 : 1;
     }
 }

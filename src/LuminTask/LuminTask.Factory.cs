@@ -16,8 +16,6 @@ public unsafe partial struct LuminTask
         short id = LuminTaskBag.GetId();
         ref var item = ref LuminTaskBag.GetItem(id);
 
-        item.Reset();
-
         LuminTaskHandle handle = LuminTaskHandleBits.Create(id, item.Generation);
 
         LuminTaskLeakTracker.OnRent(handle); // DEBUG-only; compiled out in Release

@@ -1,7 +1,5 @@
 using System;
 using System.Runtime.CompilerServices;
-using System.Runtime.ExceptionServices;
-using System.Threading;
 using LuminThread.Interface;
 using LuminThread.Utility;
 
@@ -14,8 +12,8 @@ namespace LuminThread.TaskSource;
 // loop-driven source) and the consumer is LuminTask<T>.GetResult.
 //
 // Three storage kinds, chosen from per-T compile-time intrinsics so the JIT (and IL2CPP) folds the
-// branches away. GC safety is never a mode switch, and no path allocates managed memory on the hot
-// path:
+// branches away where specialization permits. GC safety is never a mode switch; warmed storage
+// and containers avoid managed allocation while their bounded capacities suffice:
 //
 //   reference type            -> the chunk's Ref array (plain reference assignment)
 //   ref-containing value type -> a pooled StateTuple<T> in the chunk's Ref array. The container's
@@ -23,9 +21,8 @@ namespace LuminThread.TaskSource;
 //                                that is why a pooled container is required rather than an `object`
 //                                slot. The pool is the shared StatePool<T>, so this path adds no new
 //                                pool of its own.
-//   unmanaged value type      -> a MemoryHelper block sized exactly Unsafe.SizeOf<T>(). Nothing is
-//                                reserved in advance, and the block is freed when the slot is
-//                                consumed, so there is no per-slot resident footprint.
+//   unmanaged value type      -> pointer-sized inline entry, or a lazy 16-byte entry; larger values
+//                                use a MemoryHelper block freed when the slot is consumed.
 internal static unsafe class LuminTaskResultBridge
 {
     // ---------------------------------------------------------------- write side
@@ -52,8 +49,7 @@ internal static unsafe class LuminTaskResultBridge
     internal static void Store<T>(LuminTaskCold cold, int index, in T value)
     {
         // RuntimeHelpers.IsReferenceOrContainsReferences and Unsafe.SizeOf are per-T intrinsics,
-        // so every branch below folds away at JIT (and IL2CPP) time and no per-T metadata holder
-        // is needed.
+        // so specialized code can fold these branches without a per-T metadata holder.
         if (RuntimeHelpers.IsReferenceOrContainsReferences<T>())
         {
             if (typeof(T).IsValueType)
@@ -73,8 +69,23 @@ internal static unsafe class LuminTaskResultBridge
             return;
         }
 
-        // Unmanaged: allocate exactly what the value needs and remember the pointer. The block is
-        // freed by LuminTaskCoreSource.Return when the slot is consumed.
+        if (Unsafe.SizeOf<T>() <= IntPtr.Size)
+        {
+            nint inline = 0;
+            UnsafeMemory.Write(&inline, in value);
+            cold.SetInlinePayload(index, inline);
+            return;
+        }
+
+        if (Unsafe.SizeOf<T>() <= 16)
+        {
+            // Managed byrefs stay visible to the GC, and CopyBlock also supports 32-bit IL2CPP.
+            Unsafe.CopyBlock(ref cold.WidePayloadForWrite(index),
+                ref Unsafe.As<T, byte>(ref Unsafe.AsRef(in value)), (uint)Unsafe.SizeOf<T>());
+            return;
+        }
+
+        // Large unmanaged results are freed by Return when the slot is consumed.
         void* payload = MemoryHelper.Alloc((nuint)Unsafe.SizeOf<T>());
         UnsafeMemory.Write(payload, in value);
         cold.SetPayload(index, (nint)payload);
@@ -99,39 +110,14 @@ internal static unsafe class LuminTaskResultBridge
     // recycles the slot and a faulted or canceled task must not strand it.
     internal static T Get<T>(LuminTaskHandle handle)
     {
-        ref var item = ref LuminTaskCoreSource.Resolve(handle, out var cold, out int index);
+        ref var item = ref LuminTaskCoreSource.ResolveForResult(handle, out var cold, out int index);
 
-        switch (item.Status)
-        {
-            case LuminTaskStatus.Succeeded:
-            {
-                T result = Read<T>(cold, index);
-                LuminTaskCoreSource.Return(handle);
-                return result;
-            }
-
-            case LuminTaskStatus.Faulted:
-            {
-                var exception = (ExceptionDispatchInfo?)cold.ExceptionAt(index);
-                LuminTaskCoreSource.Return(handle);
-                exception?.Throw();
-                LuminTaskExceptionHelper.ThrowInvalidError();
-                break;
-            }
-
-            case LuminTaskStatus.Canceled:
-            {
-                CancellationToken cancellationToken = cold.CancellationTokenAt(index);
-                LuminTaskCoreSource.Return(handle);
-                throw new OperationCanceledException(cancellationToken);
-            }
-
-            default:
-                LuminTaskExceptionHelper.ThrowNotCompleted();
-                break;
-        }
-
-        throw new InvalidOperationException("Unreachable code");
+        var status = item.Status;
+        if (status != LuminTaskStatus.Succeeded)
+            LuminTaskCoreSource.ThrowForResult(handle, ref item, cold, index, status);
+        T result = Read<T>(cold, index);
+        LuminTaskCoreSource.Return(handle, ref item, cold, index);
+        return result;
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -140,7 +126,7 @@ internal static unsafe class LuminTaskResultBridge
         if (RuntimeHelpers.IsReferenceOrContainsReferences<T>())
         {
             var cell = cold.RefAt(index);
-            if (LuminTask<T>.IsValueType)
+            if (typeof(T).IsValueType)
             {
                 return ((StateTuple<T>)cell!).Item;
             }
@@ -148,6 +134,19 @@ internal static unsafe class LuminTaskResultBridge
             return (T)cell!;
         }
         
+        if (Unsafe.SizeOf<T>() <= IntPtr.Size)
+        {
+            nint payload = cold.PayloadAt(index);
+            return UnsafeMemory.Read<T>(&payload);
+        }
+
+        if (Unsafe.SizeOf<T>() <= 16)
+        {
+            T result = default!;
+            Unsafe.CopyBlock(ref Unsafe.As<T, byte>(ref result), ref cold.WidePayloadAt(index), (uint)Unsafe.SizeOf<T>());
+            return result;
+        }
+
         return UnsafeMemory.Read<T>((void*)cold.PayloadAt(index));
     }
 }

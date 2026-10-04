@@ -419,8 +419,16 @@ public static class BasicTests
     private static async LuminTask TimeoutAborts()
     {
         using var never = new CancellationTokenSource();
-        await Assert.ThrowsAsync<TimeoutException>(() =>
-            LuminTask.Never(never.Token).Timeout(TimeSpan.FromMilliseconds(20)));
+        try
+        {
+            await Assert.ThrowsAsync<TimeoutException>(() =>
+                LuminTask.Never(never.Token).Timeout(TimeSpan.FromMilliseconds(20)));
+        }
+        finally
+        {
+            // Timeout stops waiting; the source still needs to finish so it can be consumed.
+            never.Cancel();
+        }
 
         var completed = await LuminTask.FromResult(42).Timeout(TimeSpan.FromMilliseconds(20));
         Assert.Equal(42, completed);

@@ -66,7 +66,7 @@ public static class StatePool<T>
 {
     // Cap on how many containers a single closed T keeps warm. Without it the overflow chain grows to
     // whatever peak the process reached and never shrinks, which is exactly the resident memory the
-    // pool is supposed to bound. One fast slot plus this many overflow entries is the retained set.
+    // pool is supposed to bound. The cap includes the fast slot and the overflow entries.
     private const int MaxRetained = 32;
 
     private static StateTuple<T>? _fastItem;
@@ -121,7 +121,7 @@ public static class StatePool<T>
 
             // Past the cap the container is simply dropped: it costs one GC, once, and keeps the
             // pool's retained size bounded instead of tracking the high-water mark forever.
-            if (_overflowCount >= MaxRetained)
+            if (_overflowCount >= MaxRetained - 1)
                 return;
 
             tuple.Next = _overflow;

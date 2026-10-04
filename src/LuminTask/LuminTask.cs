@@ -67,16 +67,7 @@ public unsafe partial struct LuminTask : ICriticalNotifyCompletion
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public readonly void OnCompleted(Action continuation)
-    {
-        if (_handle.IsNull())
-        {
-            continuation();
-        }
-        else
-        {
-            LuminTaskCoreSource.OnCompleted(_handle, static s => ((Action)s)(), continuation);
-        }
-    }
+        => LuminTaskCoreSource.OnCompleted(_handle, continuation);
 
     [DebuggerHidden]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -219,8 +210,6 @@ public unsafe partial struct LuminTask<T> : ICriticalNotifyCompletion
     // writes it with SetResult(T) so a method that never suspends carries its value inline.
     internal T? _result;
 
-    internal static readonly bool IsValueType = typeof(T).IsValueType;
-
     public readonly T? Result => _handle.IsNull()
         ? _result
         : throw new InvalidOperationException(
@@ -265,16 +254,7 @@ public unsafe partial struct LuminTask<T> : ICriticalNotifyCompletion
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public readonly void OnCompleted(Action continuation)
-    {
-        if (_handle.IsNull())
-        {
-            continuation();
-        }
-        else
-        {
-            LuminTaskCoreSource.OnCompleted(_handle, static s => ((Action)s)(), continuation);
-        }
-    }
+        => LuminTaskCoreSource.OnCompleted(_handle, continuation);
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public readonly void UnsafeOnCompleted(Action continuation) => OnCompleted(continuation);

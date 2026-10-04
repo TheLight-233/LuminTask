@@ -34,6 +34,9 @@ namespace LuminThread.TaskSource;
 internal static class LuminTaskCoreSource
 {
     private static readonly Action<object> CompletedSentinelAction = SentinelInvoked;
+    private static readonly Action<object> ActionContinuation = InvokeAction;
+
+    private static void InvokeAction(object state) => ((Action)state)();
 
     [MethodImpl(MethodImplOptions.NoInlining)]
     private static void SentinelInvoked(object state) => LuminTaskExceptionHelper.ThrowSentinelInvoked();
@@ -69,6 +72,15 @@ internal static class LuminTaskCoreSource
         cold = LuminTaskBag.GetCold(id);
         index = id & LuminTaskBag.CHUNK_MASK;
 
+        return ref item;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal static ref LuminTaskItem ResolveForResult(LuminTaskHandle handle, out LuminTaskCold cold, out int index)
+    {
+        ref var item = ref Resolve(handle, out cold, out index);
+        if (!ReferenceEquals(Volatile.Read(ref item.Continuation), CompletedSentinelAction))
+            LuminTaskExceptionHelper.ThrowNotCompleted();
         return ref item;
     }
 
@@ -137,21 +149,9 @@ internal static class LuminTaskCoreSource
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal static bool TryBeginCompletion(ref LuminTaskItem item, uint generation)
     {
-        long observed = Volatile.Read(ref item.SyncState);
-
-        while (true)
-        {
-            if ((uint)((ulong)observed >> GenerationShift) != generation)
-                return false;
-
-            if ((observed & ClaimFlag) != 0)
-                return false;
-
-            if (Interlocked.CompareExchange(ref item.SyncState, observed | ClaimFlag, observed) == observed)
-                return true;
-
-            observed = Volatile.Read(ref item.SyncState);
-        }
+        // An open item contains only its generation. Any other state is already claimed or stale.
+        long expected = (long)generation << GenerationShift;
+        return Interlocked.CompareExchange(ref item.SyncState, expected | ClaimFlag, expected) == expected;
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -275,6 +275,13 @@ internal static class LuminTaskCoreSource
         return Unsafe.IsNullRef(ref item) ? null : cold.BoxAt(index) as IStateMachineBox;
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal static void OnCompleted(LuminTaskHandle handle, Action continuation)
+    {
+        if (handle.IsNull()) continuation();
+        else OnCompleted(handle, ActionContinuation, continuation);
+    }
+
     internal static void OnCompleted(LuminTaskHandle handle, Action<object> continuation, object? state)
     {
         ref var item = ref Resolve(handle, out _, out _);
@@ -322,17 +329,25 @@ internal static class LuminTaskCoreSource
     // Consumes a void slot: throws for a failed task, releases on success.
     internal static void ConsumeVoid(LuminTaskHandle handle)
     {
-        ref var item = ref Resolve(handle, out var cold, out int index);
+        ref var item = ref ResolveForResult(handle, out var cold, out int index);
+        var status = item.Status;
+        if (status != LuminTaskStatus.Succeeded)
+            ThrowForResult(handle, ref item, cold, index, status);
 
-        switch (item.Status)
+        Return(handle, ref item, cold, index);
+    }
+
+    // Keep exception machinery out of every Get<T> AOT instantiation and off the success path.
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    internal static void ThrowForResult(LuminTaskHandle handle, ref LuminTaskItem item,
+        LuminTaskCold cold, int index, LuminTaskStatus status)
+    {
+        switch (status)
         {
-            case LuminTaskStatus.Succeeded:
-                break;
-
             case LuminTaskStatus.Faulted:
             {
                 var exception = (ExceptionDispatchInfo?)cold.ExceptionAt(index);
-                Return(handle);
+                Return(handle, ref item, cold, index);
                 exception?.Throw();
                 LuminTaskExceptionHelper.ThrowInvalidError();
                 break;
@@ -341,7 +356,7 @@ internal static class LuminTaskCoreSource
             case LuminTaskStatus.Canceled:
             {
                 CancellationToken cancellationToken = cold.CancellationTokenAt(index);
-                Return(handle);
+                Return(handle, ref item, cold, index);
                 throw new OperationCanceledException(cancellationToken);
             }
 
@@ -350,7 +365,6 @@ internal static class LuminTaskCoreSource
                 break;
         }
 
-        Return(handle);
     }
 
     // Releases the slot without observing the outcome. Exceptions are dropped by design - this is
@@ -362,7 +376,12 @@ internal static class LuminTaskCoreSource
     internal static void Return(LuminTaskHandle handle)
     {
         ref var item = ref Resolve(handle, out var cold, out int index);
+        Return(handle, ref item, cold, index);
+    }
 
+    // Consumers already resolved and validated this item while reading its outcome.
+    internal static void Return(LuminTaskHandle handle, ref LuminTaskItem item, LuminTaskCold cold, int index)
+    {
         // 1-3) Release everything the cold side holds for this slot: the pending cancellation
         //    registration (Release is non-blocking and safe even when the caller is the cancellation
         //    callback itself), the unmanaged block carrying an unmanaged result or a loop-driven
@@ -377,13 +396,21 @@ internal static class LuminTaskCoreSource
         item.Continuation = null;
         item.State = null;
         item.CapturedContext = null;
+        item.ContinueOnCapturedContext = false;
 
         uint generation = item.Generation;
 
-        if (generation < uint.MaxValue)
+        // The final generation is a tombstone, never handed to a caller. Even the last issued
+        // handle becomes stale when consumed, without wrapping into an earlier generation.
+        if (generation < uint.MaxValue - 1)
         {
-            item.Generation = generation + 1;
+            Volatile.Write(ref item.SyncState, (long)(generation + 1) << GenerationShift);
             LuminTaskBag.ResetId(item.Id);
+        }
+        else
+        {
+            item.Generation = uint.MaxValue;
+            LuminTaskBag.RetireId();
         }
 
         LuminTaskLeakTracker.OnReturn(handle); // DEBUG-only; compiled out in Release

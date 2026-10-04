@@ -27,9 +27,8 @@ public static class LuminTaskBag
     //                       slot's position inside its chunk. A page only pays for the arrays it
     //                       actually used, and no scan of the hot side ever pulls them in.
     //
-    // The result bytes and the per-frame scratch live in two byte arenas (LuminTaskCold.ResultArena
-    // / LoopArena) rather than inside the item: reserving 64 + 16 bytes in every slot made the item
-    // about four times larger than the fields that are actually on the fast path.
+    // Payload blocks hold pointer-sized inline results or pointers to larger results and loop
+    // scratch. They are allocated on demand instead of reserving a full result buffer per item.
     //
     // ID ALLOCATION (perf-critical): a freed id is recycled through a lock-free Treiber stack, so
     // both GetId and ResetId are O(1) regardless of how many slots are live. The stack reuses the
@@ -61,20 +60,20 @@ public static class LuminTaskBag
     private static readonly object _expandLock = new object();
 
     // Lock-free id allocator state.
-    //  _freeStack : packed Treiber-stack head = ((long)version << 32) | (uint)(topId + 1).
-    //               The low half is 0 when the stack is empty; the high half is an ABA version tag.
+    //  _freeStack : version(32) | live(16) | (topId + 1)(16).
+    //               The low 16 bits are 0 when empty. live=65535 exclusively owns idle trimming.
+    //               Pop/push and lifetime accounting share one CAS; the ABA tag stays 32 bits.
     //               A `long` field cannot be declared `volatile` in C#, so it is only ever touched
     //               through Interlocked / Volatile.Read.
-    //  _freeNextChunks : the free-list link of each slot, held as one int[CHUNK_SIZE] per chunk and
-    //               allocated together with the chunk. A flat int[MAX_SLOTS] would reserve ~128 KB
-    //               up front for a pool that normally never leaves its first chunk (256 slots), so
-    //               the cost now tracks the chunks that actually exist.
+    //  _freeNextChunks : next id + 1 (0 means end), two bytes per backed item.
     //  _highWater : the next id that has never been allocated; advanced only when the stack is empty.
-    //  _liveCount : number of currently-rented ids (diagnostics only).
-    private static readonly int[]?[] _freeNextChunks = new int[]?[MAX_CHUNKS];
+    private const long FreeIdMask = 0xFFFFL;
+    private const long LiveUnit = 1L << 16;
+    private const long LiveMask = 0xFFFF0000L;
+    private static readonly ushort[]?[] _freeNextChunks = new ushort[]?[MAX_CHUNKS];
     private static long _freeStack;
     private static int _highWater;
-    private static int _liveCount;
+    private static int _retiredCount;
 
     // Number of backed slots (always a multiple of CHUNK_SIZE). Volatile: published after the
     // backing chunk so a reader that sees an id < _capacity also sees its chunk.
@@ -111,7 +110,7 @@ public static class LuminTaskBag
     }
 
     /// <summary>
-    /// Returns the cold side (lazily allocated per-field arrays and the two byte arenas) of the
+    /// Returns the cold side (lazily allocated per-field arrays) of the
     /// chunk that owns the given slot id.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -126,7 +125,13 @@ public static class LuminTaskBag
         long head = Volatile.Read(ref _freeStack);
         while (true)
         {
-            int topPlus1 = (int)(uint)head;
+            if ((head & LiveMask) == LiveMask)
+            {
+                Thread.SpinWait(1);
+                head = Volatile.Read(ref _freeStack);
+                continue;
+            }
+            int topPlus1 = (int)(head & FreeIdMask);
             if (topPlus1 == 0)
             {
                 id = -1;
@@ -136,7 +141,7 @@ public static class LuminTaskBag
             int topId = topPlus1 - 1;
             int next = _freeNextChunks[topId >> CHUNK_BITS]![topId & CHUNK_MASK]; // link below the top
             uint version = (uint)(head >> 32);
-            long desired = ((long)(version + 1) << 32) | (uint)(next + 1);
+            long desired = ((long)(version + 1) << 32) | ((head & LiveMask) + LiveUnit) | (uint)next;
 
             long observed = Interlocked.CompareExchange(ref _freeStack, desired, head);
             if (observed == head)
@@ -151,22 +156,9 @@ public static class LuminTaskBag
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static short GetId()
     {
-        if (TryPopFreeId(out var recycled))
-        {
-            Interlocked.Increment(ref _liveCount);
-            return recycled;
-        }
-
-        // Stack empty: hand out a never-used id from the monotonic high-water mark.
-        int id = Interlocked.Increment(ref _highWater) - 1;
-        if (id >= MAX_SLOTS)
-            LuminTaskExceptionHelper.ThrowTaskItemExhausted();
-
-        if (id >= _capacity)
-            EnsureCapacity(id);
-
-        Interlocked.Increment(ref _liveCount);
-        return (short)id;
+        if (TryGetId(out short id)) return id;
+        LuminTaskExceptionHelper.ThrowTaskItemExhausted();
+        return -1;
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -174,23 +166,54 @@ public static class LuminTaskBag
     {
         if (TryPopFreeId(out id))
         {
-            Interlocked.Increment(ref _liveCount);
             return true;
         }
 
-        int abs = Interlocked.Increment(ref _highWater) - 1;
-        if (abs >= MAX_SLOTS)
+        return TryGetNewId(out id);
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static bool TryGetNewId(out short id)
+    {
+        int next = Volatile.Read(ref _highWater);
+        while (next < MAX_SLOTS)
         {
-            id = -1;
-            return false;
+            int observed = Interlocked.CompareExchange(ref _highWater, next + 1, next);
+            if (observed == next)
+            {
+                if (next >= _capacity) EnsureCapacity(next);
+                Enter();
+                id = (short)next;
+                return true;
+            }
+            next = observed;
         }
+        id = -1;
+        return false;
+    }
 
-        if (abs >= _capacity)
-            EnsureCapacity(abs);
-
-        Interlocked.Increment(ref _liveCount);
-        id = (short)abs;
-        return true;
+    // First-use ids have no free-list entry. Join their lifetime before touching cold fields;
+    // recycled ids already did so in the pop CAS.
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static void Enter()
+    {
+        long head = Volatile.Read(ref _freeStack);
+        while (true)
+        {
+            if ((head & LiveMask) != LiveMask)
+            {
+                uint version = (uint)(head >> 32);
+                long desired = ((long)(version + 1) << 32) | ((head & LiveMask) + LiveUnit) | (head & FreeIdMask);
+                long observed = Interlocked.CompareExchange(ref _freeStack, desired, head);
+                if (observed == head) return;
+                head = observed;
+            }
+            else
+            {
+                Thread.SpinWait(1);
+                head = Volatile.Read(ref _freeStack);
+            }
+        }
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -200,15 +223,15 @@ public static class LuminTaskBag
         long head = Volatile.Read(ref _freeStack);
         while (true)
         {
-            int topPlus1 = (int)(uint)head;
-            _freeNextChunks[id >> CHUNK_BITS]![id & CHUNK_MASK] = topPlus1 - 1; // link above the top
+            int topPlus1 = (int)(head & FreeIdMask);
+            _freeNextChunks[id >> CHUNK_BITS]![id & CHUNK_MASK] = (ushort)topPlus1;
             uint version = (uint)(head >> 32);
-            long desired = ((long)(version + 1) << 32) | (uint)(id + 1);
+            long desired = ((long)(version + 1) << 32) | ((head & LiveMask) - LiveUnit) | (uint)(id + 1);
 
             long observed = Interlocked.CompareExchange(ref _freeStack, desired, head);
             if (observed == head)
             {
-                if (Interlocked.Decrement(ref _liveCount) == 0)
+                if ((desired & LiveMask) == 0 && LuminTaskCold.AnyBlockCreated)
                 {
                     Volatile.Write(ref _idleSinceTimestamp, Environment.TickCount);
                     ArmColdTrim();
@@ -216,6 +239,29 @@ public static class LuminTaskBag
                 return;
             }
             head = observed;                             // contended: retry with the observed head
+        }
+    }
+
+    // Generation exhaustion permanently removes an item, but must still leave its live lifetime.
+    internal static void RetireId()
+    {
+        Interlocked.Increment(ref _retiredCount);
+        long head = Volatile.Read(ref _freeStack);
+        while (true)
+        {
+            uint version = (uint)(head >> 32);
+            long desired = ((long)(version + 1) << 32) | ((head & LiveMask) - LiveUnit) | (head & FreeIdMask);
+            long observed = Interlocked.CompareExchange(ref _freeStack, desired, head);
+            if (observed == head)
+            {
+                if ((desired & LiveMask) == 0 && LuminTaskCold.AnyBlockCreated)
+                {
+                    Volatile.Write(ref _idleSinceTimestamp, Environment.TickCount);
+                    ArmColdTrim();
+                }
+                return;
+            }
+            head = observed;
         }
     }
 
@@ -242,7 +288,8 @@ public static class LuminTaskBag
         Volatile.Write(ref _coldTrimArmed, 0);
 
         // 忙起来了：留给下一个静默窗口（每次静默转换都会重新挂）。
-        if (Volatile.Read(ref _liveCount) != 0) return;
+        long head = Volatile.Read(ref _freeStack);
+        if ((head & LiveMask) != 0) return;
 
         int idleFor = unchecked(Environment.TickCount - Volatile.Read(ref _idleSinceTimestamp));
         if (idleFor < IDLE_COLD_TRIM_MILLISECONDS)
@@ -253,9 +300,20 @@ public static class LuminTaskBag
             return;
         }
 
-        int chunkCount = _capacity >> CHUNK_BITS;
-        for (int chunk = 0; chunk < chunkCount; chunk++)
-            Volatile.Read(ref _cold[chunk])?.TrimEmptyBlocks();
+        uint version = (uint)(head >> 32);
+        long trimming = ((long)(version + 1) << 32) | LiveMask | (head & FreeIdMask);
+        if (Interlocked.CompareExchange(ref _freeStack, trimming, head) != head) return;
+        try
+        {
+            int chunkCount = _capacity >> CHUNK_BITS;
+            for (int chunk = 0; chunk < chunkCount; chunk++)
+                Volatile.Read(ref _cold[chunk])?.TrimEmptyBlocks();
+            LuminTaskCold.AnyBlockCreated = false;
+        }
+        finally
+        {
+            Volatile.Write(ref _freeStack, ((long)(version + 2) << 32) | (head & FreeIdMask));
+        }
     }
 
     private static void EnsureCapacity(int id)
@@ -282,17 +340,21 @@ public static class LuminTaskBag
         // Publish the chunk before bumping capacity: any thread that later observes an id within
         // [old, new) capacity (always after the interlocked completion rendezvous, which provides
         // the happens-before edge) is guaranteed to observe this chunk reference as non-null.
-        Volatile.Write(ref _freeNextChunks[chunkIndex], new int[CHUNK_SIZE]);
+        Volatile.Write(ref _freeNextChunks[chunkIndex], new ushort[CHUNK_SIZE]);
         Volatile.Write(ref _cold[chunkIndex], new LuminTaskCold());
         Volatile.Write(ref _chunks[chunkIndex], chunk);
         _capacity += CHUNK_SIZE;
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static int GetAvailableCount() => _capacity - Volatile.Read(ref _liveCount);
+    public static int GetAvailableCount() => Math.Min(_capacity, MAX_SLOTS) - GetLiveCount() - Volatile.Read(ref _retiredCount);
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static int GetLiveCount() => Volatile.Read(ref _liveCount);
+    public static int GetLiveCount()
+    {
+        int count = (int)((Volatile.Read(ref _freeStack) & LiveMask) >> 16);
+        return count == ushort.MaxValue ? 0 : count;
+    }
 
     public static void PrintAllTasksStatus()
     {
@@ -390,16 +452,12 @@ public struct LuminTaskItem
 // Indexing is two level: `index >> BlockBits` selects the block, `index & BlockMask` the entry
 // inside it. Indexes are the slot's position INSIDE its chunk (id & CHUNK_MASK), not the global id.
 //
-// There is deliberately no result byte arena. Bytes reserved per slot are exactly the "always
-// resident" memory this design avoids: an unmanaged result is allocated with MemoryHelper at the
-// size the value actually needs and freed when the slot is consumed, so a slot costs nothing until
-// it produces something.
+// Small unmanaged results reuse the pointer-sized payload entry as inline bytes; up to 16 bytes
+// use a separate lazy wide block. Larger results and loop scratch use MemoryHelper pointers.
 //
-// RECLAMATION: an empty block can be dropped (table entry -> null) without a lock, because every
-// non-default write BOOKS an entry on the block's counter first. The reclaimer only wins the CAS
-// 0 -> Retired; a writer that loses that race sees the retired marker and re-publishes a fresh
-// block, so no value can ever land in a discarded array. Blocks are trimmed lazily by
-// LuminTaskBag only after the whole bag has been idle for a while - see TrimEmptyBlocks.
+// RECLAMATION: the bag exclusively claims a fully idle lifetime count before dropping blocks.
+// Renting joins that count before using cold fields, and returning leaves it after cleanup.
+// Consequently each field needs only its array, with no wrapper object or per-write counter.
 public sealed class LuminTaskCold
 {
     // Scratch size a loop-driven source may reserve (currently two timestamps for Delay).
@@ -411,153 +469,118 @@ public sealed class LuminTaskCold
     internal const int BlockMask = BlockSize - 1;
     private const int BlockCount = LuminTaskBag.CHUNK_SIZE >> BlockBits;
 
-    // 冷字段种类：只用于“惰性建块”时选择数组类型，不参与索引。
+    [Flags]
     private enum ColdField : byte
     {
-        Ref,
-        Payload,
-        Exception,
-        CancellationToken,
-        Registration,
-        Box,
+        Ref = 1,
+        Payload = 2,
+        Exception = 4,
+        CancellationToken = 8,
+        Registration = 16,
+        Box = 32,
+        InlinePayload = 64,
+        WidePayload = 128,
     }
 
-    // 一个冷字段的 64 项块。数组与它的计数打包在同一个引用里发布，任何读者/写者看到的
-    // (数组, 计数) 都成对。
-    //
-    // Count 语义：>= 0 为该块中的非默认条目数；Retired(-1) 表示该块正在被回收。
-    // 写者写非默认值前必须先用 CAS 预订一个条目位；回收者只有 CAS 0 -> Retired 成功才允许
-    // 摘除表项。竞争细节见 TrimEmptyBlocks / Book。
-    private sealed class ColdBlock
-    {
-        internal const int Retired = -1;
-
-        internal readonly Array Values;
-        internal int Count;
-
-        internal ColdBlock(Array values) => Values = values;
-    }
+    // One byte per item, written by its owner before completion is published. This also
+    // distinguishes inline payload bits (including zero) from an owned native pointer.
+    // Registrations are excluded: installing one can race its cancellation callback.
+    private readonly ColdField[] _fields = new ColdField[LuminTaskBag.CHUNK_SIZE];
 
     // 是否已经创建过任何冷块（从未触及冷侧的负载不必挂回收定时器）。
     internal static volatile bool AnyBlockCreated;
 
     // Reference results, and the pooled container of a reference-containing value result.
-    private ColdBlock?[]? _ref;
+    private Array?[]? _ref;
 
-    // Unmanaged results and loop scratch: a MemoryHelper block whose size is decided by the writer.
-    // A slot never uses both, so one pointer per slot covers both roles.
-    private ColdBlock?[]? _payload;
+    // Inline result bits, or a MemoryHelper pointer for large results and loop scratch.
+    private Array?[]? _payload;
+    private Array?[]? _widePayload;
 
-    private ColdBlock?[]? _exception;
-    private ColdBlock?[]? _cancellationTokens;
-    private ColdBlock?[]? _registrations;
+    private Array?[]? _exception;
+    private Array?[]? _cancellationTokens;
+    private Array?[]? _registrations;
 
     // State machine box of a suspended async method. It lives here rather than in the builder struct
     // because a LuminTask is only a handle: the builder reaches the box back through the slot to
     // re-register its continuation and to return the box to its pool on completion. The reference is
     // dropped - never returned - on slot release, because the state machine inside the box may still
     // be executing when the consumer releases the slot.
-    private ColdBlock?[]? _box;
+    private Array?[]? _box;
 
     // ---------------------------------------------------------------- writers (create on demand)
     //
-    // 写者只在“条目由默认变非默认”时预订计数位（见 ColdBlock/Book）。同一个条目只由它所属
-    // slot 的属主串行写入（完成会合提供了跨线程先后关系），所以读到的前值可信。
+    // Entries are owned by one item. The completion rendezvous publishes them to its consumer.
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal void SetRef(int index, object? value)
-    {
-        int slot = index >> BlockBits, sub = index & BlockMask;
-        var table = Table(ref _ref);
-        var block = Volatile.Read(ref table[slot]);
-        var values = block is null ? null : (object?[])block.Values;
-        bool had = values is not null && values[sub] is not null;
-        bool has = value is not null;
-
-        if (!has && !had) return;
-        if (has && !had) block = Book(table, slot, ColdField.Ref);
-        else if (had && !has) Interlocked.Decrement(ref block!.Count);
-
-        ((object?[])block!.Values)[sub] = value;
-    }
+        => SetObject(ref _ref, index, value, ColdField.Ref);
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal void SetBox(int index, object box)
-    {
-        int slot = index >> BlockBits, sub = index & BlockMask;
-        var table = Table(ref _box);
-        var block = Volatile.Read(ref table[slot]);
-        bool had = block is not null && ((object?[])block.Values)[sub] is not null;
-
-        if (!had) block = Book(table, slot, ColdField.Box);
-
-        ((object?[])block!.Values)[sub] = box;
-    }
+        => SetObject(ref _box, index, box, ColdField.Box);
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal void SetPayload(int index, nint value)
     {
-        int slot = index >> BlockBits, sub = index & BlockMask;
-        var table = Table(ref _payload);
-        var block = Volatile.Read(ref table[slot]);
-        bool had = block is not null && ((nint[])block.Values)[sub] != 0;
-        bool has = value != 0;
+        if (value == 0 && (_fields[index] & ColdField.Payload) == 0) return;
+        ((nint[])Block(ref _payload, index, ColdField.Payload))[index & BlockMask] = value;
+        _fields[index] &= ~ColdField.InlinePayload;
+        if (value != 0) _fields[index] |= ColdField.Payload;
+        else _fields[index] &= ~ColdField.Payload;
+    }
 
-        if (!has && !had) return;
-        if (has && !had) block = Book(table, slot, ColdField.Payload);
-        else if (had && !has) Interlocked.Decrement(ref block!.Count);
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal void SetInlinePayload(int index, nint value)
+    {
+        ((nint[])Block(ref _payload, index, ColdField.Payload))[index & BlockMask] = value;
+        _fields[index] |= ColdField.Payload | ColdField.InlinePayload;
+    }
 
-        ((nint[])block!.Values)[sub] = value;
+    // Vector3/Quaternion-sized values get a separate lazy block; int-only pages do not pay for it.
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal ref byte WidePayloadForWrite(int index)
+    {
+        var values = (ulong[])Block(ref _widePayload, index, ColdField.WidePayload);
+        _fields[index] |= ColdField.WidePayload;
+        return ref Unsafe.As<ulong, byte>(ref values[(index & BlockMask) * 2]);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal ref byte WidePayloadAt(int index)
+    {
+        var values = (ulong[])BlockOrNull(_widePayload, index)!;
+        return ref Unsafe.As<ulong, byte>(ref values[(index & BlockMask) * 2]);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal void SetException(int index, object? value)
+        => SetObject(ref _exception, index, value, ColdField.Exception);
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private void SetObject(ref Array?[]? table, int index, object? value, ColdField field)
     {
-        int slot = index >> BlockBits, sub = index & BlockMask;
-        var table = Table(ref _exception);
-        var block = Volatile.Read(ref table[slot]);
-        var values = block is null ? null : (object?[])block.Values;
-        bool had = values is not null && values[sub] is not null;
-        bool has = value is not null;
-
-        if (!has && !had) return;
-        if (has && !had) block = Book(table, slot, ColdField.Exception);
-        else if (had && !has) Interlocked.Decrement(ref block!.Count);
-
-        ((object?[])block!.Values)[sub] = value;
+        if (value is null && (_fields[index] & field) == 0) return;
+        ((object?[])Block(ref table, index, field))[index & BlockMask] = value;
+        if (value is not null) _fields[index] |= field;
+        else _fields[index] &= ~field;
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal void SetCancellationToken(int index, in CancellationToken value)
     {
-        int slot = index >> BlockBits, sub = index & BlockMask;
-        var table = Table(ref _cancellationTokens);
-        var block = Volatile.Read(ref table[slot]);
-        bool had = block is not null && !((CancellationToken[])block.Values)[sub].Equals(default(CancellationToken));
         bool has = !value.Equals(default(CancellationToken));
-
-        if (!has && !had) return;
-        if (has && !had) block = Book(table, slot, ColdField.CancellationToken);
-        else if (had && !has) Interlocked.Decrement(ref block!.Count);
-
-        ((CancellationToken[])block!.Values)[sub] = value;
+        if (!has && (_fields[index] & ColdField.CancellationToken) == 0) return;
+        ((CancellationToken[])Block(ref _cancellationTokens, index, ColdField.CancellationToken))[index & BlockMask] = value;
+        if (has) _fields[index] |= ColdField.CancellationToken;
+        else _fields[index] &= ~ColdField.CancellationToken;
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal void SetRegistration(int index, in CancellationTokenRegistration value)
     {
-        int slot = index >> BlockBits, sub = index & BlockMask;
-        var table = Table(ref _registrations);
-        var block = Volatile.Read(ref table[slot]);
-        bool had = block is not null
-                   && !((CancellationTokenRegistration[])block.Values)[sub].Equals(default(CancellationTokenRegistration));
-        bool has = !value.Equals(default(CancellationTokenRegistration));
-
-        if (!has && !had) return;
-        if (has && !had) block = Book(table, slot, ColdField.Registration);
-        else if (had && !has) Interlocked.Decrement(ref block!.Count);
-
-        ((CancellationTokenRegistration[])block!.Values)[sub] = value;
+        if (value.Equals(default(CancellationTokenRegistration)) && BlockOrNull(_registrations, index) is null) return;
+        ((CancellationTokenRegistration[])Block(ref _registrations, index, ColdField.Registration))[index & BlockMask] = value;
     }
 
     // ---------------------------------------------------------------- non-allocating readers
@@ -566,35 +589,35 @@ public sealed class LuminTaskCold
     internal object? RefAt(int index)
     {
         var block = BlockOrNull(_ref, index);
-        return block is null ? null : ((object?[])block.Values)[index & BlockMask];
+        return block is null ? null : ((object?[])block)[index & BlockMask];
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal object? BoxAt(int index)
     {
         var block = BlockOrNull(_box, index);
-        return block is null ? null : ((object?[])block.Values)[index & BlockMask];
+        return block is null ? null : ((object?[])block)[index & BlockMask];
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal nint PayloadAt(int index)
     {
         var block = BlockOrNull(_payload, index);
-        return block is null ? 0 : ((nint[])block.Values)[index & BlockMask];
+        return block is null ? 0 : ((nint[])block)[index & BlockMask];
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal object? ExceptionAt(int index)
     {
         var block = BlockOrNull(_exception, index);
-        return block is null ? null : ((object?[])block.Values)[index & BlockMask];
+        return block is null ? null : ((object?[])block)[index & BlockMask];
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal CancellationToken CancellationTokenAt(int index)
     {
         var block = BlockOrNull(_cancellationTokens, index);
-        return block is null ? default : ((CancellationToken[])block.Values)[index & BlockMask];
+        return block is null ? default : ((CancellationToken[])block)[index & BlockMask];
     }
 
     // ---------------------------------------------------------------- release
@@ -607,165 +630,115 @@ public sealed class LuminTaskCold
     /// </summary>
     internal unsafe void ReleaseSlot(int index)
     {
+        var fields = _fields[index];
         int sub = index & BlockMask;
 
         // Pending registration first: Release is non-blocking and safe even when the caller is the
         // cancellation callback itself.
         if (BlockOrNull(_registrations, index) is { } registrations)
         {
-            var values = (CancellationTokenRegistration[])registrations.Values;
-            bool had = !values[sub].Equals(default(CancellationTokenRegistration));
+            var values = (CancellationTokenRegistration[])registrations;
             values[sub].Release();
             values[sub] = default;
-            if (had) Interlocked.Decrement(ref registrations.Count);
         }
 
-        ClearObjectEntry(_box, index);
+        if (fields == 0) return;
 
-        if (BlockOrNull(_payload, index) is { } payload)
+        if ((fields & ColdField.Box) != 0) ClearObjectEntry(_box, index);
+
+        if ((fields & ColdField.Payload) != 0 && BlockOrNull(_payload, index) is { } payload)
         {
-            var values = (nint[])payload.Values;
-            if (values[sub] != 0)
-            {
+            var values = (nint[])payload;
+            if ((fields & ColdField.InlinePayload) == 0)
                 MemoryHelper.Free((void*)values[sub]);
-                values[sub] = 0;
-                Interlocked.Decrement(ref payload.Count);
-            }
+            values[sub] = 0;
+        }
+
+        if ((fields & ColdField.WidePayload) != 0 && BlockOrNull(_widePayload, index) is { } wide)
+        {
+            var values = (ulong[])wide;
+            values[sub * 2] = 0;
+            values[sub * 2 + 1] = 0;
         }
 
         // The pooled case is detected through IPooledResult and never through IDisposable: a user's
         // result type may itself implement IDisposable and must not be disposed by the task machinery.
-        if (BlockOrNull(_ref, index) is { } refs)
+        if ((fields & ColdField.Ref) != 0 && BlockOrNull(_ref, index) is { } refs)
         {
-            var values = (object?[])refs.Values;
-            if (values[sub] is not null)
-            {
-                (values[sub] as IPooledResult)?.ReturnToPool();
-                values[sub] = null;
-                Interlocked.Decrement(ref refs.Count);
-            }
+            var values = (object?[])refs;
+            (values[sub] as IPooledResult)?.ReturnToPool();
+            values[sub] = null;
         }
 
-        ClearObjectEntry(_exception, index);
+        if ((fields & ColdField.Exception) != 0) ClearObjectEntry(_exception, index);
 
-        if (BlockOrNull(_cancellationTokens, index) is { } tokens)
+        if ((fields & ColdField.CancellationToken) != 0 && BlockOrNull(_cancellationTokens, index) is { } tokens)
         {
-            var values = (CancellationToken[])tokens.Values;
-            if (!values[sub].Equals(default(CancellationToken)))
-            {
-                values[sub] = default;
-                Interlocked.Decrement(ref tokens.Count);
-            }
+            ((CancellationToken[])tokens)[sub] = default;
         }
+        _fields[index] = 0;
     }
 
     // ---------------------------------------------------------------- block plumbing
 
-    // 惰性创建字段的块表。CAS 发布：两个写者同时创建时不会互相覆盖（旧实现是普通写，
-    // 落败者的值会写进被覆盖掉的数组里）。
-    private static ColdBlock?[] Table(ref ColdBlock?[]? table)
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static Array Block(ref Array?[]? table, int index, ColdField field)
     {
         var blocks = table;
-        if (blocks is not null) return blocks;
-
-        var fresh = new ColdBlock?[BlockCount];
-        return Interlocked.CompareExchange(ref table, fresh, null) ?? fresh;
+        return (blocks is null ? null : Volatile.Read(ref blocks[index >> BlockBits]))
+            ?? CreateBlock(ref table, index >> BlockBits, field);
     }
 
-    // 取块并在需要时预订一个非默认条目位。若现有块已在回收中，改成把表项换上新块；
-    // 任何情况下返回的块都是“已预订、可安全写入”的。
-    private static ColdBlock Book(ColdBlock?[] table, int slot, ColdField field)
+    // Only first touch allocates. The bag's lifetime gate prevents reclamation until all owners
+    // finish; CAS here only arbitrates concurrent first writers to different entries in a block.
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static Array CreateBlock(ref Array?[]? table, int slot, ColdField field)
     {
-        for (;;)
+        var blocks = table;
+        if (blocks is null)
         {
-            var block = Volatile.Read(ref table[slot]) ?? PublishBlock(table, slot, field);
-
-            if (TryBook(block)) return block;
-
-            // 该块已被回收者标记退役：换新块。CAS 失败说明表项已被别人动过，重读重试。
-            var replacement = NewBlock(field);
-            Volatile.Write(ref replacement.Count, 1);   // 预订位随发布一起生效
-            if (Interlocked.CompareExchange(ref table[slot], replacement, block) is null) return replacement;
+            var freshTable = new Array?[BlockCount];
+            blocks = Interlocked.CompareExchange(ref table, freshTable, null) ?? freshTable;
         }
-    }
-
-    private static ColdBlock PublishBlock(ColdBlock?[] table, int slot, ColdField field)
-    {
-        var fresh = NewBlock(field);
-        return Interlocked.CompareExchange(ref table[slot], fresh, null) ?? fresh;
-    }
-
-    // 预订一个非默认条目位。CAS 循环与回收者的 0 -> Retired 竞争：赢的一方决定该块是继续
-    // 使用还是被摘除。
-    private static bool TryBook(ColdBlock block)
-    {
-        int count = Volatile.Read(ref block.Count);
-        while (count >= 0)
-        {
-            if (Interlocked.CompareExchange(ref block.Count, count + 1, count) == count) return true;
-            count = Volatile.Read(ref block.Count);
-        }
-        return false;
-    }
-
-    private static ColdBlock NewBlock(ColdField field)
-    {
+        var existing = Volatile.Read(ref blocks[slot]);
+        if (existing is not null) return existing;
         AnyBlockCreated = true;
-        return field switch
+        Array fresh = field switch
         {
-            ColdField.Payload => new ColdBlock(new nint[BlockSize]),
-            ColdField.CancellationToken => new ColdBlock(new CancellationToken[BlockSize]),
-            ColdField.Registration => new ColdBlock(new CancellationTokenRegistration[BlockSize]),
-            _ => new ColdBlock(new object?[BlockSize]),
+            ColdField.Payload => new nint[BlockSize],
+            ColdField.WidePayload => new ulong[BlockSize * 2],
+            ColdField.CancellationToken => new CancellationToken[BlockSize],
+            ColdField.Registration => new CancellationTokenRegistration[BlockSize],
+            _ => new object?[BlockSize],
         };
+        return Interlocked.CompareExchange(ref blocks[slot], fresh, null) ?? fresh;
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static ColdBlock? BlockOrNull(ColdBlock?[]? table, int index)
+    private static Array? BlockOrNull(Array?[]? table, int index)
         => table is null ? null : Volatile.Read(ref table[index >> BlockBits]);
 
-    // 清掉一个对象型条目（box / exception）：只在原来确实有值时递减计数。
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static void ClearObjectEntry(ColdBlock?[]? table, int index)
+    private static void ClearObjectEntry(Array?[]? table, int index)
     {
         if (BlockOrNull(table, index) is not { } block) return;
 
-        int sub = index & BlockMask;
-        var values = (object?[])block.Values;
-        if (values[sub] is null) return;
-
-        values[sub] = null;
-        Interlocked.Decrement(ref block.Count);
+        ((object?[])block)[index & BlockMask] = null;
     }
 
     // ---------------------------------------------------------------- reclamation
 
-    /// <summary>
-    /// 回收所有当前为空的块。只由 LuminTaskBag 的静默回收调用：计数保证安全——并发写者要么
-    /// 已经预订了条目（回收者的 CAS 失败），要么会在发现退役标记后换成新块（见 Book）。
-    /// </summary>
+    // Only called while LuminTaskBag owns its exclusive idle gate. Every entry was already
+    // cleared by its consumer, so tables and blocks can all be dropped without a scan.
     internal void TrimEmptyBlocks()
     {
-        TrimTable(_ref);
-        TrimTable(_payload);
-        TrimTable(_exception);
-        TrimTable(_cancellationTokens);
-        TrimTable(_registrations);
-        TrimTable(_box);
-    }
-
-    private static void TrimTable(ColdBlock?[]? table)
-    {
-        if (table is null) return;
-
-        for (int slot = 0; slot < BlockCount; slot++)
-        {
-            var block = Volatile.Read(ref table[slot]);
-            if (block is null) continue;
-            if (Interlocked.CompareExchange(ref block.Count, ColdBlock.Retired, 0) != 0) continue;
-
-            Interlocked.CompareExchange(ref table[slot], null, block);
-        }
+        _ref = null;
+        _payload = null;
+        _widePayload = null;
+        _exception = null;
+        _cancellationTokens = null;
+        _registrations = null;
+        _box = null;
     }
 }
 
