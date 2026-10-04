@@ -399,18 +399,13 @@ internal sealed class WhenAnyPromise<T1, T2, T3, T4> : CombinerNode
 
 internal sealed class WhenAnyPromise<T> : CombinerNode
 {
-    private T[] _results;
-
     public WhenAnyPromise(LuminTask<T>[]? tasks)
     {
         if (tasks == null || tasks.Length == 0)
         {
-            _results = Array.Empty<T>();
             Fault(new InvalidOperationException("No tasks provided"));
             return;
         }
-
-        _results = new T[tasks.Length];
 
         for (int i = 0; i < tasks.Length; i++)
         {
@@ -446,9 +441,12 @@ internal sealed class WhenAnyPromise<T> : CombinerNode
             return;
         }
 
+        // Exactly one child wins, and only its value is ever read: it lives in a local instead of
+        // an array sized to the whole input, which used to be allocated per call for one element.
+        T value;
         try
         {
-            self._results[index] = awaiter.GetResult();
+            value = awaiter.GetResult();
         }
         catch (Exception ex)
         {
@@ -456,7 +454,7 @@ internal sealed class WhenAnyPromise<T> : CombinerNode
             return;
         }
 
-        var result = (index, self._results[index]);
+        var result = (index, value);
         self.Complete(in result);
     }
 }

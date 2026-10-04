@@ -545,15 +545,17 @@ namespace LuminThread
             return ticks >= long.MaxValue ? long.MaxValue : (long)ticks;
         }
 
+        // Timing state shared by both Timeout promises. Declared once at this scope so the generic
+        // promise does not carry a second, per-T copy of the same two fields.
+        [StructLayout(LayoutKind.Sequential)]
+        private struct TimeoutStateData
+        {
+            public long StartTimestamp;
+            public long TimeoutTimestampTicks;
+        }
+
         private static class TimeoutPromise
         {
-            [StructLayout(LayoutKind.Sequential)]
-            private struct TimeoutStateData
-            {
-                public long StartTimestamp;
-                public long TimeoutTimestampTicks;
-            }
-
             private static readonly MoveNext MoveNextAction = MoveNext;
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -619,13 +621,6 @@ namespace LuminThread
 
         private static class TimeoutPromise<T>
         {
-            [StructLayout(LayoutKind.Sequential)]
-            private struct TimeoutStateData
-            {
-                public long StartTimestamp;
-                public long TimeoutTimestampTicks;
-            }
-
             private static readonly MoveNext MoveNextAction = MoveNext;
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]

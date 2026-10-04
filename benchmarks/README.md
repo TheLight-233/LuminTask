@@ -22,7 +22,7 @@ dotnet artifacts/perf-after/LuminTask.SuspensionBenchmarks.dll 1000000 5 'Yield-
 
 比较两个版本时，使用同一份基准程序、相同运行时和相同 JIT 设置，仅替换被测 LuminTask.dll，交错运行并保留原始输出。分段中的“完成”在挂起版本中会内联执行内层消费和状态机恢复，不能理解成纯生产端耗时。`sync-int` 可被 JIT 大幅简化，只作为同步路径烟测。
 
-最终优化的结果、开销和限制见 [PERFORMANCE_EXTREME_OPTIMIZATION.md](../PERFORMANCE_EXTREME_OPTIMIZATION.md)，第一轮历史记录见 [PERFORMANCE_OPTIMIZATION.md](../PERFORMANCE_OPTIMIZATION.md)。
+最终优化的结果、开销和限制记录在仓库外的优化报告里（`PERFORMANCE_EXTREME_OPTIMIZATION.md`，第一轮历史见 `PERFORMANCE_OPTIMIZATION.md`），这两份报告不随仓库发布。
 
 ## Unity IL2CPP
 
