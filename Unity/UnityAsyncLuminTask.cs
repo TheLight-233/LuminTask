@@ -566,7 +566,10 @@ namespace LuminThread.Unity
                 if (Interlocked.CompareExchange(ref _fast, state, null) == null)
                     return;
 
-                if (_overflow.Count >= MaxRetained)
+                // The fast slot already holds one of the retained blocks, so the chain may only top up to
+                // MaxRetained - 1: otherwise the real retention is 17 and the constant lies. Same
+                // accounting as StatePool / WaitNodePool / EventStatePool / ThreadPoolWorkItem.
+                if (_overflow.Count >= MaxRetained - 1)
                     return;
 
                 _overflow.Enqueue(state);
