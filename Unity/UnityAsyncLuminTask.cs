@@ -66,10 +66,8 @@ namespace LuminThread.Unity
                 // visible to the resumed GetResult: this awaiter is a struct, and the builder copies
                 // the state machine - and with it the awaiter - into its box before OnCompleted runs.
                 // Self-removal needs no field, so the operation keeps no handler afterwards.
-                var operation = _asyncOperation;
-                Action<AsyncOperation> handler = null;
-                handler = _ => { operation.completed -= handler; continuation(); };
-                operation.completed += handler;
+                // Routed through the shared control block: see RegisterAwaiterContinuation.
+                AsyncOperationPromise.RegisterAwaiterContinuation(_asyncOperation, continuation);
             }
         }
 
@@ -127,10 +125,8 @@ namespace LuminThread.Unity
 
             public void UnsafeOnCompleted(Action continuation)
             {
-                var operation = _asyncOperation;
-                Action<AsyncOperation> handler = null;
-                handler = _ => { operation.completed -= handler; continuation(); };
-                operation.completed += handler;
+                // Routed through the shared control block: see RegisterAwaiterContinuation.
+                AsyncOperationPromise.RegisterAwaiterContinuation(_asyncOperation, continuation);
             }
         }
 
@@ -188,10 +184,8 @@ namespace LuminThread.Unity
 
             public void UnsafeOnCompleted(Action continuation)
             {
-                var operation = _asyncOperation;
-                Action<AsyncOperation> handler = null;
-                handler = _ => { operation.completed -= handler; continuation(); };
-                operation.completed += handler;
+                // Routed through the shared control block: see RegisterAwaiterContinuation.
+                AsyncOperationPromise.RegisterAwaiterContinuation(_asyncOperation, continuation);
             }
         }
 
@@ -249,10 +243,8 @@ namespace LuminThread.Unity
 
             public void UnsafeOnCompleted(Action continuation)
             {
-                var operation = _asyncOperation;
-                Action<AsyncOperation> handler = null;
-                handler = _ => { operation.completed -= handler; continuation(); };
-                operation.completed += handler;
+                // Routed through the shared control block: see RegisterAwaiterContinuation.
+                AsyncOperationPromise.RegisterAwaiterContinuation(_asyncOperation, continuation);
             }
         }
 
@@ -323,10 +315,8 @@ namespace LuminThread.Unity
 
             public void UnsafeOnCompleted(Action continuation)
             {
-                var operation = _asyncOperation;
-                Action<AsyncOperation> handler = null;
-                handler = _ => { operation.completed -= handler; continuation(); };
-                operation.completed += handler;
+                // Routed through the shared control block: see RegisterAwaiterContinuation.
+                AsyncOperationPromise.RegisterAwaiterContinuation(_asyncOperation, continuation);
             }
         }
 
@@ -384,6 +374,10 @@ namespace LuminThread.Unity
             // tell "published, then a continuation threw" from "threw before publishing".
             internal bool Published;
 
+            // The direct-await path only needs a completion signal, so the block runs this continuation
+            // itself instead of leaving a task for someone to await (see AsyncOperationWriter).
+            internal Action? AwaiterContinuation;
+
             private Action<AsyncOperationState> _writeCompletion;
             private Action<AsyncOperationState, bool> _writeCancellation;
 
@@ -402,7 +396,8 @@ namespace LuminThread.Unity
             internal bool IsCompletionFinished => Volatile.Read(ref _phase) == 2;
 
             internal void Initialize(ulong handle, AsyncOperation operation, IProgress<float> progress,
-                CancellationToken token, Action<AsyncOperationState> writeCompletion, Action<AsyncOperationState, bool> writeCancellation)
+                CancellationToken token, Action<AsyncOperationState> writeCompletion, Action<AsyncOperationState, bool> writeCancellation,
+                Action? awaiterContinuation)
             {
                 Handle = handle;
                 Operation = operation;
@@ -411,6 +406,7 @@ namespace LuminThread.Unity
                 Registration = default;
                 _writeCompletion = writeCompletion;
                 _writeCancellation = writeCancellation;
+                AwaiterContinuation = awaiterContinuation;
                 Canceled = false;
                 Published = false;
                 _phase = 0;
@@ -534,6 +530,7 @@ namespace LuminThread.Unity
                     Token = default;
                     Canceled = false;
                     Published = false;
+                    AwaiterContinuation = null;
                     _writeCompletion = null;
                     _writeCancellation = null;
 
@@ -580,14 +577,27 @@ namespace LuminThread.Unity
         {
             private static readonly MoveNext MoveNextAction = MoveNext;
 
+            // Registers a directly-awaited operation's continuation on the shared control block instead of a
+            // per-await closure. The block supplies the completion signal and nothing else: each awaiter
+            // keeps its own result extraction (that is what the awaiter shape is for), so the completion it
+            // publishes is the void one and this path references no adapter type at all. One slot and one
+            // pooled block replace a display class plus a delegate - 104 B/op measured by the review probe,
+            // now zero.
+            internal static void RegisterAwaiterContinuation(AsyncOperation operation, Action continuation)
+            {
+                Create(operation, PlayerLoopTiming.Update, null, default, cancelImmediately: false,
+                    AsyncOperationWriter.CompleteAwaiter, PlainCanceledWriter.Write, continuation);
+            }
+
             internal static ulong Create(AsyncOperation operation, PlayerLoopTiming timing, IProgress<float> progress,
                 CancellationToken cancellationToken, bool cancelImmediately,
-                Action<AsyncOperationState> writeCompletion, Action<AsyncOperationState, bool> writeCancellation)
+                Action<AsyncOperationState> writeCompletion, Action<AsyncOperationState, bool> writeCancellation,
+                Action? awaiterContinuation = null)
             {
                 LuminTaskSource.Rent(out var handle);
 
                 var state = AsyncOperationStatePool.Rent();
-                state.Initialize(handle, operation, progress, cancellationToken, writeCompletion, writeCancellation);
+                state.Initialize(handle, operation, progress, cancellationToken, writeCompletion, writeCancellation, awaiterContinuation);
 
                 // Registered before the operation subscribes: if the token fires during the call the
                 // cancellation path still runs first and the loop node removes the leftover handler.
@@ -656,10 +666,22 @@ namespace LuminThread.Unity
         {
             internal static readonly Action<AsyncOperationState> Write = WriteVoidResult;
 
+            // The direct-await path: the completion it publishes is a signal nobody awaits, so this writer
+            // consumes it immediately (the legal fire-and-forget exit) and then runs the continuation the
+            // awaiter registered. Without the consume, every direct await would leave its slot rented.
+            internal static readonly Action<AsyncOperationState> CompleteAwaiter = WriteAwaiterCompletion;
+
             private static void WriteVoidResult(AsyncOperationState state)
             {
                 if (LuminTaskSource.SetResult(state.Handle))
                     state.Published = true;
+            }
+
+            private static void WriteAwaiterCompletion(AsyncOperationState state)
+            {
+                state.Published = LuminTaskSource.SetResult(state.Handle);
+                LuminTaskSource.ToTask(state.Handle).GetAwaiter().GetResult();
+                state.AwaiterContinuation?.Invoke();
             }
         }
 
