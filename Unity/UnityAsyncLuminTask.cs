@@ -38,7 +38,7 @@ namespace LuminThread.Unity
             if (asyncOperation.isDone)
                 return LuminTask.CompletedTask();
             var handle = AsyncOperationPromise.Create(asyncOperation, timing, progress, cancellationToken, cancelImmediately,
-                AsyncOperationWriters.VoidResult, AsyncOperationWriters.PlainCanceled);
+                AsyncOperationWriter.Write, PlainCanceledWriter.Write);
             return LuminTaskSource.ToTask(handle);
         }
 
@@ -103,7 +103,7 @@ namespace LuminThread.Unity
             if (asyncOperation.isDone)
                 return LuminTask.FromResult(asyncOperation.asset);
             var handle = AsyncOperationPromise.Create(asyncOperation, timing, progress, cancellationToken, cancelImmediately,
-                AsyncOperationWriters.ResourceRequestAsset, AsyncOperationWriters.PlainCanceled);
+                ResourceRequestWriter.Write, PlainCanceledWriter.Write);
             return LuminTaskSource.ToTask<UnityEngine.Object>(handle);
         }
 
@@ -164,7 +164,7 @@ namespace LuminThread.Unity
             if (asyncOperation.isDone)
                 return LuminTask.FromResult(asyncOperation.asset);
             var handle = AsyncOperationPromise.Create(asyncOperation, timing, progress, cancellationToken, cancelImmediately,
-                AsyncOperationWriters.AssetBundleRequestAsset, AsyncOperationWriters.PlainCanceled);
+                AssetBundleRequestWriter.Write, PlainCanceledWriter.Write);
             return LuminTaskSource.ToTask<UnityEngine.Object>(handle);
         }
 
@@ -225,7 +225,7 @@ namespace LuminThread.Unity
             if (asyncOperation.isDone)
                 return LuminTask.FromResult(asyncOperation.assetBundle);
             var handle = AsyncOperationPromise.Create(asyncOperation, timing, progress, cancellationToken, cancelImmediately,
-                AsyncOperationWriters.AssetBundleCreateResult, AsyncOperationWriters.PlainCanceled);
+                AssetBundleCreateRequestWriter.Write, PlainCanceledWriter.Write);
             return LuminTaskSource.ToTask<AssetBundle>(handle);
         }
 
@@ -292,7 +292,7 @@ namespace LuminThread.Unity
                 return LuminTask.FromResult(asyncOperation.webRequest);
             }
             var handle = AsyncOperationPromise.Create(asyncOperation, timing, progress, cancellationToken, cancelImmediately,
-                AsyncOperationWriters.WebRequestResult, AsyncOperationWriters.WebRequestCanceled);
+                WebRequestWriter.Write, WebRequestWriter.Cancel);
             return LuminTaskSource.ToTask<UnityWebRequest>(handle);
         }
 
@@ -635,47 +635,84 @@ namespace LuminThread.Unity
             }
         }
 
-        // One cached writer per adapter shape. Holding them here keeps the shared block free of any
-        // result-kind switch, and the typed SetResult<T> instantiation stays with the adapter that owns
-        // the result type. The delegates are built once at type initialisation, never per operation.
-        private static class AsyncOperationWriters
-        {
-            internal static readonly Action<AsyncOperationState> VoidResult = WriteVoidResult;
-            internal static readonly Action<AsyncOperationState> ResourceRequestAsset = WriteResourceRequestAsset;
-            internal static readonly Action<AsyncOperationState> AssetBundleRequestAsset = WriteAssetBundleRequestAsset;
-            internal static readonly Action<AsyncOperationState> AssetBundleCreateResult = WriteAssetBundleCreateResult;
-            internal static readonly Action<AsyncOperationState> WebRequestResult = WriteWebRequestResult;
-            internal static readonly Action<AsyncOperationState, bool> PlainCanceled = WritePlainCanceled;
-            internal static readonly Action<AsyncOperationState, bool> WebRequestCanceled = WriteWebRequestCanceled;
+        // One cached writer per adapter shape, each in its own type. Holding them in a single type would give
+        // them one static constructor, so referencing any one of them - even just AsyncOperation's - would
+        // make every other adapter's writer reachable, and with it ResourceRequest, AssetBundle,
+        // UnityWebRequest and the web-request exception. Separate types put the reachability boundary where
+        // the adapter boundary already is, which is what lets UnityLinker drop the adapters a project does
+        // not use; the shared non-generic control block and the single pool are unaffected.
+        //
+        // The delegates are still built once per type at initialisation, never per operation, and the typed
+        // SetResult<T> instantiation stays with the adapter that owns the result type.
+        //
+        // Published is only ever set on the false -> true edge: the recycle publishes the cancellation a
+        // second time (to give a request its main-thread abort) and that must not clear the flag the phase
+        // exit read.
 
-            // Published is only ever set on the false -> true edge: the recycle publishes the cancellation a
-            // second time (to give the request its main-thread abort) and that must not clear the flag the
-            // phase exit read.
+        private static class AsyncOperationWriter
+        {
+            internal static readonly Action<AsyncOperationState> Write = WriteVoidResult;
+
             private static void WriteVoidResult(AsyncOperationState state)
             {
                 if (LuminTaskSource.SetResult(state.Handle))
                     state.Published = true;
             }
+        }
 
-            private static void WriteResourceRequestAsset(AsyncOperationState state)
+        private static class ResourceRequestWriter
+        {
+            internal static readonly Action<AsyncOperationState> Write = WriteAsset;
+
+            private static void WriteAsset(AsyncOperationState state)
             {
                 if (LuminTaskSource.SetResult(state.Handle, ((ResourceRequest)state.Operation).asset))
                     state.Published = true;
             }
+        }
 
-            private static void WriteAssetBundleRequestAsset(AsyncOperationState state)
+        private static class AssetBundleRequestWriter
+        {
+            internal static readonly Action<AsyncOperationState> Write = WriteAsset;
+
+            private static void WriteAsset(AsyncOperationState state)
             {
                 if (LuminTaskSource.SetResult(state.Handle, ((AssetBundleRequest)state.Operation).asset))
                     state.Published = true;
             }
+        }
 
-            private static void WriteAssetBundleCreateResult(AsyncOperationState state)
+        private static class AssetBundleCreateRequestWriter
+        {
+            internal static readonly Action<AsyncOperationState> Write = WriteAssetBundle;
+
+            private static void WriteAssetBundle(AsyncOperationState state)
             {
                 if (LuminTaskSource.SetResult(state.Handle, ((AssetBundleCreateRequest)state.Operation).assetBundle))
                     state.Published = true;
             }
+        }
 
-            private static void WriteWebRequestResult(AsyncOperationState state)
+        // Shared by the four adapters above: it references no adapter type of its own, so keeping it adds
+        // nothing to their reachability.
+        private static class PlainCanceledWriter
+        {
+            internal static readonly Action<AsyncOperationState, bool> Write = WriteCanceled;
+
+            private static void WriteCanceled(AsyncOperationState state, bool allowOperationAccess)
+            {
+                if (LuminTaskSource.SetCanceled(state.Handle, state.Token))
+                    state.Published = true;
+            }
+        }
+
+        // The web request owns both of its writers, so a project that never touches it keeps neither.
+        private static class WebRequestWriter
+        {
+            internal static readonly Action<AsyncOperationState> Write = WriteResult;
+            internal static readonly Action<AsyncOperationState, bool> Cancel = WriteCanceled;
+
+            private static void WriteResult(AsyncOperationState state)
             {
                 var request = ((UnityWebRequestAsyncOperation)state.Operation).webRequest;
                 bool published = IsError(request)
@@ -686,13 +723,7 @@ namespace LuminThread.Unity
                     state.Published = true;
             }
 
-            private static void WritePlainCanceled(AsyncOperationState state, bool allowOperationAccess)
-            {
-                if (LuminTaskSource.SetCanceled(state.Handle, state.Token))
-                    state.Published = true;
-            }
-
-            private static void WriteWebRequestCanceled(AsyncOperationState state, bool allowOperationAccess)
+            private static void WriteCanceled(AsyncOperationState state, bool allowOperationAccess)
             {
                 // Abort must not run on the cancelling thread: Unity objects are single-threaded. The
                 // cancellation callback therefore publishes the cancellation only, and the passes that
