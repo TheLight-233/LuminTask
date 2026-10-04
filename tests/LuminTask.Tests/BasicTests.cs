@@ -51,6 +51,7 @@ public static class BasicTests
         await r.Run("WaitUntil and WaitUntilCanceled complete", WaitUntilCompletes);
         await r.Run("SuppressCancellationThrow preserves values", SuppressCancellationThrowPreserves);
         await r.Run("Create and DelayFrame", CreateAndDelayFrame);
+        await r.Run("PlayerLoop survives dispose before first use", PlayerLoopSurvivesDisposeBeforeFirstUse);
     }
 
     private static async LuminTask FromResultReturnsValue()
@@ -499,6 +500,18 @@ public static class BasicTests
         var fromToken = await LuminTask.Create(() => LuminTask.FromResult(5)).WaitAsync(TimeSpan.FromSeconds(5));
         Assert.Equal(5, fromToken);
 
+        await LuminTask.DelayFrame(1, PlayerLoopTiming.DotNet);
+    }
+
+    // The DotNet strategy builds its queues/CTS/timer on the first enqueue. Disposing a strategy that
+    // was never used must be a no-op (all of it is still null), and Initialize must hand back a live
+    // scheduler that lazily provisions itself again.
+    private static async LuminTask PlayerLoopSurvivesDisposeBeforeFirstUse()
+    {
+        PlayerLoopHelper.Dispose();
+        PlayerLoopHelper.Initialize();
+
+        await LuminTask.Yield();
         await LuminTask.DelayFrame(1, PlayerLoopTiming.DotNet);
     }
 
