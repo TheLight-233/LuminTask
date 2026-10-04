@@ -8,26 +8,26 @@ LuminTask 是一款面向 .NET 与 Unity 的高性能 async/await 库。用 `Lum
 
 ## 📊 与 UniTask 的对比
 
-对比对象为 UniTask 2.5.10。两臂使用同一份同构负载源码（仅机械替换库名），在同一台机器上以 IL2CPP + StandaloneWindows64 做 clean build；两臂在同一次会话内重新构建，运行时数据交错运行 3 次取中位数。
+对比对象为 UniTask 2.5.10。两臂使用同一份同构负载源码（仅机械替换库名），在同一台机器上以 IL2CPP + StandaloneWindows64 做 clean build；LuminTask 侧为最新构建，UniTask 侧工作负载源码未变、复用同机既有数据。构建产物与内存指标为确定性/稳定量；耗时项受会话负载影响，仅作参考。
 
 | 构建产物 | LuminTask | UniTask | 差异 |
 | --- | ---: | ---: | ---: |
-| `global-metadata.dat` | 2.67 MB | 4.86 MB | **−45.1%** |
-| `GameAssembly.dll` | 13.85 MB | 41.14 MB | **−66.3%** |
-| 随包总体积（22 个文件） | 68.31 MB | 97.81 MB | **−30.2%** |
-| clean build 耗时 | 47.9 s | 105.9 s | **−54.8%** |
+| `global-metadata.dat` | 2.66 MB | 4.86 MB | **−45.2%** |
+| `GameAssembly.dll` | 13.57 MB | 41.14 MB | **−67.0%** |
+| 随包总体积（22 个文件） | 68.03 MB | 97.81 MB | **−30.4%** |
+| clean build 耗时 | 50.0 s | 105.9 s | **−52.8%** |
 
 | 运行时 | LuminTask | UniTask | 差异 |
 | --- | ---: | ---: | ---: |
-| 进程保留内存 | 135.1 MB | 151.9 MB | **−11.1%** |
-| 进程已分配内存 | 52.95 MB | 61.36 MB | **−13.7%** |
-| 运行期净 GC 分配 | 2.80 MB | 4.80 MB | **−41.7%** |
-| 托管堆存活（full GC 后） | 975 KB | 995 KB | −2.1% |
-| 负载 pipeline 耗时 | 1612.0 ms | 1668.9 ms | −3.4% |
+| 进程保留内存 | 135.1 MB | 151.9 MB | **−11.0%** |
+| 进程已分配内存 | 52.81 MB | 61.36 MB | **−13.9%** |
+| 运行期净 GC 分配 | 2.78 MB | 4.80 MB | **−42.0%** |
+| 托管堆存活（full GC 后） | 905 KB | 995 KB | **−9.1%** |
+| 负载 pipeline 耗时 | 1563.4 ms | 1668.9 ms | −6.3% |
 
 > 进程内存取自 `Profiler.GetTotalReservedMemoryLong` / `GetTotalAllocatedMemoryLong`；托管堆取自 `GC.GetTotalMemory(true)`。
 
-优势集中在静态产物规模与分配流量上；托管堆存量接近持平，因为 LuminTask 把每次操作的分配换成了有界的池化驻留，换来一条预热后零分配的热路径。
+优势集中在静态产物规模与分配流量上；托管堆存量（full GC 后）也低于 UniTask，因为 LuminTask 把每次操作的分配换成了有界的池化驻留，换来一条预热后零分配的热路径。
 
 ## ✨ 主要特性
 
