@@ -43,7 +43,10 @@ public static class BasicTests
         await r.Run("BCL await foreach adapter", BclAwaitForeach);
         await r.Run("Registered main-thread context", RegisteredMainThreadContext);
         await r.Run("Run executes sync/async delegates on the thread pool", RunDelegates);
+        await r.Run("Run family overloads stay distinguishable", RunFamilyOverloads);
+        await r.Run("Run restores the captured synchronization context", RunRestoresCapturedContext);
         await r.Run("RunOnThreadPool runs on a pool thread", RunOnThreadPoolThread);
+        await r.Run("RunOnThreadPool family overloads and cancellation", RunOnThreadPoolOverloads);
         await r.Run("Forget surfaces exceptions through the handler", ForgetExceptionHandler);
         await r.Run("ContinueWith chains a continuation", ContinueWithChains);
         await r.Run("Timeout aborts a hanging task", TimeoutAborts);
@@ -397,6 +400,143 @@ public static class BasicTests
         });
         Assert.Equal(11, result);
         Assert.True(ran, "RunOnThreadPool must execute on a thread-pool thread");
+    }
+
+    // Most of the Run family forwards to one of five shared workers now, so the shapes that used to
+    // have a state machine of their own have to stay observationally identical: object state passes
+    // through, a value-type TState stays unboxed, and the LuminTask-returning overload hands the inner
+    // task back instead of awaiting it (only the Func<LuminTask<T>> shape awaits).
+    private static async LuminTask RunFamilyOverloads()
+    {
+        var callerThreadId = Environment.CurrentManagedThreadId;
+
+        object captured = null;
+        await LuminTask.Run(state => captured = state, "payload");
+        Assert.Equal("payload", (string)captured);
+
+        var sum = 0;
+        await LuminTask.Run((int value) => sum = value + 1, 41);
+        Assert.Equal(42, sum);
+
+        // Run(Func<LuminTask>) is the hand-the-inner-task-back shape: the outer task completes while the
+        // inner one is still pending, so it clearly did not await it.
+        LuminTaskSource.Rent(out var pendingHandle);
+        var pending = LuminTaskSource.ToTask(pendingHandle);
+        var inner = await LuminTask.Run(() => pending);
+        Assert.Equal(LuminTaskStatus.Pending, inner.Status);
+        Assert.True(inner.Equals(pending), "Run(Func<LuminTask>) must hand the inner task back");
+        LuminTaskSource.SetResult(pendingHandle);
+        await inner;
+
+        Assert.Equal(5, await LuminTask.Run<int>((object state) => (int)state, 5));
+        Assert.Equal(4, await LuminTask.Run<string, int>(text => text.Length, "abcd"));
+        Assert.Equal(6, await LuminTask.Run<int>((object state) => LuminTask.FromResult((int)state), 6));
+        Assert.Equal(3, await LuminTask.Run<string, int>(text => LuminTask.FromResult(text.Length), "abc"));
+
+        var offThread = false;
+        await LuminTask.Run(() => offThread = Environment.CurrentManagedThreadId != callerThreadId, configureAwait: false);
+        Assert.True(offThread, "Run(Action, configureAwait: false) still runs off-thread");
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => LuminTask.Run(state => throw new InvalidOperationException("state-boom"), new object()));
+    }
+
+    // configureAwait: true must switch back through the context captured before the switch to the
+    // pool; configureAwait: false must not post to it at all.
+    private static async LuminTask RunRestoresCapturedContext()
+    {
+        var context = new RecordingSynchronizationContext();
+        var previous = SynchronizationContext.Current;
+        SynchronizationContext.SetSynchronizationContext(context);
+        try
+        {
+            var before = context.PostCount;
+            await LuminTask.Run(() => { }, configureAwait: false);
+            var withoutRestore = context.PostCount - before;
+
+            before = context.PostCount;
+            await LuminTask.Run(() => { }, configureAwait: true);
+            var withRestore = context.PostCount - before;
+
+            Assert.True(withRestore > withoutRestore,
+                $"configureAwait: true must post to the captured context (false: {withoutRestore}, true: {withRestore})");
+        }
+        finally
+        {
+            SynchronizationContext.SetSynchronizationContext(previous);
+        }
+    }
+
+    private static async LuminTask RunOnThreadPoolOverloads()
+    {
+        var callerThreadId = Environment.CurrentManagedThreadId;
+
+        var ran = false;
+        await LuminTask.RunOnThreadPool(() => ran = Environment.CurrentManagedThreadId != callerThreadId);
+        Assert.True(ran, "RunOnThreadPool(Action) runs on a pool thread");
+
+        object captured = null;
+        await LuminTask.RunOnThreadPool(state => captured = state, "payload");
+        Assert.Equal("payload", (string)captured);
+
+        var sum = 0;
+        await LuminTask.RunOnThreadPool((int value) => sum = value + 1, 41);
+        Assert.Equal(42, sum);
+
+        Assert.Equal(9, await LuminTask.RunOnThreadPool(() => 9));
+        Assert.Equal(12, await LuminTask.RunOnThreadPool(() => LuminTask.FromResult(12)));
+        Assert.Equal(8, await LuminTask.RunOnThreadPool<int>((object state) => (int)state, 8));
+        Assert.Equal(4, await LuminTask.RunOnThreadPool<string, int>(text => text.Length, "abcd"));
+        Assert.Equal(7, await LuminTask.RunOnThreadPool<int>((object state) => LuminTask.FromResult((int)state), 7));
+        Assert.Equal(3, await LuminTask.RunOnThreadPool<string, int>(text => LuminTask.FromResult(text.Length), "abc"));
+
+        // Later in the test the body itself can already sit on a pool thread (switching to the pool is
+        // free to resume on the thread that asked for it), so assert the pool affinity instead.
+        var pooled = false;
+        await LuminTask.RunOnThreadPool<int>(() =>
+        {
+            pooled = Thread.CurrentThread.IsThreadPoolThread;
+            return 0;
+        });
+        Assert.True(pooled, "RunOnThreadPool<T> runs on a pool thread");
+
+        using (var canceled = new CancellationTokenSource())
+        {
+            canceled.Cancel();
+            await Assert.ThrowsAsync<OperationCanceledException>(
+                () => LuminTask.RunOnThreadPool(() => { }, cancellationToken: canceled.Token));
+            await Assert.ThrowsAsync<OperationCanceledException>(
+                () => LuminTask.RunOnThreadPool(() => 1, cancellationToken: canceled.Token));
+        }
+
+        // The token is checked again after the delegate, so cancelling from inside the delegate is
+        // observed even though the token was valid when the call started.
+        using (var midFlight = new CancellationTokenSource())
+        {
+            await Assert.ThrowsAsync<OperationCanceledException>(
+                () => LuminTask.RunOnThreadPool<int>(
+                    () =>
+                    {
+                        midFlight.Cancel();
+                        return 5;
+                    },
+                    cancellationToken: midFlight.Token));
+        }
+    }
+
+    // The test host has no pump for a custom context, so Post runs the callback inline: the assertion
+    // is about Run posting at all, not about where the continuation ends up.
+    private sealed class RecordingSynchronizationContext : SynchronizationContext
+    {
+        public int PostCount;
+
+        public override void Post(SendOrPostCallback d, object state)
+        {
+            PostCount++;
+            d(state);
+        }
+
+        public override void Send(SendOrPostCallback d, object state) => d(state);
     }
 
     private static async LuminTask ForgetExceptionHandler()
