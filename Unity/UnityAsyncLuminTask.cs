@@ -1,12 +1,9 @@
-
-using LuminThread.Utility;
-using UnityEngine.Networking;
-using System;
+﻿using System;
+using System.Collections.Concurrent;
 using System.Runtime.CompilerServices;
-using System.Runtime.InteropServices;
 using System.Threading;
 using UnityEngine;
-using LuminThread.TaskSource;
+using UnityEngine.Networking;
 using LuminThread.Interface;
 
 namespace LuminThread.Unity
@@ -40,30 +37,23 @@ namespace LuminThread.Unity
                 return LuminTask.FromCanceled(cancellationToken);
             if (asyncOperation.isDone)
                 return LuminTask.CompletedTask();
-            return AsyncOperationPromise.Create(asyncOperation, timing, progress, cancellationToken, cancelImmediately);
+            var handle = AsyncOperationPromise.Create(asyncOperation, timing, progress, cancellationToken, cancelImmediately,
+                AsyncOperationWriters.VoidResult, AsyncOperationWriters.PlainCanceled);
+            return LuminTaskSource.ToTask(handle);
         }
 
         public struct AsyncOperationLuminTaskAwaiter : ICriticalNotifyCompletion
         {
             private AsyncOperation _asyncOperation;
-            private Action<AsyncOperation> _continuationAction;
 
             public AsyncOperationLuminTaskAwaiter(AsyncOperation asyncOperation)
             {
                 _asyncOperation = asyncOperation;
-                _continuationAction = null;
             }
 
             public bool IsCompleted => _asyncOperation.isDone;
 
-            public void GetResult()
-            {
-                if (_continuationAction != null)
-                {
-                    _asyncOperation.completed -= _continuationAction;
-                    _continuationAction = null;
-                }
-            }
+            public void GetResult() { }
 
             public void OnCompleted(Action continuation)
             {
@@ -72,123 +62,14 @@ namespace LuminThread.Unity
 
             public void UnsafeOnCompleted(Action continuation)
             {
-                if (_continuationAction != null)
-                    throw new InvalidOperationException("Continuation is already registered");
-                
-                _continuationAction = Continuation;
-                _asyncOperation.completed += _continuationAction;
-                
-                void Continuation(AsyncOperation _) => continuation();
-            }
-        }
-
-        private static class AsyncOperationPromise
-        {
-            [StructLayout(LayoutKind.Sequential)]
-            private struct StateData
-            {
-                public bool Completed;
-                public bool IsCancellationRequested;
-                public CancellationTokenRegistration Registration;
-                public ulong Handle;
-            }
-
-            public static unsafe LuminTask Create(AsyncOperation asyncOperation, PlayerLoopTiming timing, IProgress<float> progress, CancellationToken cancellationToken, bool cancelImmediately)
-            {
-                var task = LuminTaskSource.Create(out ulong handle);
-                var stateData = new StateData
-                {
-                    Completed = false,
-                    IsCancellationRequested = false,
-                    Handle = handle
-                };
-
-                var stateTuple = StateTuple.Create(stateData, asyncOperation);
-                var state = new LuminTaskState(handle, cancellationToken, stateTuple);
-                
-                Action<AsyncOperation> continuation = null;
-                continuation = _ =>
-                {
-                    if (stateData.Completed)
-                        return;
-                        
-                    stateData.Completed = true;
-                    stateData.IsCancellationRequested = cancellationToken.IsCancellationRequested;
-                    stateTuple.Item.Item1.Completed = true;
-                    stateTuple.Item.Item1.IsCancellationRequested = stateData.IsCancellationRequested;
-                    
-                    if (cancellationToken.IsCancellationRequested)
-                    {
-                        LuminTaskSource.SetCanceled(handle, cancellationToken);
-                    }
-                    else
-                    {
-                        LuminTaskSource.SetResult(handle);
-                    }
-                    
-                    if (continuation != null)
-                    {
-                        asyncOperation.completed -= continuation;
-                        continuation = null;
-                    }
-
-                    stateTuple.Item.Item1.Registration.Dispose();
-                    stateTuple.Dispose();
-                };
-
-                asyncOperation.completed += continuation;
-
-                if (cancelImmediately && cancellationToken.CanBeCanceled)
-                {
-                    stateTuple.Item.Item1.Registration = cancellationToken.Register(() =>
-                    {
-                        stateData.Completed = true;
-                        stateData.IsCancellationRequested = true;
-                        LuminTaskSource.SetCanceled(handle, cancellationToken);
-                    });
-                }
-
-                PlayerLoopHelper.AddAction(timing, state, MoveNextAction);
-
-                return task;
-            }
-
-            private static readonly MoveNext MoveNextAction = MoveNext;
-
-            public static bool MoveNext(in LuminTaskState state)
-            {
-                var stateTuple = state.State as StateTuple<(StateData, AsyncOperation)>;
-                if (stateTuple == null)
-                    return false;
-
-                var asyncOperation = stateTuple.Item.Item2;
-
-                if (stateTuple.Item.Item1.Completed)
-                    return false;
-
-                if (state.CancellationToken.IsCancellationRequested)
-                {
-                    stateTuple.Item.Item1.Completed = true;
-                    stateTuple.Item.Item1.IsCancellationRequested = true;
-                    LuminTaskSource.SetCanceled(stateTuple.Item.Item1.Handle, state.CancellationToken);
-                    stateTuple.Item.Item1.Registration.Dispose();
-                    stateTuple.Dispose();
-                    return false;
-                }
-
-                var progress = (state.State as StateTuple<(StateData, IProgress<float>)>)?.Item.Item2;
-                progress?.Report(asyncOperation.progress);
-
-                if (asyncOperation.isDone)
-                {
-                    stateTuple.Item.Item1.Completed = true;
-                    LuminTaskSource.SetResult(stateTuple.Item.Item1.Handle);
-                    stateTuple.Item.Item1.Registration.Dispose();
-                    stateTuple.Dispose();
-                    return false;
-                }
-
-                return true;
+                // The handler removes itself when Unity raises it. A field written here would not be
+                // visible to the resumed GetResult: this awaiter is a struct, and the builder copies
+                // the state machine - and with it the awaiter - into its box before OnCompleted runs.
+                // Self-removal needs no field, so the operation keeps no handler afterwards.
+                var operation = _asyncOperation;
+                Action<AsyncOperation> handler = null;
+                handler = _ => { operation.completed -= handler; continuation(); };
+                operation.completed += handler;
             }
         }
 
@@ -221,31 +102,23 @@ namespace LuminThread.Unity
                 return LuminTask.FromCanceled<UnityEngine.Object>(cancellationToken);
             if (asyncOperation.isDone)
                 return LuminTask.FromResult(asyncOperation.asset);
-            return ResourceRequestPromise.Create(asyncOperation, timing, progress, cancellationToken, cancelImmediately);
+            var handle = AsyncOperationPromise.Create(asyncOperation, timing, progress, cancellationToken, cancelImmediately,
+                AsyncOperationWriters.ResourceRequestAsset, AsyncOperationWriters.PlainCanceled);
+            return LuminTaskSource.ToTask<UnityEngine.Object>(handle);
         }
 
         public struct ResourceRequestLuminTaskAwaiter : ICriticalNotifyCompletion
         {
             private ResourceRequest _asyncOperation;
-            private Action<AsyncOperation> _continuationAction;
 
             public ResourceRequestLuminTaskAwaiter(ResourceRequest asyncOperation)
             {
                 _asyncOperation = asyncOperation;
-                _continuationAction = null;
             }
 
             public bool IsCompleted => _asyncOperation.isDone;
 
-            public UnityEngine.Object GetResult()
-            {
-                if (_continuationAction != null)
-                {
-                    _asyncOperation.completed -= _continuationAction;
-                    _continuationAction = null;
-                }
-                return _asyncOperation.asset;
-            }
+            public UnityEngine.Object GetResult() => _asyncOperation.asset;
 
             public void OnCompleted(Action continuation)
             {
@@ -254,123 +127,10 @@ namespace LuminThread.Unity
 
             public void UnsafeOnCompleted(Action continuation)
             {
-                if (_continuationAction != null)
-                    throw new InvalidOperationException("Continuation is already registered");
-                
-                _continuationAction = Continuation;
-                _asyncOperation.completed += _continuationAction;
-                
-                void Continuation(AsyncOperation _) => continuation();
-            }
-        }
-
-        private static class ResourceRequestPromise
-        {
-            [StructLayout(LayoutKind.Sequential)]
-            private struct StateData
-            {
-                public bool Completed;
-                public bool IsCancellationRequested;
-                public CancellationTokenRegistration Registration;
-                public ulong Handle;
-            }
-
-            public static unsafe LuminTask<UnityEngine.Object> Create(ResourceRequest asyncOperation, PlayerLoopTiming timing, IProgress<float> progress, CancellationToken cancellationToken, bool cancelImmediately)
-            {
-                var task = LuminTaskSource.Create<UnityEngine.Object>(out ulong handle);
-                var stateData = new StateData
-                {
-                    Completed = false,
-                    IsCancellationRequested = false,
-                    Handle = handle
-                };
-
-                var stateTuple = StateTuple.Create(stateData, progress, asyncOperation);
-                var state = new LuminTaskState(handle, cancellationToken, stateTuple);
-                
-                Action<AsyncOperation> continuation = null;
-                continuation = _ =>
-                {
-                    if (stateData.Completed)
-                        return;
-                        
-                    stateData.Completed = true;
-                    stateData.IsCancellationRequested = cancellationToken.IsCancellationRequested;
-                    stateTuple.Item.Item1.Completed = true;
-                    stateTuple.Item.Item1.IsCancellationRequested = stateData.IsCancellationRequested;
-                    
-                    if (cancellationToken.IsCancellationRequested)
-                    {
-                        LuminTaskSource.SetCanceled(handle, cancellationToken);
-                    }
-                    else
-                    {
-                        LuminTaskSource.SetResult(handle, asyncOperation.asset);
-                    }
-                    
-                    if (continuation != null)
-                    {
-                        asyncOperation.completed -= continuation;
-                        continuation = null;
-                    }
-
-                    stateTuple.Item.Item1.Registration.Dispose();
-                    stateTuple.Dispose();
-                };
-
-                asyncOperation.completed += continuation;
-
-                if (cancelImmediately && cancellationToken.CanBeCanceled)
-                {
-                    stateTuple.Item.Item1.Registration = cancellationToken.Register(() =>
-                    {
-                        stateData.Completed = true;
-                        stateData.IsCancellationRequested = true;
-                        LuminTaskSource.SetCanceled(handle, cancellationToken);
-                    });
-                }
-
-                PlayerLoopHelper.AddAction(timing, state, MoveNextAction);
-
-                return task;
-            }
-
-            private static readonly MoveNext MoveNextAction = MoveNext;
-
-            public static bool MoveNext(in LuminTaskState state)
-            {
-                var stateTuple = state.State as StateTuple<(StateData, IProgress<float>, ResourceRequest)>;
-                if (stateTuple == null)
-                    return false;
-
-                var asyncOperation = stateTuple.Item.Item3;
-
-                if (stateTuple.Item.Item1.Completed)
-                    return false;
-
-                if (state.CancellationToken.IsCancellationRequested)
-                {
-                    stateTuple.Item.Item1.Completed = true;
-                    stateTuple.Item.Item1.IsCancellationRequested = true;
-                    LuminTaskSource.SetCanceled(stateTuple.Item.Item1.Handle, state.CancellationToken);
-                    stateTuple.Item.Item1.Registration.Dispose();
-                    stateTuple.Dispose();
-                    return false;
-                }
-
-                var progress = stateTuple.Item.Item2;
-                progress?.Report(asyncOperation.progress);
-
-                if (asyncOperation.isDone)
-                {
-                    stateTuple.Item.Item1.Completed = true;
-                    LuminTaskSource.SetResult(stateTuple.Item.Item1.Handle, asyncOperation.asset);
-                    stateTuple.Item.Item1.Registration.Dispose();
-                    stateTuple.Dispose();
-                    return false;
-                }
-
-                return true;
+                var operation = _asyncOperation;
+                Action<AsyncOperation> handler = null;
+                handler = _ => { operation.completed -= handler; continuation(); };
+                operation.completed += handler;
             }
         }
 
@@ -403,31 +163,23 @@ namespace LuminThread.Unity
                 return LuminTask.FromCanceled<UnityEngine.Object>(cancellationToken);
             if (asyncOperation.isDone)
                 return LuminTask.FromResult(asyncOperation.asset);
-            return AssetBundleRequestPromise.Create(asyncOperation, timing, progress, cancellationToken, cancelImmediately);
+            var handle = AsyncOperationPromise.Create(asyncOperation, timing, progress, cancellationToken, cancelImmediately,
+                AsyncOperationWriters.AssetBundleRequestAsset, AsyncOperationWriters.PlainCanceled);
+            return LuminTaskSource.ToTask<UnityEngine.Object>(handle);
         }
 
         public struct AssetBundleRequestLuminTaskAwaiter : ICriticalNotifyCompletion
         {
             private AssetBundleRequest _asyncOperation;
-            private Action<AsyncOperation> _continuationAction;
 
             public AssetBundleRequestLuminTaskAwaiter(AssetBundleRequest asyncOperation)
             {
                 _asyncOperation = asyncOperation;
-                _continuationAction = null;
             }
 
             public bool IsCompleted => _asyncOperation.isDone;
 
-            public UnityEngine.Object GetResult()
-            {
-                if (_continuationAction != null)
-                {
-                    _asyncOperation.completed -= _continuationAction;
-                    _continuationAction = null;
-                }
-                return _asyncOperation.asset;
-            }
+            public UnityEngine.Object GetResult() => _asyncOperation.asset;
 
             public void OnCompleted(Action continuation)
             {
@@ -436,128 +188,15 @@ namespace LuminThread.Unity
 
             public void UnsafeOnCompleted(Action continuation)
             {
-                if (_continuationAction != null)
-                    throw new InvalidOperationException("Continuation is already registered");
-                
-                _continuationAction = Continuation;
-                _asyncOperation.completed += _continuationAction;
-                
-                void Continuation(AsyncOperation _) => continuation();
-            }
-        }
-
-        private static class AssetBundleRequestPromise
-        {
-            [StructLayout(LayoutKind.Sequential)]
-            private struct StateData
-            {
-                public bool Completed;
-                public bool IsCancellationRequested;
-                public CancellationTokenRegistration Registration;
-                public ulong Handle;
-            }
-
-            public static unsafe LuminTask<UnityEngine.Object> Create(AssetBundleRequest asyncOperation, PlayerLoopTiming timing, IProgress<float> progress, CancellationToken cancellationToken, bool cancelImmediately)
-            {
-                var task = LuminTaskSource.Create<UnityEngine.Object>(out ulong handle);
-                var stateData = new StateData
-                {
-                    Completed = false,
-                    IsCancellationRequested = false,
-                    Handle = handle
-                };
-
-                var stateTuple = StateTuple.Create(stateData, progress, asyncOperation);
-                var state = new LuminTaskState(handle, cancellationToken, stateTuple);
-                
-                Action<AsyncOperation> continuation = null;
-                continuation = _ =>
-                {
-                    if (stateData.Completed)
-                        return;
-                        
-                    stateData.Completed = true;
-                    stateData.IsCancellationRequested = cancellationToken.IsCancellationRequested;
-                    stateTuple.Item.Item1.Completed = true;
-                    stateTuple.Item.Item1.IsCancellationRequested = stateData.IsCancellationRequested;
-                    
-                    if (cancellationToken.IsCancellationRequested)
-                    {
-                        LuminTaskSource.SetCanceled(handle, cancellationToken);
-                    }
-                    else
-                    {
-                        LuminTaskSource.SetResult(handle, asyncOperation.asset);
-                    }
-                    
-                    if (continuation != null)
-                    {
-                        asyncOperation.completed -= continuation;
-                        continuation = null;
-                    }
-
-                    stateTuple.Item.Item1.Registration.Dispose();
-                    stateTuple.Dispose();
-                };
-
-                asyncOperation.completed += continuation;
-
-                if (cancelImmediately && cancellationToken.CanBeCanceled)
-                {
-                    stateTuple.Item.Item1.Registration = cancellationToken.Register(() =>
-                    {
-                        stateData.Completed = true;
-                        stateData.IsCancellationRequested = true;
-                        LuminTaskSource.SetCanceled(handle, cancellationToken);
-                    });
-                }
-
-                PlayerLoopHelper.AddAction(timing, state, MoveNextAction);
-
-                return task;
-            }
-
-            private static readonly MoveNext MoveNextAction = MoveNext;
-
-            public static bool MoveNext(in LuminTaskState state)
-            {
-                var stateTuple = state.State as StateTuple<(StateData, IProgress<float>, AssetBundleRequest)>;
-                if (stateTuple == null)
-                    return false;
-
-                var asyncOperation = stateTuple.Item.Item3;
-
-                if (stateTuple.Item.Item1.Completed)
-                    return false;
-
-                if (state.CancellationToken.IsCancellationRequested)
-                {
-                    stateTuple.Item.Item1.Completed = true;
-                    stateTuple.Item.Item1.IsCancellationRequested = true;
-                    LuminTaskSource.SetCanceled(stateTuple.Item.Item1.Handle, state.CancellationToken);
-                    stateTuple.Item.Item1.Registration.Dispose();
-                    stateTuple.Dispose();
-                    return false;
-                }
-
-                var progress = stateTuple.Item.Item2;
-                progress?.Report(asyncOperation.progress);
-
-                if (asyncOperation.isDone)
-                {
-                    stateTuple.Item.Item1.Completed = true;
-                    LuminTaskSource.SetResult(stateTuple.Item.Item1.Handle, asyncOperation.asset);
-                    stateTuple.Item.Item1.Registration.Dispose();
-                    stateTuple.Dispose();
-                    return false;
-                }
-
-                return true;
+                var operation = _asyncOperation;
+                Action<AsyncOperation> handler = null;
+                handler = _ => { operation.completed -= handler; continuation(); };
+                operation.completed += handler;
             }
         }
 
         #endregion
-        
+
         #region AssetBundleCreateRequest
 
         public static AssetBundleCreateRequestLuminTaskAwaiter GetAwaiter(this AssetBundleCreateRequest asyncOperation)
@@ -585,31 +224,23 @@ namespace LuminThread.Unity
                 return LuminTask.FromCanceled<AssetBundle>(cancellationToken);
             if (asyncOperation.isDone)
                 return LuminTask.FromResult(asyncOperation.assetBundle);
-            return AssetBundleCreateRequestPromise.Create(asyncOperation, timing, progress, cancellationToken, cancelImmediately);
+            var handle = AsyncOperationPromise.Create(asyncOperation, timing, progress, cancellationToken, cancelImmediately,
+                AsyncOperationWriters.AssetBundleCreateResult, AsyncOperationWriters.PlainCanceled);
+            return LuminTaskSource.ToTask<AssetBundle>(handle);
         }
 
         public struct AssetBundleCreateRequestLuminTaskAwaiter : ICriticalNotifyCompletion
         {
             private AssetBundleCreateRequest _asyncOperation;
-            private Action<AsyncOperation> _continuationAction;
 
             public AssetBundleCreateRequestLuminTaskAwaiter(AssetBundleCreateRequest asyncOperation)
             {
                 _asyncOperation = asyncOperation;
-                _continuationAction = null;
             }
 
             public bool IsCompleted => _asyncOperation.isDone;
 
-            public AssetBundle GetResult()
-            {
-                if (_continuationAction != null)
-                {
-                    _asyncOperation.completed -= _continuationAction;
-                    _continuationAction = null;
-                }
-                return _asyncOperation.assetBundle;
-            }
+            public AssetBundle GetResult() => _asyncOperation.assetBundle;
 
             public void OnCompleted(Action continuation)
             {
@@ -618,128 +249,15 @@ namespace LuminThread.Unity
 
             public void UnsafeOnCompleted(Action continuation)
             {
-                if (_continuationAction != null)
-                    throw new InvalidOperationException("Continuation is already registered");
-                
-                _continuationAction = Continuation;
-                _asyncOperation.completed += _continuationAction;
-                
-                void Continuation(AsyncOperation _) => continuation();
-            }
-        }
-
-        private static class AssetBundleCreateRequestPromise
-        {
-            [StructLayout(LayoutKind.Sequential)]
-            private struct StateData
-            {
-                public bool Completed;
-                public bool IsCancellationRequested;
-                public CancellationTokenRegistration Registration;
-                public ulong Handle;
-            }
-
-            public static unsafe LuminTask<AssetBundle> Create(AssetBundleCreateRequest asyncOperation, PlayerLoopTiming timing, IProgress<float> progress, CancellationToken cancellationToken, bool cancelImmediately)
-            {
-                var task = LuminTaskSource.Create<AssetBundle>(out ulong handle);
-                var stateData = new StateData
-                {
-                    Completed = false,
-                    IsCancellationRequested = false,
-                    Handle = handle
-                };
-
-                var stateTuple = StateTuple.Create(stateData, progress, asyncOperation);
-                var state = new LuminTaskState(handle, cancellationToken, stateTuple);
-                
-                Action<AsyncOperation> continuation = null;
-                continuation = _ =>
-                {
-                    if (stateData.Completed)
-                        return;
-                        
-                    stateData.Completed = true;
-                    stateData.IsCancellationRequested = cancellationToken.IsCancellationRequested;
-                    stateTuple.Item.Item1.Completed = true;
-                    stateTuple.Item.Item1.IsCancellationRequested = stateData.IsCancellationRequested;
-                    
-                    if (cancellationToken.IsCancellationRequested)
-                    {
-                        LuminTaskSource.SetCanceled(handle, cancellationToken);
-                    }
-                    else
-                    {
-                        LuminTaskSource.SetResult(handle, asyncOperation.assetBundle);
-                    }
-                    
-                    if (continuation != null)
-                    {
-                        asyncOperation.completed -= continuation;
-                        continuation = null;
-                    }
-
-                    stateTuple.Item.Item1.Registration.Dispose();
-                    stateTuple.Dispose();
-                };
-
-                asyncOperation.completed += continuation;
-
-                if (cancelImmediately && cancellationToken.CanBeCanceled)
-                {
-                    stateTuple.Item.Item1.Registration = cancellationToken.Register(() =>
-                    {
-                        stateData.Completed = true;
-                        stateData.IsCancellationRequested = true;
-                        LuminTaskSource.SetCanceled(handle, cancellationToken);
-                    });
-                }
-
-                PlayerLoopHelper.AddAction(timing, state, MoveNextAction);
-
-                return task;
-            }
-
-            private static readonly MoveNext MoveNextAction = MoveNext;
-
-            public static bool MoveNext(in LuminTaskState state)
-            {
-                var stateTuple = state.State as StateTuple<(StateData, IProgress<float>, AssetBundleCreateRequest)>;
-                if (stateTuple == null)
-                    return false;
-
-                var asyncOperation = stateTuple.Item.Item3;
-
-                if (stateTuple.Item.Item1.Completed)
-                    return false;
-
-                if (state.CancellationToken.IsCancellationRequested)
-                {
-                    stateTuple.Item.Item1.Completed = true;
-                    stateTuple.Item.Item1.IsCancellationRequested = true;
-                    LuminTaskSource.SetCanceled(stateTuple.Item.Item1.Handle, state.CancellationToken);
-                    stateTuple.Item.Item1.Registration.Dispose();
-                    stateTuple.Dispose();
-                    return false;
-                }
-
-                var progress = stateTuple.Item.Item2;
-                progress?.Report(asyncOperation.progress);
-
-                if (asyncOperation.isDone)
-                {
-                    stateTuple.Item.Item1.Completed = true;
-                    LuminTaskSource.SetResult(stateTuple.Item.Item1.Handle, asyncOperation.assetBundle);
-                    stateTuple.Item.Item1.Registration.Dispose();
-                    stateTuple.Dispose();
-                    return false;
-                }
-
-                return true;
+                var operation = _asyncOperation;
+                Action<AsyncOperation> handler = null;
+                handler = _ => { operation.completed -= handler; continuation(); };
+                operation.completed += handler;
             }
         }
 
         #endregion
-        
+
         #region UnityWebRequestAsyncOperation
 
         public static UnityWebRequestOperationLuminTaskAwaiter GetAwaiter(this UnityWebRequestAsyncOperation asyncOperation)
@@ -773,30 +291,24 @@ namespace LuminThread.Unity
                 }
                 return LuminTask.FromResult(asyncOperation.webRequest);
             }
-            return UnityWebRequestAsyncOperationPromise.Create(asyncOperation, timing, progress, cancellationToken, cancelImmediately);
+            var handle = AsyncOperationPromise.Create(asyncOperation, timing, progress, cancellationToken, cancelImmediately,
+                AsyncOperationWriters.WebRequestResult, AsyncOperationWriters.WebRequestCanceled);
+            return LuminTaskSource.ToTask<UnityWebRequest>(handle);
         }
 
         public struct UnityWebRequestOperationLuminTaskAwaiter : ICriticalNotifyCompletion
         {
             private UnityWebRequestAsyncOperation _asyncOperation;
-            private Action<AsyncOperation> _continuationAction;
 
             public UnityWebRequestOperationLuminTaskAwaiter(UnityWebRequestAsyncOperation asyncOperation)
             {
                 _asyncOperation = asyncOperation;
-                _continuationAction = null;
             }
 
             public bool IsCompleted => _asyncOperation.isDone;
 
             public UnityWebRequest GetResult()
             {
-                if (_continuationAction != null)
-                {
-                    _asyncOperation.completed -= _continuationAction;
-                    _continuationAction = null;
-                }
-                
                 if (IsError(_asyncOperation.webRequest))
                 {
                     throw new UnityWebRequestLuminTaskException(_asyncOperation.webRequest);
@@ -811,138 +323,293 @@ namespace LuminThread.Unity
 
             public void UnsafeOnCompleted(Action continuation)
             {
-                if (_continuationAction != null)
-                    throw new InvalidOperationException("Continuation is already registered");
-                
-                _continuationAction = Continuation;
-                _asyncOperation.completed += _continuationAction;
-                
-                void Continuation(AsyncOperation _) => continuation();
+                var operation = _asyncOperation;
+                Action<AsyncOperation> handler = null;
+                handler = _ => { operation.completed -= handler; continuation(); };
+                operation.completed += handler;
             }
         }
 
-        private static class UnityWebRequestAsyncOperationPromise
+        #endregion
+
+        #region Shared AsyncOperation state
+
+        // One control block for the whole AsyncOperation family (AsyncOperation, ResourceRequest,
+        // AssetBundleRequest, AssetBundleCreateRequest, UnityWebRequestAsyncOperation) instead of five
+        // identical private StateData copies, and it owns its completed-callback and its cancellation
+        // callback: a promise costs no closure and, once the pool is warm, no allocation at all.
+        //
+        // Ownership. There is exactly one recycler - the loop node (AsyncOperationPromise.MoveNext).
+        // The three completion paths only ever write the result:
+        //   * the completed callback (main thread; it also unsubscribes and drops the registration),
+        //   * the cancellation callback (the cancelling thread; it may not touch the operation or the
+        //     registration, so it only writes the cancellation and lets the loop node clean up),
+        //   * the loop node itself (main thread; poll for cancellation and for an operation that
+        //     finished without raising the event).
+        // A path that wins the completion gate publishes the end of its work through EndCompletion, and
+        // the loop node recycles only after observing that. So the block can never be handed back to
+        // the pool while a completion is still reading it, and a late completed callback can never
+        // write into a block that already belongs to someone else.
+        private sealed class AsyncOperationState : IDisposable
         {
-            [StructLayout(LayoutKind.Sequential)]
-            private struct StateData
+            private readonly Action<AsyncOperation> _onCompleted;
+            private readonly Action _onCancelRequested;
+
+            // 0 = running, 1 = a completer is inside its completion, 2 = completion finished.
+            private int _phase;
+            private int _pooled;
+
+            internal ulong Handle;
+            internal AsyncOperation Operation;
+            internal IProgress<float> Progress;
+            internal CancellationToken Token;
+            internal CancellationTokenRegistration Registration;
+
+            private Action<AsyncOperationState> _writeCompletion;
+            private Action<AsyncOperationState> _writeCancellation;
+
+            internal AsyncOperationState()
             {
-                public bool Completed;
-                public bool IsCancellationRequested;
-                public CancellationTokenRegistration Registration;
-                public ulong Handle;
+                _onCompleted = OnCompleted;
+                _onCancelRequested = OnCancelRequested;
             }
 
-            public static unsafe LuminTask<UnityWebRequest> Create(UnityWebRequestAsyncOperation asyncOperation, PlayerLoopTiming timing, IProgress<float> progress, CancellationToken cancellationToken, bool cancelImmediately)
+            internal Action<AsyncOperation> CompletedCallback => _onCompleted;
+
+            internal Action CancellationCallback => _onCancelRequested;
+
+            internal bool IsCompleting => Volatile.Read(ref _phase) == 1;
+
+            internal bool IsCompletionFinished => Volatile.Read(ref _phase) == 2;
+
+            internal void Initialize(ulong handle, AsyncOperation operation, IProgress<float> progress,
+                CancellationToken token, Action<AsyncOperationState> writeCompletion, Action<AsyncOperationState> writeCancellation)
             {
-                var task = LuminTaskSource.Create<UnityWebRequest>(out ulong handle);
-                var stateData = new StateData
+                Handle = handle;
+                Operation = operation;
+                Progress = progress;
+                Token = token;
+                Registration = default;
+                _writeCompletion = writeCompletion;
+                _writeCancellation = writeCancellation;
+                _phase = 0;
+                _pooled = 0;
+            }
+
+            // The first caller becomes the only writer of the handle.
+            internal bool TryBeginCompletion() => Interlocked.CompareExchange(ref _phase, 1, 0) == 0;
+
+            internal void EndCompletion() => Volatile.Write(ref _phase, 2);
+
+            internal void WriteCompletion() => _writeCompletion(this);
+
+            internal void WriteCancellation() => _writeCancellation(this);
+
+            private void OnCompleted(AsyncOperation operation)
+            {
+                if (!TryBeginCompletion())
+                    return;
+
+                operation.completed -= _onCompleted;
+                Registration.Dispose();
+                WriteCompletion();
+                EndCompletion();
+            }
+
+            private void OnCancelRequested()
+            {
+                if (!TryBeginCompletion())
+                    return;
+
+                // Runs on whichever thread cancelled the token. Unity objects are not thread-safe and
+                // disposing our own registration from inside its callback is not allowed, so both the
+                // unsubscription and the registration wait for the loop node below.
+                WriteCancellation();
+                EndCompletion();
+            }
+
+            public void Dispose()
+            {
+                if (Interlocked.Exchange(ref _pooled, 1) != 0)
+                    return;
+
+                // A completer is still inside its gate (another thread, or a user exception escaped
+                // MoveNext mid-completion): the only safe move is to abandon the block to the GC.
+                if (IsCompleting)
+                    return;
+
+                if (Operation != null)
                 {
-                    Completed = false,
-                    IsCancellationRequested = false,
-                    Handle = handle
-                };
-
-                var stateTuple = StateTuple.Create(stateData, progress, asyncOperation);
-                var state = new LuminTaskState(handle, cancellationToken, stateTuple);
-                
-                Action<AsyncOperation> continuation = null;
-                continuation = _ =>
-                {
-                    if (stateData.Completed)
-                        return;
-                        
-                    stateData.Completed = true;
-                    stateData.IsCancellationRequested = cancellationToken.IsCancellationRequested;
-                    stateTuple.Item.Item1.Completed = true;
-                    stateTuple.Item.Item1.IsCancellationRequested = stateData.IsCancellationRequested;
-                    
-                    if (cancellationToken.IsCancellationRequested)
-                    {
-                        LuminTaskSource.SetCanceled(handle, cancellationToken);
-                    }
-                    else if (IsError(asyncOperation.webRequest))
-                    {
-                        LuminTaskSource.SetException(handle, new UnityWebRequestLuminTaskException(asyncOperation.webRequest));
-                    }
-                    else
-                    {
-                        LuminTaskSource.SetResult(handle, asyncOperation.webRequest);
-                    }
-                    
-                    if (continuation != null)
-                    {
-                        asyncOperation.completed -= continuation;
-                        continuation = null;
-                    }
-
-                    stateTuple.Item.Item1.Registration.Dispose();
-                    stateTuple.Dispose();
-                };
-
-                asyncOperation.completed += continuation;
-
-                if (cancelImmediately && cancellationToken.CanBeCanceled)
-                {
-                    stateTuple.Item.Item1.Registration = cancellationToken.Register(() =>
-                    {
-                        stateData.Completed = true;
-                        stateData.IsCancellationRequested = true;
-                        asyncOperation.webRequest.Abort();
-                        LuminTaskSource.SetCanceled(handle, cancellationToken);
-                    });
+                    Operation.completed -= _onCompleted;
+                    Operation = null;
                 }
 
-                PlayerLoopHelper.AddAction(timing, state, MoveNextAction);
+                Registration.Dispose();
+                Registration = default;
+                Progress = null;
+                Token = default;
+                _writeCompletion = null;
+                _writeCancellation = null;
 
-                return task;
+                AsyncOperationStatePool.Return(this);
+            }
+        }
+
+        // Bounded, non-generic pool: all five adapters share one closed block type, and the blocks keep
+        // their cached callbacks warm. Mirrors the WaitNodePool shape used by AsyncEx (fast slot, then
+        // a capped chain) so nothing here grows with the peak the process reached.
+        private static class AsyncOperationStatePool
+        {
+            private const int MaxRetained = 16;
+
+            private static AsyncOperationState _fast;
+            private static readonly ConcurrentQueue<AsyncOperationState> _overflow = new ConcurrentQueue<AsyncOperationState>();
+
+            internal static AsyncOperationState Rent()
+            {
+                var state = Interlocked.Exchange(ref _fast, null);
+                if (state != null)
+                    return state;
+
+                return _overflow.TryDequeue(out state) ? state : new AsyncOperationState();
             }
 
+            internal static void Return(AsyncOperationState state)
+            {
+                if (Interlocked.CompareExchange(ref _fast, state, null) == null)
+                    return;
+
+                if (_overflow.Count >= MaxRetained)
+                    return;
+
+                _overflow.Enqueue(state);
+            }
+        }
+
+        private static class AsyncOperationPromise
+        {
             private static readonly MoveNext MoveNextAction = MoveNext;
 
-            public static bool MoveNext(in LuminTaskState state)
+            internal static ulong Create(AsyncOperation operation, PlayerLoopTiming timing, IProgress<float> progress,
+                CancellationToken cancellationToken, bool cancelImmediately,
+                Action<AsyncOperationState> writeCompletion, Action<AsyncOperationState> writeCancellation)
             {
-                var stateTuple = state.State as StateTuple<(StateData, IProgress<float>, UnityWebRequestAsyncOperation)>;
-                if (stateTuple == null)
+                LuminTaskSource.Rent(out var handle);
+
+                var state = AsyncOperationStatePool.Rent();
+                state.Initialize(handle, operation, progress, cancellationToken, writeCompletion, writeCancellation);
+
+                // Registered before the operation subscribes: if the token fires during the call the
+                // cancellation path still runs first and the loop node removes the leftover handler.
+                if (cancelImmediately && cancellationToken.CanBeCanceled)
+                {
+                    state.Registration = cancellationToken.Register(state.CancellationCallback);
+                }
+
+                operation.completed += state.CompletedCallback;
+
+                PlayerLoopHelper.AddAction(timing, new LuminTaskState(handle, cancellationToken, state), MoveNextAction);
+
+                return handle;
+            }
+
+            internal static bool MoveNext(in LuminTaskState state)
+            {
+                if (state.State is not AsyncOperationState asyncOperationState)
                     return false;
 
-                var asyncOperation = stateTuple.Item.Item3;
-
-                if (stateTuple.Item.Item1.Completed)
+                // The completion already ran to its end, so this pass owns the recycle.
+                if (asyncOperationState.IsCompletionFinished)
+                {
+                    asyncOperationState.Dispose();
                     return false;
+                }
+
+                // A completer is in flight; keep the item for one more pass instead of racing it.
+                if (asyncOperationState.IsCompleting)
+                    return true;
+
+                var operation = asyncOperationState.Operation;
 
                 if (state.CancellationToken.IsCancellationRequested)
                 {
-                    stateTuple.Item.Item1.Completed = true;
-                    stateTuple.Item.Item1.IsCancellationRequested = true;
-                    asyncOperation.webRequest.Abort();
-                    LuminTaskSource.SetCanceled(stateTuple.Item.Item1.Handle, state.CancellationToken);
-                    stateTuple.Item.Item1.Registration.Dispose();
-                    stateTuple.Dispose();
-                    return false;
+                    Complete(asyncOperationState, canceled: true);
+                    return true;
                 }
 
-                var progress = stateTuple.Item.Item2;
-                progress?.Report(asyncOperation.progress);
+                asyncOperationState.Progress?.Report(operation.progress);
 
-                if (asyncOperation.isDone)
+                if (operation.isDone)
                 {
-                    stateTuple.Item.Item1.Completed = true;
-                    
-                    if (IsError(asyncOperation.webRequest))
-                    {
-                        LuminTaskSource.SetException(stateTuple.Item.Item1.Handle, new UnityWebRequestLuminTaskException(asyncOperation.webRequest));
-                    }
-                    else
-                    {
-                        LuminTaskSource.SetResult(stateTuple.Item.Item1.Handle, asyncOperation.webRequest);
-                    }
-                    
-                    stateTuple.Item.Item1.Registration.Dispose();
-                    stateTuple.Dispose();
-                    return false;
+                    Complete(asyncOperationState, canceled: false);
                 }
 
                 return true;
+            }
+
+            // Only ever called from the loop node, which runs on the main thread.
+            private static void Complete(AsyncOperationState state, bool canceled)
+            {
+                if (!state.TryBeginCompletion())
+                    return;
+
+                state.Operation.completed -= state.CompletedCallback;
+                state.Registration.Dispose();
+
+                if (canceled)
+                    state.WriteCancellation();
+                else
+                    state.WriteCompletion();
+
+                state.EndCompletion();
+            }
+        }
+
+        // One cached writer per adapter shape. Holding them here keeps the shared block free of any
+        // result-kind switch, and the typed SetResult<T> instantiation stays with the adapter that owns
+        // the result type. The delegates are built once at type initialisation, never per operation.
+        private static class AsyncOperationWriters
+        {
+            internal static readonly Action<AsyncOperationState> VoidResult = WriteVoidResult;
+            internal static readonly Action<AsyncOperationState> ResourceRequestAsset = WriteResourceRequestAsset;
+            internal static readonly Action<AsyncOperationState> AssetBundleRequestAsset = WriteAssetBundleRequestAsset;
+            internal static readonly Action<AsyncOperationState> AssetBundleCreateResult = WriteAssetBundleCreateResult;
+            internal static readonly Action<AsyncOperationState> WebRequestResult = WriteWebRequestResult;
+            internal static readonly Action<AsyncOperationState> PlainCanceled = WritePlainCanceled;
+            internal static readonly Action<AsyncOperationState> WebRequestCanceled = WriteWebRequestCanceled;
+
+            private static void WriteVoidResult(AsyncOperationState state)
+                => LuminTaskSource.SetResult(state.Handle);
+
+            private static void WriteResourceRequestAsset(AsyncOperationState state)
+                => LuminTaskSource.SetResult(state.Handle, ((ResourceRequest)state.Operation).asset);
+
+            private static void WriteAssetBundleRequestAsset(AsyncOperationState state)
+                => LuminTaskSource.SetResult(state.Handle, ((AssetBundleRequest)state.Operation).asset);
+
+            private static void WriteAssetBundleCreateResult(AsyncOperationState state)
+                => LuminTaskSource.SetResult(state.Handle, ((AssetBundleCreateRequest)state.Operation).assetBundle);
+
+            private static void WriteWebRequestResult(AsyncOperationState state)
+            {
+                var request = ((UnityWebRequestAsyncOperation)state.Operation).webRequest;
+                if (IsError(request))
+                {
+                    LuminTaskSource.SetException(state.Handle, new UnityWebRequestLuminTaskException(request));
+                }
+                else
+                {
+                    LuminTaskSource.SetResult(state.Handle, request);
+                }
+            }
+
+            private static void WritePlainCanceled(AsyncOperationState state)
+                => LuminTaskSource.SetCanceled(state.Handle, state.Token);
+
+            private static void WriteWebRequestCanceled(AsyncOperationState state)
+            {
+                ((UnityWebRequestAsyncOperation)state.Operation).webRequest.Abort();
+                LuminTaskSource.SetCanceled(state.Handle, state.Token);
             }
         }
 
