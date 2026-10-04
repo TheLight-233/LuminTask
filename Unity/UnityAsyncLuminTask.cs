@@ -350,6 +350,17 @@ namespace LuminThread.Unity
         // the loop node recycles only after observing that. So the block can never be handed back to
         // the pool while a completion is still reading it, and a late completed callback can never
         // write into a block that already belongs to someone else.
+        //
+        // Which thread may touch the Unity object is part of the contract, not a detail: the cancel
+        // callback runs on whichever thread cancelled the token and never touches the operation, the
+        // registration or the event; the completed callback, the poll and the recycle all run on the
+        // main thread and may. Writers take that permission as a parameter instead of guessing from a
+        // thread id.
+        //
+        // Cancellation is decided at completion time, not at request time: a token that is already
+        // cancelled when the operation finishes still completes the task as canceled. That is the
+        // contract the pre-shared-block adapter had, and it keeps "cancelled before the next poll"
+        // from silently turning into a success.
         private sealed class AsyncOperationState : IDisposable
         {
             private readonly Action<AsyncOperation> _onCompleted;
@@ -365,8 +376,16 @@ namespace LuminThread.Unity
             internal CancellationToken Token;
             internal CancellationTokenRegistration Registration;
 
+            // Set by whichever path publishes the cancellation, so the recycle can give the operation
+            // its main-thread chance to react (see WriteWebRequestCanceled).
+            internal bool Canceled;
+
+            // Set by a writer as soon as the source accepted the completion; the phase exit uses it to
+            // tell "published, then a continuation threw" from "threw before publishing".
+            internal bool Published;
+
             private Action<AsyncOperationState> _writeCompletion;
-            private Action<AsyncOperationState> _writeCancellation;
+            private Action<AsyncOperationState, bool> _writeCancellation;
 
             internal AsyncOperationState()
             {
@@ -383,7 +402,7 @@ namespace LuminThread.Unity
             internal bool IsCompletionFinished => Volatile.Read(ref _phase) == 2;
 
             internal void Initialize(ulong handle, AsyncOperation operation, IProgress<float> progress,
-                CancellationToken token, Action<AsyncOperationState> writeCompletion, Action<AsyncOperationState> writeCancellation)
+                CancellationToken token, Action<AsyncOperationState> writeCompletion, Action<AsyncOperationState, bool> writeCancellation)
             {
                 Handle = handle;
                 Operation = operation;
@@ -392,6 +411,8 @@ namespace LuminThread.Unity
                 Registration = default;
                 _writeCompletion = writeCompletion;
                 _writeCancellation = writeCancellation;
+                Canceled = false;
+                Published = false;
                 _phase = 0;
                 _pooled = 0;
             }
@@ -403,18 +424,34 @@ namespace LuminThread.Unity
 
             internal void WriteCompletion() => _writeCompletion(this);
 
-            internal void WriteCancellation() => _writeCancellation(this);
+            internal void WriteCancellation(bool allowOperationAccess)
+            {
+                Canceled = true;
+                _writeCancellation(this, allowOperationAccess);
+            }
 
-            private void OnCompleted(AsyncOperation operation)
+            // Main-thread completion, shared by the completed event and the poll: the two paths that may
+            // touch the operation do the unsubscription, the registration and the phase exit in one
+            // place, and both consult the token so a cancelled token always wins over a finished
+            // operation.
+            internal void CompleteOnMainThread(bool canceled)
             {
                 if (!TryBeginCompletion())
                     return;
 
-                operation.completed -= _onCompleted;
+                Operation.completed -= _onCompleted;
                 Registration.Dispose();
-                WriteCompletion();
+
+                if (canceled || Token.IsCancellationRequested)
+                    WriteCancellation(allowOperationAccess: true);
+                else
+                    WriteCompletion();
+
                 EndCompletion();
             }
+
+            private void OnCompleted(AsyncOperation operation)
+                => CompleteOnMainThread(canceled: false);
 
             private void OnCancelRequested()
             {
@@ -422,9 +459,9 @@ namespace LuminThread.Unity
                     return;
 
                 // Runs on whichever thread cancelled the token. Unity objects are not thread-safe and
-                // disposing our own registration from inside its callback is not allowed, so both the
-                // unsubscription and the registration wait for the loop node below.
-                WriteCancellation();
+                // disposing our own registration from inside its callback is not allowed, so the
+                // unsubscription, the registration and the optional abort wait for a main-thread pass.
+                WriteCancellation(allowOperationAccess: false);
                 EndCompletion();
             }
 
@@ -438,6 +475,12 @@ namespace LuminThread.Unity
                 if (IsCompleting)
                     return;
 
+                // This pass runs on the loop (main) thread, so a cancellation that could not touch the
+                // request when it was published gets its chance here. Publishing again is a no-op
+                // because a slot completes once.
+                if (Canceled)
+                    _writeCancellation(this, true);
+
                 if (Operation != null)
                 {
                     Operation.completed -= _onCompleted;
@@ -448,6 +491,8 @@ namespace LuminThread.Unity
                 Registration = default;
                 Progress = null;
                 Token = default;
+                Canceled = false;
+                Published = false;
                 _writeCompletion = null;
                 _writeCancellation = null;
 
@@ -492,7 +537,7 @@ namespace LuminThread.Unity
 
             internal static ulong Create(AsyncOperation operation, PlayerLoopTiming timing, IProgress<float> progress,
                 CancellationToken cancellationToken, bool cancelImmediately,
-                Action<AsyncOperationState> writeCompletion, Action<AsyncOperationState> writeCancellation)
+                Action<AsyncOperationState> writeCompletion, Action<AsyncOperationState, bool> writeCancellation)
             {
                 LuminTaskSource.Rent(out var handle);
 
@@ -533,7 +578,7 @@ namespace LuminThread.Unity
 
                 if (state.CancellationToken.IsCancellationRequested)
                 {
-                    Complete(asyncOperationState, canceled: true);
+                    asyncOperationState.CompleteOnMainThread(canceled: true);
                     return true;
                 }
 
@@ -541,27 +586,10 @@ namespace LuminThread.Unity
 
                 if (operation.isDone)
                 {
-                    Complete(asyncOperationState, canceled: false);
+                    asyncOperationState.CompleteOnMainThread(canceled: false);
                 }
 
                 return true;
-            }
-
-            // Only ever called from the loop node, which runs on the main thread.
-            private static void Complete(AsyncOperationState state, bool canceled)
-            {
-                if (!state.TryBeginCompletion())
-                    return;
-
-                state.Operation.completed -= state.CompletedCallback;
-                state.Registration.Dispose();
-
-                if (canceled)
-                    state.WriteCancellation();
-                else
-                    state.WriteCompletion();
-
-                state.EndCompletion();
             }
         }
 
@@ -575,41 +603,47 @@ namespace LuminThread.Unity
             internal static readonly Action<AsyncOperationState> AssetBundleRequestAsset = WriteAssetBundleRequestAsset;
             internal static readonly Action<AsyncOperationState> AssetBundleCreateResult = WriteAssetBundleCreateResult;
             internal static readonly Action<AsyncOperationState> WebRequestResult = WriteWebRequestResult;
-            internal static readonly Action<AsyncOperationState> PlainCanceled = WritePlainCanceled;
-            internal static readonly Action<AsyncOperationState> WebRequestCanceled = WriteWebRequestCanceled;
+            internal static readonly Action<AsyncOperationState, bool> PlainCanceled = WritePlainCanceled;
+            internal static readonly Action<AsyncOperationState, bool> WebRequestCanceled = WriteWebRequestCanceled;
 
             private static void WriteVoidResult(AsyncOperationState state)
-                => LuminTaskSource.SetResult(state.Handle);
+                => state.Published = LuminTaskSource.SetResult(state.Handle);
 
             private static void WriteResourceRequestAsset(AsyncOperationState state)
-                => LuminTaskSource.SetResult(state.Handle, ((ResourceRequest)state.Operation).asset);
+                => state.Published = LuminTaskSource.SetResult(state.Handle, ((ResourceRequest)state.Operation).asset);
 
             private static void WriteAssetBundleRequestAsset(AsyncOperationState state)
-                => LuminTaskSource.SetResult(state.Handle, ((AssetBundleRequest)state.Operation).asset);
+                => state.Published = LuminTaskSource.SetResult(state.Handle, ((AssetBundleRequest)state.Operation).asset);
 
             private static void WriteAssetBundleCreateResult(AsyncOperationState state)
-                => LuminTaskSource.SetResult(state.Handle, ((AssetBundleCreateRequest)state.Operation).assetBundle);
+                => state.Published = LuminTaskSource.SetResult(state.Handle, ((AssetBundleCreateRequest)state.Operation).assetBundle);
 
             private static void WriteWebRequestResult(AsyncOperationState state)
             {
                 var request = ((UnityWebRequestAsyncOperation)state.Operation).webRequest;
                 if (IsError(request))
                 {
-                    LuminTaskSource.SetException(state.Handle, new UnityWebRequestLuminTaskException(request));
+                    state.Published = LuminTaskSource.SetException(state.Handle, new UnityWebRequestLuminTaskException(request));
                 }
                 else
                 {
-                    LuminTaskSource.SetResult(state.Handle, request);
+                    state.Published = LuminTaskSource.SetResult(state.Handle, request);
                 }
             }
 
-            private static void WritePlainCanceled(AsyncOperationState state)
-                => LuminTaskSource.SetCanceled(state.Handle, state.Token);
+            private static void WritePlainCanceled(AsyncOperationState state, bool allowOperationAccess)
+                => state.Published = LuminTaskSource.SetCanceled(state.Handle, state.Token);
 
-            private static void WriteWebRequestCanceled(AsyncOperationState state)
+            private static void WriteWebRequestCanceled(AsyncOperationState state, bool allowOperationAccess)
             {
-                ((UnityWebRequestAsyncOperation)state.Operation).webRequest.Abort();
-                LuminTaskSource.SetCanceled(state.Handle, state.Token);
+                // Abort must not run on the cancelling thread: Unity objects are single-threaded. The
+                // cancellation callback therefore publishes the cancellation only, and the passes that
+                // run on the main thread (the poll, or the recycle that follows) do the abort. Publishing
+                // twice is harmless - a slot completes once.
+                if (allowOperationAccess)
+                    ((UnityWebRequestAsyncOperation)state.Operation).webRequest.Abort();
+
+                state.Published = LuminTaskSource.SetCanceled(state.Handle, state.Token);
             }
         }
 
