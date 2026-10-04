@@ -685,6 +685,18 @@ namespace LuminThread.Unity
             }
         }
 
+        // The AllAssets entry point of the same adapter, which extracts a different result.
+        private static class AssetBundleAllAssetsWriter
+        {
+            internal static readonly Action<AsyncOperationState> Write = WriteAllAssets;
+
+            private static void WriteAllAssets(AsyncOperationState state)
+            {
+                if (LuminTaskSource.SetResult(state.Handle, ((AssetBundleRequest)state.Operation).allAssets))
+                    state.Published = true;
+            }
+        }
+
         private static class AssetBundleCreateRequestWriter
         {
             internal static readonly Action<AsyncOperationState> Write = WriteAssetBundle;
