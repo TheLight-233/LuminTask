@@ -418,9 +418,16 @@ namespace LuminThread
 
                 if (state.CancellationToken.IsCancellationRequested)
                 {
-                    Drain(innerHandle);
-                    LuminTaskCoreSource.TrySetCanceled(state.Handle, state.CancellationToken);
-                    stateTuple.Dispose();
+                    try
+                    {
+                        Drain(innerHandle);
+                        LuminTaskCoreSource.TrySetCanceled(state.Handle, state.CancellationToken);
+                    }
+                    finally
+                    {
+                        stateTuple.Dispose();
+                    }
+
                     return false;
                 }
 
@@ -435,7 +442,13 @@ namespace LuminThread
                     {
                         TrySetExceptionOrCanceled(state.Handle, ex);
                     }
-                    stateTuple.Dispose();
+                    finally
+                    {
+                        // In a finally so the container goes back to the pool even when the completion
+                        // path throws; a missed return would silently shrink the pool instead.
+                        stateTuple.Dispose();
+                    }
+
                     return false;
                 }
 
@@ -470,9 +483,16 @@ namespace LuminThread
 
                 if (state.CancellationToken.IsCancellationRequested)
                 {
-                    Drain(innerHandle);
-                    LuminTaskCoreSource.TrySetCanceled(state.Handle, state.CancellationToken);
-                    stateTuple.Dispose();
+                    try
+                    {
+                        Drain(innerHandle);
+                        LuminTaskCoreSource.TrySetCanceled(state.Handle, state.CancellationToken);
+                    }
+                    finally
+                    {
+                        stateTuple.Dispose();
+                    }
+
                     return false;
                 }
 
@@ -487,7 +507,11 @@ namespace LuminThread
                     {
                         TrySetExceptionOrCanceled(state.Handle, ex);
                     }
-                    stateTuple.Dispose();
+                    finally
+                    {
+                        stateTuple.Dispose();
+                    }
+
                     return false;
                 }
 
