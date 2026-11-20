@@ -49,6 +49,7 @@ jobs:
         run: |
           $candidate = Join-Path $env:RUNNER_TEMP 'candidate'
           ./eng/release.ps1 -Output $candidate
+          $global:LASTEXITCODE = 0
           $archive = (Get-ChildItem (Join-Path $candidate 'packages') -Filter '*.zip').FullName
           $project = Join-Path $env:GITHUB_WORKSPACE 'artifacts/unity-project'
           Expand-Archive -LiteralPath $archive -DestinationPath $project
