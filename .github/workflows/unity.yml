@@ -1,6 +1,8 @@
 name: Unity IL2CPP
 
 on:
+  push:
+    branches: [refactor]
   workflow_dispatch:
 
 permissions:
@@ -12,6 +14,7 @@ concurrency:
 
 jobs:
   smoke:
+    if: vars.LUMINTASK_UNITY_EDITOR != ''
     runs-on: [self-hosted, Windows, X64, unity-il2cpp]
     timeout-minutes: 45
     steps:

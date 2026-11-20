@@ -11,7 +11,7 @@
 | Windows IL2CPP installation and behaviour | `tests/LuminTask.Tests.Unity` |
 | Benchmark correctness and measurements | `benchmarks/LuminTask.Benchmarks`, `benchmarks/LuminTask.SuspensionBenchmarks` |
 
-CI builds on Windows, Linux and macOS and runs Debug on Linux. The manual benchmark workflow stores the raw results. The manual Unity workflow targets a licensed Windows runner with Unity 2022.3 IL2CPP and Visual C++ build tools.
+CI builds on Windows, Linux and macOS and runs Debug on Linux. Pushes to `refactor` also run the longer fuzz suite, store raw benchmark results, and validate the release candidate. The Unity workflow runs when the repository has configured a licensed Windows runner with Unity 2022.3 IL2CPP and Visual C++ build tools.
 
 ## Candidate
 

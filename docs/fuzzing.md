@@ -8,4 +8,4 @@ dotnet run --project tests/LuminTask.Fuzzing -c Release -- 20261120 2000 artifac
 
 The arguments are the seed, iteration count and failure report path. The report includes the seed, iteration, case, replay command and exception. Replay repeats the inputs, while thread scheduling can vary. For a timing-dependent failure, repeat the seed and turn the isolated ordering into a focused regression test.
 
-The Fuzz workflow runs three seeds in Release and Debug, with larger iteration counts on the weekly schedule and manual dispatch.
+The Fuzz workflow runs three seeds in Release and Debug, with larger iteration counts on pushes to `refactor`, the weekly schedule and manual dispatch.
