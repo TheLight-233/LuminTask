@@ -11,7 +11,7 @@
 | Windows IL2CPP installation and behaviour | `tests/LuminTask.Tests.Unity` |
 | Benchmark correctness and measurements | `benchmarks/LuminTask.Benchmarks`, `benchmarks/LuminTask.SuspensionBenchmarks` |
 
-CI builds on Windows, Linux and macOS and runs Debug on Linux. Pushes to `refactor` also run the longer fuzz suite, store raw benchmark results, and validate the release candidate. The Unity workflow runs when the repository has configured a licensed Windows runner with Unity 2022.3 IL2CPP and Visual C++ build tools.
+CI builds on Windows, Linux and macOS and runs Debug on Linux. Pushes to `refactor` also run the longer fuzz suite, store LuminTask benchmark results, and validate the release candidate. Comparative timings run locally. The Unity workflow builds and executes the base and TMP fixtures with Unity 2022.3 Linux IL2CPP on GitHub-hosted runners.
 
 ## Candidate
 
@@ -30,4 +30,4 @@ The script checks assemblies and symbols for every target, installs the exact pa
 2. Configure the GitHub `nuget` environment, `NUGET_USER` variable and a NuGet.org Trusted Publishing policy for the repository and `release.yml`. [Trusted Publishing documentation](https://learn.microsoft.com/en-us/nuget/nuget-org/trusted-publishing)
 3. Push the matching `v<version>` tag when ready to publish. The tag workflow validates the version and verifies artifact checksums before publishing. The GitHub Release attaches the Unity ZIP and candidate files.
 
-The Unity workflow uses a self-hosted runner with the labels `Windows`, `X64` and `unity-il2cpp`. Set `LUMINTASK_UNITY_EDITOR` to the editor's absolute path.
+The `unity-ci` GitHub environment requires `UNITY_EMAIL`, `UNITY_PASSWORD`, and `UNITY_LICENSE` (or `UNITY_SERIAL`) for the hosted editor.

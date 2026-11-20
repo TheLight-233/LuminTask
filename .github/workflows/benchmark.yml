@@ -30,12 +30,15 @@ jobs:
       - name: Verify expected results
         run: dotnet run --project benchmarks/LuminTask.Benchmarks -c Release -- --verify
       - name: Run allocation and timing benchmarks
-        run: dotnet run --project benchmarks/LuminTask.Benchmarks -c Release --no-build -- --filter "*" --job short --exporters json
+        run: >-
+          dotnet run --project benchmarks/LuminTask.Benchmarks -c Release --no-build --
+          --filter "*.SimpleBenchmark.LuminTask_*" "*.GameplayBenchmark.*" --job short --exporters json
       - name: Sample the suspension and scheduler paths
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force artifacts | Out-Null
-          dotnet run --project benchmarks/LuminTask.SuspensionBenchmarks -c Release -- 1000000 5 | Tee-Object artifacts/suspension.txt
+          $cases = 'source-int,R1-source-suspend,R3-handle-suspend,handle-vector3,handle-quaternion,R2-chain,Yield-Lumin,sync-int'
+          dotnet run --project benchmarks/LuminTask.SuspensionBenchmarks -c Release -- 1000000 5 $cases | Tee-Object artifacts/suspension.txt
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - uses: actions/upload-artifact@v4
         if: always()

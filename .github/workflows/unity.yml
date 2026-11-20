@@ -9,14 +9,25 @@ permissions:
   contents: read
 
 concurrency:
-  group: unity-il2cpp-${{ github.ref }}
-  cancel-in-progress: true
+  group: unity-license
+  cancel-in-progress: false
 
 jobs:
-  smoke:
-    if: vars.LUMINTASK_UNITY_EDITOR != ''
-    runs-on: [self-hosted, Windows, X64, unity-il2cpp]
-    timeout-minutes: 45
+  player:
+    name: Unity 2022.3 Linux IL2CPP (${{ matrix.adapters }})
+    environment: unity-ci
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        adapters: [base, tmp]
+    env:
+      UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
+      UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+      UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+      UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -24,19 +35,58 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           global-json-file: global.json
-      - name: Validate base and TextMeshPro installations
+      - name: Check Unity license configuration
+        shell: bash
+        run: |
+          if [ -z "$UNITY_EMAIL" ] || [ -z "$UNITY_PASSWORD" ] || { [ -z "$UNITY_LICENSE" ] && [ -z "$UNITY_SERIAL" ]; }; then
+            echo "::error::Configure UNITY_EMAIL, UNITY_PASSWORD and UNITY_LICENSE or UNITY_SERIAL in the unity-ci environment."
+            exit 1
+          fi
+      - name: Stage the release ZIP
         shell: pwsh
         env:
-          UNITY_EDITOR: ${{ vars.LUMINTASK_UNITY_EDITOR }}
+          ADAPTERS: ${{ matrix.adapters }}
         run: |
-          $candidate = Join-Path $env:RUNNER_TEMP "lumin-candidate-$env:GITHUB_RUN_ID-$env:GITHUB_RUN_ATTEMPT"
+          $candidate = Join-Path $env:RUNNER_TEMP 'candidate'
           ./eng/release.ps1 -Output $candidate
           $archive = (Get-ChildItem (Join-Path $candidate 'packages') -Filter '*.zip').FullName
-          ./eng/test-unity.ps1 -UnityEditor $env:UNITY_EDITOR -Archive $archive -Output "$candidate/unity-base"
-          ./eng/test-unity.ps1 -UnityEditor $env:UNITY_EDITOR -Archive $archive -Output "$candidate/unity-tmp" -TextMeshPro
+          $project = Join-Path $env:GITHUB_WORKSPACE 'artifacts/unity-project'
+          Expand-Archive -LiteralPath $archive -DestinationPath $project
+          New-Item -ItemType Directory -Force "$project/Assets/Editor", "$project/Assets/Resources", "$project/Packages", "$project/ProjectSettings" | Out-Null
+          Copy-Item tests/LuminTask.Tests.Unity/SmokeBuild.cs "$project/Assets/Editor"
+          Copy-Item tests/LuminTask.Tests.Unity/SmokeEntry.cs, tests/LuminTask.Tests.Unity/SmokeCoroutineHost.cs "$project/Assets"
+          Set-Content -NoNewline -Encoding ascii "$project/Assets/Resources/lumin-smoke.txt" 'lumin'
+          $manifest = Get-Content -Raw tests/LuminTask.Tests.Unity/manifest.json | ConvertFrom-Json -AsHashtable
+          if ($env:ADAPTERS -eq 'tmp') {
+            $manifest.dependencies['com.unity.textmeshpro'] = '3.0.7'
+            Copy-Item "$project/Optional/TextMeshPro", "$project/Optional/TextMeshPro.meta" "$project/Assets/LuminTask" -Recurse
+            Copy-Item tests/LuminTask.Tests.Unity/SmokeTmp.cs "$project/Assets/SmokeEntry.Tmp.cs"
+          }
+          $manifest | ConvertTo-Json -Depth 4 | Set-Content "$project/Packages/manifest.json"
+          Set-Content "$project/ProjectSettings/ProjectVersion.txt" 'm_EditorVersion: 2022.3.51f1'
+      - name: Build the IL2CPP player
+        uses: game-ci/unity-builder@4423ee75828dff56037d1d1cfdac6b68e3a6ba00 # v4
+        with:
+          projectPath: artifacts/unity-project
+          unityVersion: 2022.3.51f1
+          targetPlatform: StandaloneLinux64
+          buildMethod: SmokeBuild.RunLinux
+          allowDirtyBuild: true
+      - name: Execute the IL2CPP player
+        shell: bash
+        run: |
+          set -euo pipefail
+          player=artifacts/unity-project/build/LuminTaskSmoke
+          mkdir -p artifacts/unity-logs
+          sudo chown -R "$(id -u):$(id -g)" "$(dirname "$player")" artifacts/unity-logs
+          chmod +x "$player"
+          timeout 120 "$player" -batchmode -nographics -logFile /dev/stdout 2>&1 | tee artifacts/unity-logs/player.log
+          grep -q LUMIN_UNITY_TEST_PASS artifacts/unity-logs/player.log
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: unity-il2cpp
-          path: ${{ runner.temp }}/lumin-candidate-*/unity-*/*.log
+          name: unity-il2cpp-${{ matrix.adapters }}
+          path: |
+            artifacts/unity-logs/
+            artifacts/unity-project/Logs/
           if-no-files-found: warn

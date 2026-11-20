@@ -1,6 +1,6 @@
 # Changelog
 
-## 2.0.0
+## 2.0.0-rc.1
 
 - Use one managed task source with generation-checked handles and a shared idle cache. Synchronous successful results stay in the task value.
 - Add storage statistics, an idle cache budget and explicit trimming for scene transitions.
