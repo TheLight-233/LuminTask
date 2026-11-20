@@ -1,0 +1,67 @@
+name: CI
+
+on:
+  push:
+    branches: [main, refactor]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: true
+
+env:
+  DOTNET_NOLOGO: 'true'
+  DOTNET_CLI_TELEMETRY_OPTOUT: 'true'
+
+jobs:
+  workflow-lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: docker://rhysd/actionlint:1.7.12
+
+  test:
+    name: Test (${{ matrix.os }}, ${{ matrix.configuration }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest]
+        configuration: [Release]
+        include:
+          - os: ubuntu-latest
+            configuration: Debug
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            8.0.x
+            9.0.x
+          global-json-file: global.json
+      - run: dotnet restore LuminTask.sln
+      - run: dotnet build LuminTask.sln -c ${{ matrix.configuration }} --no-restore
+      - name: Verify runtime assembly boundaries
+        run: dotnet run --project tools/LuminTask.RepositoryChecks -c ${{ matrix.configuration }} --no-build -- . ${{ matrix.configuration }}
+      - name: Runtime tests
+        shell: pwsh
+        run: |
+          foreach ($tfm in 'net8.0', 'net9.0', 'net10.0') {
+            dotnet run --project tests/LuminTask.Tests -c ${{ matrix.configuration }} -f $tfm --no-build
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+      - name: Roslyn contract tests
+        run: dotnet run --project tests/LuminTask.Tests.Analyzer -c ${{ matrix.configuration }} --no-build
+      - name: Benchmark correctness
+        if: matrix.configuration == 'Release'
+        run: dotnet run --project benchmarks/LuminTask.Benchmarks -c Release --no-build -- --verify

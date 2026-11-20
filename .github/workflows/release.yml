@@ -1,0 +1,116 @@
+name: Release
+
+on:
+  pull_request:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Candidate version (defaults to the version in eng/Versions.props)
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: ${{ github.ref_type != 'tag' }}
+
+jobs:
+  candidate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    outputs:
+      artifact-id: ${{ steps.artifact.outputs.artifact-id }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - name: Run release runtime, analyzer and fuzz checks
+        if: github.ref_type == 'tag'
+        shell: bash
+        run: |
+          dotnet run --project tests/LuminTask.Tests -c Release -f net10.0
+          dotnet run --project tests/LuminTask.Tests.Analyzer -c Release
+          dotnet run --project tests/LuminTask.Fuzzing -c Release -- 20261120 10000
+      - name: Build and validate the candidate
+        shell: pwsh
+        env:
+          REQUESTED_VERSION: ${{ inputs.version }}
+        run: |
+          $fromTag = $env:GITHUB_REF_TYPE -eq 'tag'
+          $version = if ($fromTag) { $env:GITHUB_REF_NAME.Substring(1) } else { $env:REQUESTED_VERSION }
+          ./eng/release.ps1 -Version $version -Output (Join-Path $env:RUNNER_TEMP 'candidate') -NativeAot -Tag:$fromTag
+      - uses: actions/upload-artifact@v4
+        id: artifact
+        with:
+          name: release-candidate-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/candidate/packages/
+            ${{ runner.temp }}/candidate/CHANGELOG.md
+          if-no-files-found: error
+
+  nuget:
+    if: github.repository == 'TheLight-233/LuminTask' && github.event_name == 'push' && github.ref_type == 'tag' && !github.event.deleted
+    needs: candidate
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: nuget
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          artifact-ids: ${{ needs.candidate.outputs.artifact-id }}
+          path: candidate
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - name: Verify the validated artifacts
+        working-directory: candidate/packages
+        run: sha256sum --check SHA256SUMS
+      - uses: NuGet/login@8d196754b4036150537f80ac539e15c2f1028841 # v1
+        id: nuget
+        with:
+          user: ${{ vars.NUGET_USER }}
+      - name: Publish NuGet package and symbols
+        working-directory: candidate/packages
+        shell: bash
+        env:
+          NUGET_API_KEY: ${{ steps.nuget.outputs.NUGET_API_KEY }}
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          source=https://api.nuget.org/v3/index.json
+          dotnet nuget push "LuminTask.$version.nupkg" --source "$source" --api-key "$NUGET_API_KEY" --no-symbols --skip-duplicate
+          dotnet nuget push "LuminTask.$version.snupkg" --source "$source" --symbol-api-key "$NUGET_API_KEY" --skip-duplicate
+
+  github-release:
+    needs: [candidate, nuget]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          artifact-ids: ${{ needs.candidate.outputs.artifact-id }}
+          path: candidate
+      - name: Attach the validated release files
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          cd candidate/packages
+          sha256sum --check SHA256SUMS
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" ./*.zip ./*.nupkg ./*.snupkg SHA256SUMS
+          else
+            flags=()
+            if [[ "$GITHUB_REF_NAME" == *-* ]]; then flags+=(--prerelease); fi
+            gh release create "$GITHUB_REF_NAME" ./*.zip ./*.nupkg ./*.snupkg SHA256SUMS --verify-tag --notes-file ../CHANGELOG.md "${flags[@]}"
+          fi

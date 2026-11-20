@@ -1,0 +1,6 @@
+<Project>
+  <PropertyGroup>
+    <LuminTaskVersion>2.0.0</LuminTaskVersion>
+    <UnsafeVersion>6.1.2</UnsafeVersion>
+  </PropertyGroup>
+</Project>

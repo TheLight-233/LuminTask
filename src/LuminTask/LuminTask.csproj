@@ -7,7 +7,7 @@
         <NoWarn>$(NoWarn);CS1591;CA2255;LUM1001;LUM1002;LUM1003;LUM1004;LUM1005;LUM1006;LUM1007;LUM1008;LUM9999</NoWarn>
         <AllowUnsafeBlocks>false</AllowUnsafeBlocks>
         <PackageId>LuminTask</PackageId>
-        <Version>2.0.0</Version>
+        <Version>$(LuminTaskVersion)</Version>
         <Authors>TheLight233</Authors>
         <Description>High-performance custom async/await task-like types for .NET.</Description>
         <PackageTags>async;task;awaitable;zero-allocation</PackageTags>
@@ -18,10 +18,11 @@
         <IncludeSymbols>true</IncludeSymbols>
         <SymbolPackageFormat>snupkg</SymbolPackageFormat>
         <PackageReadmeFile>README.md</PackageReadmeFile>
+        <TargetsForTfmSpecificBuildOutput>$(TargetsForTfmSpecificBuildOutput);IncludeAsyncExInPackage</TargetsForTfmSpecificBuildOutput>
     </PropertyGroup>
 
     <ItemGroup>
-        <PackageReference Include="System.Runtime.CompilerServices.Unsafe" Version="6.1.2" />
+        <PackageReference Include="System.Runtime.CompilerServices.Unsafe" Version="$(UnsafeVersion)" />
         <None Include="README.md" Pack="true" PackagePath="\"/>
     </ItemGroup>
 
@@ -33,21 +34,21 @@
     </ItemGroup>
 
     <ItemGroup>
-        <ProjectReference Include="..\..\analyzer\LuminTask.Analyzer\LuminTask.Analyzer.csproj"
+        <ProjectReference Include="..\LuminTask.Analyzer\LuminTask.Analyzer.csproj"
                           OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
-        <None Include="..\..\analyzer\LuminTask.Analyzer\bin\$(Configuration)\netstandard2.0\LuminTask.Analyzer.dll"
+        <None Include="..\LuminTask.Analyzer\bin\$(Configuration)\netstandard2.0\LuminTask.Analyzer.dll"
               Pack="true" PackagePath="analyzers/dotnet/cs" Visible="false" />
     </ItemGroup>
 
-    <ItemGroup>
-        <None Include="..\LuminTask.AsyncEx\bin\$(Configuration)\netstandard2.1\LuminTask.AsyncEx.dll"
-              Pack="true" PackagePath="lib\netstandard2.1" Visible="false" />
-        <None Include="..\LuminTask.AsyncEx\bin\$(Configuration)\net8.0\LuminTask.AsyncEx.dll"
-              Pack="true" PackagePath="lib\net8.0" Visible="false" />
-        <None Include="..\LuminTask.AsyncEx\bin\$(Configuration)\net9.0\LuminTask.AsyncEx.dll"
-              Pack="true" PackagePath="lib\net9.0" Visible="false" />
-        <None Include="..\LuminTask.AsyncEx\bin\$(Configuration)\net10.0\LuminTask.AsyncEx.dll"
-              Pack="true" PackagePath="lib\net10.0" Visible="false" />
-    </ItemGroup>
+    <Target Name="IncludeAsyncExInPackage">
+        <PropertyGroup>
+            <AsyncExOutput>$(MSBuildThisFileDirectory)../LuminTask.AsyncEx/bin/$(Configuration)/$(TargetFramework)</AsyncExOutput>
+        </PropertyGroup>
+        <Error Condition="!Exists('$(AsyncExOutput)/LuminTask.AsyncEx.dll') Or !Exists('$(AsyncExOutput)/LuminTask.AsyncEx.pdb')"
+               Text="Build LuminTask.AsyncEx for $(TargetFramework) before packing LuminTask, or use eng/release.ps1." />
+        <ItemGroup>
+            <BuildOutputInPackage Include="$(AsyncExOutput)/LuminTask.AsyncEx.dll;$(AsyncExOutput)/LuminTask.AsyncEx.pdb" />
+        </ItemGroup>
+    </Target>
 
 </Project>

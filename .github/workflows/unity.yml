@@ -1,0 +1,39 @@
+name: Unity IL2CPP
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: unity-il2cpp-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    runs-on: [self-hosted, Windows, X64, unity-il2cpp]
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - name: Validate base and TextMeshPro installations
+        shell: pwsh
+        env:
+          UNITY_EDITOR: ${{ vars.LUMINTASK_UNITY_EDITOR }}
+        run: |
+          $candidate = Join-Path $env:RUNNER_TEMP "lumin-candidate-$env:GITHUB_RUN_ID-$env:GITHUB_RUN_ATTEMPT"
+          ./eng/release.ps1 -Output $candidate
+          $archive = (Get-ChildItem (Join-Path $candidate 'packages') -Filter '*.zip').FullName
+          ./eng/test-unity.ps1 -UnityEditor $env:UNITY_EDITOR -Archive $archive -Output "$candidate/unity-base"
+          ./eng/test-unity.ps1 -UnityEditor $env:UNITY_EDITOR -Archive $archive -Output "$candidate/unity-tmp" -TextMeshPro
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: unity-il2cpp
+          path: ${{ runner.temp }}/lumin-candidate-*/unity-*/*.log
+          if-no-files-found: warn

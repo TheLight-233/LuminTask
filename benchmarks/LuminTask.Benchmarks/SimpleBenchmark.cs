@@ -1,5 +1,4 @@
 using System;
-using System.Linq;
 using System.Threading.Tasks;
 using BenchmarkDotNet.Attributes;
 using Cysharp.Threading.Tasks;
@@ -11,6 +10,8 @@ namespace LuminTaskBenchmark;
 [HideColumns("StdDev", "RatioSD", "Error")]
 public class SimpleBenchmark
 {
+    private readonly LuminTask[] _completed = new LuminTask[100];
+
     [Benchmark(Baseline = true)]
     public int Task_Synchronous() => Task.FromResult(42).GetAwaiter().GetResult();
 
@@ -24,16 +25,40 @@ public class SimpleBenchmark
     public int UniTask_Synchronous() => UniTask.FromResult(42).GetAwaiter().GetResult();
 
     [Benchmark]
-    public int Task_Suspended() => TaskWorkflow().GetAwaiter().GetResult();
+    public int Task_Suspended()
+    {
+        var source = new TaskCompletionSource<int>();
+        var result = TaskWorkflow(source.Task);
+        source.SetResult(42);
+        return result.GetAwaiter().GetResult();
+    }
 
     [Benchmark]
-    public int ValueTask_Suspended() => ValueTaskWorkflow().GetAwaiter().GetResult();
+    public int ValueTask_Suspended()
+    {
+        var source = new TaskCompletionSource<int>();
+        var result = ValueTaskWorkflow(new ValueTask<int>(source.Task));
+        source.SetResult(42);
+        return result.GetAwaiter().GetResult();
+    }
 
     [Benchmark]
-    public int LuminTask_Suspended() => LuminTaskWorkflow().GetAwaiter().GetResult();
+    public int LuminTask_Suspended()
+    {
+        var input = LuminTaskSource.Create<int>(out ulong handle);
+        var result = LuminTaskWorkflow(input);
+        LuminTaskSource.SetResult(handle, 42);
+        return result.GetResult();
+    }
 
     [Benchmark]
-    public int UniTask_Suspended() => UniTaskWorkflow().GetAwaiter().GetResult();
+    public int UniTask_Suspended()
+    {
+        var source = new UniTaskCompletionSource<int>();
+        var result = UniTaskWorkflow(source.Task);
+        source.TrySetResult(42);
+        return result.GetAwaiter().GetResult();
+    }
 
     [Benchmark]
     public int LuminTask_WhenAll2()
@@ -45,34 +70,15 @@ public class SimpleBenchmark
     [Benchmark]
     public int LuminTask_WhenAll100()
     {
-        LuminTask.WhenAll(Enumerable.Range(0, 100).Select(_ => LuminTask.CompletedTask())).GetAwaiter().GetResult();
-        return 100;
+        LuminTask.WhenAll(_completed).GetResult();
+        return _completed.Length;
     }
 
     [Benchmark]
-    public int LuminTask_WhenAny() => LuminTask.WhenAny(LuminTask.CompletedTask(), LuminTask.CompletedTask()).AsTask().GetAwaiter().GetResult();
+    public int LuminTask_WhenAny() => LuminTask.WhenAny(LuminTask.CompletedTask(), LuminTask.CompletedTask()).GetResult();
 
-    private static async Task<int> TaskWorkflow()
-    {
-        await Task.Yield();
-        return 42;
-    }
-
-    private static async ValueTask<int> ValueTaskWorkflow()
-    {
-        await Task.Yield();
-        return 42;
-    }
-
-    private static async LuminTask<int> LuminTaskWorkflow()
-    {
-        await LuminTask.Yield();
-        return 42;
-    }
-
-    private static async UniTask<int> UniTaskWorkflow()
-    {
-        await UniTask.Yield();
-        return 42;
-    }
+    private static async Task<int> TaskWorkflow(Task<int> input) => await input;
+    private static async ValueTask<int> ValueTaskWorkflow(ValueTask<int> input) => await input;
+    private static async LuminTask<int> LuminTaskWorkflow(LuminTask<int> input) => await input;
+    private static async UniTask<int> UniTaskWorkflow(UniTask<int> input) => await input;
 }

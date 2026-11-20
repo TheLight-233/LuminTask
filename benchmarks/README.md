@@ -1,12 +1,15 @@
 # LuminTask 基准测试
 
-`SimpleBenchmark` 覆盖同步完成、挂起后完成、`WhenAll(2/100)` 和 `WhenAny`，并提供 `Task`、`ValueTask`、`UniTask` 基线。运行：
+`SimpleBenchmark` 覆盖同步完成、挂起后完成、`WhenAll(2/100)` 和 `WhenAny`，并提供 `Task`、`ValueTask`、`UniTask` 基线。`GameplayBenchmark` 通过手动 PlayerLoop 测量 `Yield`、`DelayFrame` 和带状态的 `WaitUntil`。CI 的 `--verify` 检查结果和活动任务槽。BenchmarkDotNet 支持按用例筛选。
 
 ```bash
-dotnet run --project benchmarks/LuminTask.Benchmarks/LuminTask.Benchmarks.csproj -c Release
+dotnet run --project benchmarks/LuminTask.Benchmarks -c Release -- --filter "*GameplayBenchmark*"
+dotnet run --project benchmarks/LuminTask.Benchmarks -c Release -- --verify
 ```
 
 基准使用 BenchmarkDotNet 的 `MemoryDiagnoser` 输出分配对比。结果依赖 SDK、运行时、处理器和操作系统，不在文档中固定填写数值；请保留完整输出与环境信息再比较。
+
+挂起组先启动等待，再由调用方显式完成输入，最后同步消费结果。计量包含输入完成源的创建成本。ValueTask 输入包装 .NET Task，以便由相同类型的完成源驱动。WhenAll(100) 复用调用方提供的已完成输入数组。
 
 ## 挂起路径分段与长窗对照
 
@@ -22,7 +25,7 @@ dotnet artifacts/perf-after/LuminTask.SuspensionBenchmarks.dll 1000000 5 'Yield-
 
 比较两个版本时，使用同一份基准程序、相同运行时和相同 JIT 设置，仅替换被测 LuminTask.dll，交错运行并保留原始输出。分段中的“完成”在挂起版本中会内联执行内层消费和状态机恢复，不能理解成纯生产端耗时。`sync-int` 可被 JIT 大幅简化，只作为同步路径烟测。
 
-最终优化的结果、开销和限制记录在仓库外的优化报告里（`PERFORMANCE_EXTREME_OPTIMIZATION.md`，第一轮历史见 `PERFORMANCE_OPTIMIZATION.md`），这两份报告不随仓库发布。
+每次对照保留运行时、硬件、JIT 设置、测试参数和原始样本。基准工作流会上传计时与分配结果。
 
 ## Unity IL2CPP
 

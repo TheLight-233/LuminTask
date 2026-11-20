@@ -8,6 +8,17 @@ using LuminThread.Interface;
 
 namespace LuminThread.Unity
 {
+    public static partial class UnityAsyncLuminTask
+    {
+        public sealed partial class AsyncUnityLuminTaskEventHandler<T> :
+            TextMeshProAsyncLuminTask.IAsyncEndTextSelectionLuminTaskEventHandler<T>,
+            TextMeshProAsyncLuminTask.IAsyncTextSelectionLuminTaskEventHandler<T>,
+            TextMeshProAsyncLuminTask.IAsyncDeselectLuminTaskEventHandler<T>,
+            TextMeshProAsyncLuminTask.IAsyncSelectLuminTaskEventHandler<T>,
+            TextMeshProAsyncLuminTask.IAsyncSubmitLuminTaskEventHandler<T>
+        { }
+    }
+
     public static class TextMeshProAsyncLuminTask
     {
         // <string> -> Text

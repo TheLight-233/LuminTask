@@ -487,8 +487,8 @@ namespace LuminThread.Unity
 
         #region AsyncUnityLuminTaskEventHandler<T>（有返回值）
 
-        public sealed class AsyncUnityLuminTaskEventHandler<T> : IDisposable, IAsyncValueChangedLuminTaskEventHandler<T>, IAsyncEndEditLuminTaskEventHandler<T>
-        , TextMeshProAsyncLuminTask.IAsyncEndTextSelectionLuminTaskEventHandler<T>, TextMeshProAsyncLuminTask.IAsyncTextSelectionLuminTaskEventHandler<T>, TextMeshProAsyncLuminTask.IAsyncDeselectLuminTaskEventHandler<T>, TextMeshProAsyncLuminTask.IAsyncSelectLuminTaskEventHandler<T>, TextMeshProAsyncLuminTask.IAsyncSubmitLuminTaskEventHandler<T>
+        public sealed partial class AsyncUnityLuminTaskEventHandler<T> : IDisposable,
+            IAsyncValueChangedLuminTaskEventHandler<T>, IAsyncEndEditLuminTaskEventHandler<T>
         {
             private UnityEvent<T> _unityEvent;
             private readonly CancellationToken _cancellationToken;

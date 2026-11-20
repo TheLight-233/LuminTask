@@ -1,0 +1,45 @@
+name: Benchmarks
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: benchmarks-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  measure:
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - name: Verify expected results
+        run: dotnet run --project benchmarks/LuminTask.Benchmarks -c Release -- --verify
+      - name: Run allocation and timing benchmarks
+        run: dotnet run --project benchmarks/LuminTask.Benchmarks -c Release --no-build -- --filter "*" --job short --exporters json
+      - name: Sample the suspension and scheduler paths
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force artifacts | Out-Null
+          dotnet run --project benchmarks/LuminTask.SuspensionBenchmarks -c Release -- 1000000 5 | Tee-Object artifacts/suspension.txt
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: benchmarks-${{ matrix.os }}-${{ github.sha }}
+          path: |
+            BenchmarkDotNet.Artifacts/
+            artifacts/suspension.txt
+          if-no-files-found: error

@@ -1,0 +1,45 @@
+name: Fuzz
+
+on:
+  push:
+    branches: [main, refactor]
+  pull_request:
+  schedule:
+    - cron: '23 3 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fuzz-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: true
+
+jobs:
+  operations:
+    name: Operation sequences (${{ matrix.configuration }}, seed ${{ matrix.seed }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        configuration: [Release, Debug]
+        seed: [1741, 20261120, 92773]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - name: Exercise the task lifecycle and concurrent completions
+        run: >-
+          dotnet run --project tests/LuminTask.Fuzzing -c ${{ matrix.configuration }} --
+          ${{ matrix.seed }} ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && 50000 || 2000 }}
+          artifacts/fuzz/repro.txt
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: fuzz-${{ matrix.configuration }}-${{ matrix.seed }}
+          path: artifacts/fuzz/repro.txt
+          if-no-files-found: warn

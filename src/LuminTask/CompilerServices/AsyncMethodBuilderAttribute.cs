@@ -1,5 +1,4 @@
-#pragma warning disable CS1591
-#pragma warning disable CS0436
+#if NETSTANDARD2_1
 
 namespace System.Runtime.CompilerServices
 {
@@ -13,3 +12,4 @@ namespace System.Runtime.CompilerServices
         }
     }
 }
+#endif
