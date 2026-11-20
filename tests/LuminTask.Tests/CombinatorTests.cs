@@ -21,10 +21,28 @@ public static class CombinatorTests
         await r.Run("array combinators serve mixed result types from one state", ArrayCombinatorsMixedResults);
         await r.Run("WhenAll (array) mixes inline and suspended children", WhenAllArrayMixedCompletion);
         await r.Run("list combinators finish after their input lists are reused", ReuseInputLists);
+        await r.Run("pending races preserve indices across inline and captured registrations", PendingRaceIndices);
 #if !DEBUG
         await r.Run("reused input lists allocate no temporary arrays", ListAllocation);
 #endif
         await r.Run("Delay honours cancellation", DelayCancellation);
+    }
+
+    private static async LuminTask PendingRaceIndices()
+    {
+        foreach (int winner in new[] { 0, 30, 31, 32 })
+        {
+            var handles = new ulong[33];
+            var tasks = new LuminTask<int>[handles.Length];
+            tasks[0] = LuminTaskSource.Create<int>(out handles[0]).ConfigureAwait(true);
+            for (int i = 1; i < tasks.Length; i++)
+                tasks[i] = LuminTaskSource.Create<int>(out handles[i]);
+            var completion = LuminTask.WhenAny(tasks);
+            LuminTaskSource.SetResult(handles[winner], 100 + winner);
+            Assert.Equal((winner, 100 + winner), await completion);
+            for (int i = 0; i < tasks.Length; i++)
+                if (i != winner) LuminTaskSource.SetResult(handles[i], i);
+        }
     }
 
     private static async LuminTask ReuseInputLists()

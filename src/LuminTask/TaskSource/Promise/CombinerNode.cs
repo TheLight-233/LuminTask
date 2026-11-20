@@ -8,7 +8,7 @@ namespace LuminThread.TaskSource.Promise;
 
 // One installing owner and one owner per installed callback. A slow loser retains
 // its observation and this cleared node, never the other inputs or the output array.
-internal abstract class CombinerNode : ILuminCacheNode
+internal abstract class CombinerNode : SlotObserver, ILuminCacheNode
 {
     private readonly struct Observation
     {
@@ -41,11 +41,20 @@ internal abstract class CombinerNode : ILuminCacheNode
             Observe(handle, index);
             return;
         }
-        var observation = StateTuple.Create(new Observation(this, handle, index));
         Interlocked.Increment(ref _owners);
-        // OnCompleted may invoke synchronously. Observe isolates callback exceptions.
+        try
+        {
+            if ((uint)index >= LuminTaskSource.ObserverIndexCount || !LuminTaskSource.TryRegisterObserver(handle, this, index))
+                RegisterWithState(handle, index);
+        }
+        catch { Exit(); throw; }
+    }
+
+    private void RegisterWithState(ulong handle, int index)
+    {
+        var observation = StateTuple.Create(new Observation(this, handle, index));
         try { LuminTaskSource.OnCompleted(handle, OnReady, observation); }
-        catch { observation.Dispose(); Exit(); throw; }
+        catch { observation.Dispose(); throw; }
     }
 
     private static void OnReady(object state)
@@ -53,9 +62,14 @@ internal abstract class CombinerNode : ILuminCacheNode
         var box = (StateTuple<Observation>)state;
         var child = box.Item;
         box.Dispose();
-        try { child.Join.Observe(child.Handle, child.Index); }
+        child.Join.Completed(child.Handle, child.Index);
+    }
+
+    internal sealed override void Completed(ulong handle, int index)
+    {
+        try { Observe(handle, index); }
         catch (Exception ex) { LuminTaskScheduler.PublishUnobservedTaskException(ex); }
-        finally { child.Join.Exit(); }
+        finally { Exit(); }
     }
 
     // With this gate held, only the winner can transition to Closed.

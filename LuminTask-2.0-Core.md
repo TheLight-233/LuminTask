@@ -142,6 +142,8 @@ WebGL 的 GC 验收同时记录每条完整业务的托管分配字节、完整�
 
 `LuminTask<T>` 用两个 32 位字段保存完整句柄，T 保持自身的自然对齐。Wasm32 的 `LuminTask<int>[]` 每个元素占 12 B，全局 Source 的代际检查仍使用 64 位句柄。对传入的普通 `List<LuminTask>` 或 `List<LuminTask<T>>`，`WhenAll` 和 `WhenAny` 在返回前按索引登记子任务。调用者可立即清空并复用列表。返回给调用者的 `WhenAll<T>` 结果数组按原有所有权分配。
 
+等待组合子时，处于 Pending 的子任务可以直接在自己的续体状态字段保存组合节点。控制字的第 11 至 15 位存子任务索引加一，覆盖索引 0 至 30。完成方把本次句柄和索引交还给组合节点。更大的索引和显式捕获上下文的等待沿用独立观察对象。慢速输家完成时仍被消费，节点在所有登记者退出后归还到同一个空闲缓存。
+
 普通 C# 每个实际使用的 async 方法仍有编译器生成的状态机。`Runner<TStateMachine>` 只随状态机闭合；异步结果桥仅为含引用结构体与大值租用 `StateTuple<T>`。Builder 必需的 `Await[Unsafe]OnCompleted<TAwaiter,TStateMachine>` 保持薄入口；完成、登记、池策略、组合计数和调度循环编译为非泛型实现。保留公共异构重载所需的签名和强类型读写。发布物中实际出现哪些闭合类型及代码，取决于 IL2CPP 的泛型共享和裁剪，须从产物核实。
 
 .NET 11 Runtime Async 把部分标准 Task/ValueTask 方法的挂起转换交给运行时；自定义 task-like 返回类型仍走编译器 Builder。这里借鉴同步直返、只在挂起时物化执行状态、缩短中间转发链。库可以直返底层 LuminTask 的调用直接转发。BCL 池化 Builder 的强类型状态机和缓存 Action 可用于普通 C#，其每线程及每核库存与本项目的全局驻留预算不相容。[Microsoft 的 Runtime Async 说明](https://devblogs.microsoft.com/dotnet/performance-improvements-in-net-11/) · [.NET 池化 Builder 源码](https://raw.githubusercontent.com/dotnet/runtime/v10.0.0/src/libraries/System.Private.CoreLib/src/System/Runtime/CompilerServices/PoolingAsyncValueTaskMethodBuilderT.cs)

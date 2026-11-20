@@ -13,8 +13,12 @@ public static partial class LuminTaskSource
     private const long Busy = 8;
     private const long Registered = 16;
     private const long Capture = 32;
-    internal const int KindShift = 8;
+    internal const int KindShift = 6;
     internal const long KindMask = 31L << KindShift;
+    // Bits 11..15 hold index + 1 for an inline observer. Zero is a normal await.
+    private const int ObserverShift = 11;
+    internal const int ObserverIndexCount = 31;
+    private const long ObserverMask = (long)ObserverIndexCount << ObserverShift;
     internal const long Reference = 17L << KindShift;
     internal const long Cell = 18L << KindShift;
     private const long StatusMask = 3;
@@ -153,6 +157,26 @@ public static partial class LuminTaskSource
         if (ready) Invoke(continuation, state);
     }
 
+    internal static bool TryRegisterObserver(ulong handle, SlotObserver observer, int index)
+    {
+        var page = Enter(handle, out int i, out long control, pendingOnly: true);
+        if (page == null) return false;
+        ref var slot = ref page.Slots[i];
+        if ((control & Capture) != 0)
+        {
+            Volatile.Write(ref slot.Control, control);
+            return false;
+        }
+        if ((control & Registered) != 0)
+        {
+            Volatile.Write(ref slot.Control, control);
+            LuminTaskExceptionHelper.ThrowAlreadyAwaited();
+        }
+        slot.ContinuationState = observer;
+        Volatile.Write(ref slot.Control, control | Registered | ((long)(index + 1) << ObserverShift));
+        return true;
+    }
+
     private static void Invoke(Action<object>? callback, object? state)
     {
         try
@@ -197,11 +221,11 @@ public static partial class LuminTaskSource
         ref var slot = ref page.Slots[i];
         var discarded = (control & KindMask) == Cell ? (IPooledResult?)slot.Payload : null;
         slot.Payload = outcome;
-        Publish(ref slot, control & ~KindMask, status, discarded);
+        Publish(ref slot, handle, control & ~KindMask, status, discarded);
         return true;
     }
 
-    internal static void Publish(ref Slot slot, long control, LuminTaskStatus status, IPooledResult? discarded = null)
+    internal static void Publish(ref Slot slot, ulong handle, long control, LuminTaskStatus status, IPooledResult? discarded = null)
     {
         var continuation = slot.Continuation;
         var state = slot.ContinuationState;
@@ -213,7 +237,9 @@ public static partial class LuminTaskSource
         // A consumer may already have recycled the slot.
         discarded?.ReturnToPool();
         producer?.Published();
-        if ((control & Registered) != 0) Invoke(continuation, state);
+        if ((control & ObserverMask) != 0)
+            ((SlotObserver)state!).Completed(handle, (int)((control & ObserverMask) >> ObserverShift) - 1);
+        else if ((control & Registered) != 0) Invoke(continuation, state);
     }
 
     // A claimed terminal slot remains in its page until this consumer returns it.

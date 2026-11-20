@@ -24,6 +24,11 @@ internal abstract class SlotProducer
     internal abstract void Published();
 }
 
+internal abstract class SlotObserver
+{
+    internal abstract void Completed(ulong handle, int index);
+}
+
 internal struct Slot
 {
     internal long Control;

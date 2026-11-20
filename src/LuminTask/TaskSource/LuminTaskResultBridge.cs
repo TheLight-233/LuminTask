@@ -51,7 +51,7 @@ internal static class LuminTaskResultBridge
         }
         Unsafe.CopyBlockUnaligned(ref Unsafe.As<Inline16, byte>(ref slot.Data), ref value,
             (uint)(kind >> LuminTaskSource.KindShift));
-        LuminTaskSource.Publish(ref slot, control | kind, LuminTaskStatus.Succeeded);
+        LuminTaskSource.Publish(ref slot, handle, control | kind, LuminTaskStatus.Succeeded);
         return true;
     }
 
@@ -62,7 +62,7 @@ internal static class LuminTaskResultBridge
         ref var slot = ref page.Slots[i];
         try { Store(ref slot, ref control, in value); }
         catch { Volatile.Write(ref slot.Control, control); throw; }
-        LuminTaskSource.Publish(ref slot, control, LuminTaskStatus.Succeeded);
+        LuminTaskSource.Publish(ref slot, handle, control, LuminTaskStatus.Succeeded);
         return true;
     }
 
