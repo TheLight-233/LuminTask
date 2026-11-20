@@ -12,6 +12,7 @@ internal static class RuntimeV2Tests
         await runner.Run("inline registration retains the executing runner", InlineRegistration);
         await runner.Run("two consumers and two producers each have exactly one winner", ConcurrentOwnership);
         await runner.Run("trim and cache pressure preserve reference-containing values", ManagedResults);
+        await runner.Run("a late WhenAny loser and idle runner release the winner", WinnerCanBeCollected);
         await runner.Run("scheduler rejection releases its unpublished source", RejectedAdmission);
         await runner.Run("shutdown drains an accepted continuation's input", Shutdown);
         await runner.Run("ConfigureAwait captures and restores the execution context", CaptureContext);
@@ -92,6 +93,36 @@ internal static class RuntimeV2Tests
         Assert.True(ReferenceEquals(userBox, asObject.GetResult()));
         Assert.Equal(7, userBox.Item);
         userBox.Dispose();
+    }
+
+    private static async LuminTask<object> HoldUntil(LuminTask wait, object value)
+    {
+        await wait;
+        return value;
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static WeakReference ConsumeWinner(out ulong loser)
+    {
+        var value = new object();
+        LuminTaskSource.Rent<object>(out loser);
+        var joined = LuminTask.WhenAny<object>(new[] {
+            HoldUntil(LuminTaskSource.Create(out var signal), value), LuminTaskSource.ToTask<object>(loser)
+        });
+        LuminTaskSource.SetResult(signal);
+        Assert.True(ReferenceEquals(value, joined.GetResult().result));
+        return new WeakReference(value);
+    }
+
+    private static void WinnerCanBeCollected()
+    {
+        var weak = ConsumeWinner(out var loser);
+        try
+        {
+            GC.Collect(2, GCCollectionMode.Forced, blocking: true, compacting: true);
+            Assert.False(weak.IsAlive);
+        }
+        finally { LuminTaskSource.SetResult<object>(loser, null!); }
     }
 
     private static void RejectedAdmission()
