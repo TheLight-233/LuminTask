@@ -4,6 +4,7 @@ using System.Linq;
 using System.Runtime.ExceptionServices;
 using System.Threading;
 using LuminThread.Interface;
+using LuminThread.Utility;
 
 namespace LuminThread.TaskSource.Promise;
 
@@ -19,13 +20,13 @@ public readonly struct WhenEachResult<T>
     public WhenEachResult(T result)
     {
         this.Result = result;
-        this.Exception = null;
+        this.Exception = null!;
     }
 
     public WhenEachResult(Exception exception)
     {
         if (exception == null) throw new ArgumentNullException(nameof(exception));
-        this.Result = default;
+        this.Result = default!;
         this.Exception = exception;
     }
 
@@ -61,19 +62,16 @@ public readonly struct WhenEachResult<T>
 
 internal sealed class WhenEachPromise<T> : ILuminTaskAsyncEnumerable<WhenEachResult<T>>
 {
-    private readonly LuminTask<T>[] _tasks;
-    private readonly int _taskCount;
+    private LuminTask<T>[]? _tasks;
 
     public WhenEachPromise(LuminTask<T>[] tasks)
     {
-        _taskCount = tasks.Length;
         _tasks = tasks;
     }
 
     public WhenEachPromise(IEnumerable<LuminTask<T>> tasks)
     {
         _tasks = tasks.ToArray();
-        _taskCount = _tasks.Length;
     }
 
     public WhenEachPromise(LuminTask<T> task1) : this([task1]) { }
@@ -95,116 +93,146 @@ internal sealed class WhenEachPromise<T> : ILuminTaskAsyncEnumerable<WhenEachRes
     public ILuminTaskAsyncEnumerator<WhenEachResult<T>> GetAsyncEnumerator(
         CancellationToken cancellationToken = default)
     {
-        return new Enumerator(_tasks, _taskCount, cancellationToken);
+        var tasks = Interlocked.Exchange(ref _tasks, null)
+            ?? throw new InvalidOperationException("WhenEach inputs have already been consumed.");
+        return new Enumerator(tasks, cancellationToken);
     }
 
     private sealed class Enumerator : ILuminTaskAsyncEnumerator<WhenEachResult<T>>
     {
-        private readonly LuminTask<T>[] _tasks;
-        private readonly int _taskCount;
-        private readonly CancellationToken _cancellationToken;
-        private readonly WhenEachQueue<WhenEachResult<T>> _queue;
-        private int _remainingTasks;
+        private readonly object _gate = new();
+        private Queue<WhenEachResult<T>>? _ready;
+        private int _remaining;
+        private ulong _waiter;
+        private CancellationToken _token;
+        private CancellationTokenRegistration _registration;
         private bool _disposed;
-        private WhenEachResult<T> _current;
-        private bool _allTasksCompleted;
 
-        public WhenEachResult<T> Current => _current;
+        public WhenEachResult<T> Current { get; private set; }
 
-         public Enumerator(
-             LuminTask<T>[] tasks,
-            int taskCount,
-            CancellationToken cancellationToken)
+        internal Enumerator(LuminTask<T>[] tasks, CancellationToken token)
         {
-            _tasks = tasks;
-            _taskCount = taskCount;
-            _remainingTasks = taskCount;
-            _cancellationToken = cancellationToken;
+            _remaining = tasks.Length;
+            _token = token;
+            if (token.CanBeCanceled && tasks.Length != 0)
+                _registration = token.RegisterWithoutCaptureExecutionContext(static state => ((Enumerator)state).Cancel(), this);
 
-            _queue = new WhenEachQueue<WhenEachResult<T>>();
-
-            StartAllTasks();
-        }
-
-        private void StartAllTasks()
-        {
-            for (int i = 0; i < _taskCount; i++)
-            {
-                ProcessTaskAsync(i);
-            }
-        }
-
-        private async void ProcessTaskAsync(int index)
-        {
             try
             {
-                var result = await _tasks[index];
-                OnTaskCompleted(new WhenEachResult<T>(result), index);
+                foreach (var task in tasks) Watch(task);
             }
-            catch (Exception ex)
+            catch
             {
-                OnTaskCompleted(new WhenEachResult<T>(ex), index);
-            }
-        }
-
-        private void OnTaskCompleted(WhenEachResult<T> result, int index)
-        {
-            if (_disposed) return;
-
-            _queue.TryWrite(result);
-
-            var remaining = Interlocked.Decrement(ref _remainingTasks);
-            if (remaining <= 0)
-            {
-                OnAllTasksCompleted();
+                DisposeAsync().GetResult();
+                throw;
             }
         }
 
-        private void OnAllTasksCompleted()
+        private void Watch(LuminTask<T> task)
         {
-            _allTasksCompleted = true;
-            _queue.TryComplete();
-        }
-
-        public async LuminTask<bool> MoveNextAsync()
-        {
-            if (_disposed)
-                return false;
-
-            _cancellationToken.ThrowIfCancellationRequested();
-
-            if (_allTasksCompleted)
+            if (task.IsCompleted) { Observe(task); return; }
+            var observation = StateTuple.Create((this, task._handle));
+            try
             {
-                if (_queue.TryRead(out var result))
+                task.SourceOnCompleted(static state =>
                 {
-                    _current = result;
-                    return true;
-                }
-                return false;
+                    var box = (StateTuple<(Enumerator Owner, ulong Handle)>)state;
+                    var child = box.Item;
+                    box.Dispose();
+                    child.Owner.Observe(LuminTaskSource.ToTask<T>(child.Handle));
+                }, observation);
             }
+            catch { observation.Dispose(); throw; }
+        }
 
-            if (await _queue.WaitToReadAsync(_cancellationToken))
+        private void Observe(LuminTask<T> task)
+        {
+            WhenEachResult<T> item;
+            try { item = new WhenEachResult<T>(task.GetResult()); }
+            catch (Exception ex) { item = new WhenEachResult<T>(ex); }
+
+            ulong waiter = 0;
+            CancellationToken? cancellation = null;
+            CancellationTokenRegistration release = default;
+            lock (_gate)
             {
-                if (_queue.TryRead(out var result))
+                if (--_remaining == 0)
                 {
-                    _current = result;
-                    return true;
+                    release = _registration;
+                    _registration = default;
+                }
+                if (!_disposed && !_token.IsCancellationRequested)
+                {
+                    waiter = _waiter;
+                    _waiter = 0;
+                    if (waiter == 0) (_ready ??= new Queue<WhenEachResult<T>>()).Enqueue(item);
+                    else Current = item;
+                }
+                else if (_remaining == 0 && _waiter != 0)
+                {
+                    // Cancellation may already be requested before its callback enters.
+                    waiter = _waiter;
+                    _waiter = 0;
+                    cancellation = _token;
                 }
             }
+            release.Release();
+            if (waiter != 0)
+            {
+                if (cancellation.HasValue) LuminTaskSource.TrySetCanceled(waiter, cancellation.Value);
+                else LuminTaskResultBridge.TrySetResult(waiter, true);
+            }
+        }
 
-            return false;
+        public LuminTask<bool> MoveNextAsync()
+        {
+            lock (_gate)
+            {
+                if (_disposed) return CompletedTasks.False();
+                if (_token.IsCancellationRequested) return LuminTask.FromCanceled<bool>(_token);
+                if (_waiter != 0) throw new InvalidOperationException("A MoveNextAsync call is already pending.");
+                if (_ready is { Count: > 0 })
+                {
+                    Current = _ready.Dequeue();
+                    return CompletedTasks.True();
+                }
+                if (_remaining == 0) return CompletedTasks.False();
+                return LuminTaskSource.Create<bool>(out _waiter);
+            }
+        }
+
+        private void Cancel()
+        {
+            ulong waiter;
+            CancellationToken token;
+            lock (_gate)
+            {
+                waiter = _waiter;
+                _waiter = 0;
+                token = _token;
+                _ready = null;
+            }
+            if (waiter != 0) LuminTaskSource.TrySetCanceled(waiter, token);
         }
 
         public LuminTask DisposeAsync()
         {
-            if (_disposed)
-                return LuminTask.CompletedTask();
-
-            _disposed = true;
-
-            _queue.TryComplete();
-
-            return LuminTask.CompletedTask();
+            ulong waiter;
+            CancellationTokenRegistration release;
+            lock (_gate)
+            {
+                _disposed = true;
+                Current = default;
+                _ready = null;
+                waiter = _waiter;
+                _waiter = 0;
+                release = _registration;
+                _registration = default;
+                _token = default;
+            }
+            release.Release();
+            if (waiter != 0) LuminTaskResultBridge.TrySetResult(waiter, false);
+            return default;
         }
     }
 }

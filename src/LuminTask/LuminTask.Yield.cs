@@ -38,14 +38,14 @@ public partial struct LuminTask
 
         if (cancellationToken.IsCancellationRequested)
         {
-            LuminTaskCoreSource.TrySetCanceled(handle, cancellationToken);
+            LuminTaskSource.TrySetCanceled(handle, cancellationToken);
             return new LuminTask(handle);
         }
 
         if (cancelImmediately && cancellationToken.CanBeCanceled)
             AttachCancellation(handle, cancellationToken);
 
-        PlayerLoopHelper.AddAction(timing, new LuminTaskState(handle, cancellationToken), YieldPromise.MoveNextAction);
+        PlayerLoopHelper.Schedule(timing, new LuminTaskState(handle, cancellationToken), YieldPromise.MoveNextAction);
 
         return new LuminTask(handle);
     }

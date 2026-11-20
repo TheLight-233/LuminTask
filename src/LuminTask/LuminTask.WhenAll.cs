@@ -9,19 +9,18 @@ namespace LuminThread;
 public partial struct LuminTask
 {
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static unsafe LuminTask WhenAll(LuminTask[]? tasks)
+    public static LuminTask WhenAll(LuminTask[]? tasks)
     {
         if (tasks == null || tasks.Length == 0)
         {
             return FromResult();
         }
 
-        var promise = new WhenAllPromise(tasks);
-        return new LuminTask(promise.Handle);
+        return new LuminTask(VoidJoin.Create(false, tasks.Length, tasks));
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static unsafe LuminTask WhenAll(IEnumerable<LuminTask>? tasks)
+    public static LuminTask WhenAll(IEnumerable<LuminTask>? tasks)
     {
         if (tasks == null)
             return FromResult();
@@ -46,24 +45,22 @@ public partial struct LuminTask
         if (array.Length == 0)
             return FromResult();
 
-        var promise = new WhenAllPromise(array);
-        return new LuminTask(promise.Handle);
+        return new LuminTask(VoidJoin.Create(false, array.Length, array));
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static unsafe LuminTask<T[]> WhenAll<T>(LuminTask<T>[]? tasks)
+    public static LuminTask<T[]> WhenAll<T>(LuminTask<T>[]? tasks)
     {
         if (tasks == null || tasks.Length == 0)
         {
             return LuminTask<T[]>.FromResult([]);
         }
 
-        var promise = new WhenAllPromise<T>(tasks);
-        return new LuminTask<T[]>(promise.Handle);
+        return new LuminTask<T[]>(ArrayJoin<T>.Create(false, tasks));
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static unsafe LuminTask<T[]> WhenAll<T>(IEnumerable<LuminTask<T>>? tasks)
+    public static LuminTask<T[]> WhenAll<T>(IEnumerable<LuminTask<T>>? tasks)
     {
         if (tasks == null)
             return LuminTask<T[]>.FromResult([]);
@@ -88,44 +85,40 @@ public partial struct LuminTask
         if (array.Length == 0)
             return LuminTask<T[]>.FromResult([]);
 
-        var promise = new WhenAllPromise<T>(array);
-        return new LuminTask<T[]>(promise.Handle);
+        return new LuminTask<T[]>(ArrayJoin<T>.Create(false, array));
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static unsafe LuminTask<(T1, T2)> WhenAll<T1, T2>(in LuminTask<T1> task1, in LuminTask<T2> task2)
+    public static LuminTask<(T1, T2)> WhenAll<T1, T2>(in LuminTask<T1> task1, in LuminTask<T2> task2)
     {
         if (task1.Status.IsCompletedSuccessfully() && task2.Status.IsCompletedSuccessfully())
         {
             return new LuminTask<(T1, T2)>((task1.GetAwaiter().GetResult(), task2.GetAwaiter().GetResult()));
         }
 
-        var promise = new WhenAllPromise<T1, T2>(task1, task2);
-        return new LuminTask<(T1, T2)>(promise.Handle);
+        return new LuminTask<(T1, T2)>(TupleJoin<T1, T2>.Create(false, task1, task2));
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static unsafe LuminTask<(T1, T2, T3)> WhenAll<T1, T2, T3>(in LuminTask<T1> task1, in LuminTask<T2> task2, in LuminTask<T3> task3)
+    public static LuminTask<(T1, T2, T3)> WhenAll<T1, T2, T3>(in LuminTask<T1> task1, in LuminTask<T2> task2, in LuminTask<T3> task3)
     {
         if (task1.Status.IsCompletedSuccessfully() && task2.Status.IsCompletedSuccessfully() && task3.Status.IsCompletedSuccessfully())
         {
             return new LuminTask<(T1, T2, T3)>((task1.GetAwaiter().GetResult(), task2.GetAwaiter().GetResult(), task3.GetAwaiter().GetResult()));
         }
 
-        var promise = new WhenAllPromise<T1, T2, T3>(task1, task2, task3);
-        return new LuminTask<(T1, T2, T3)>(promise.Handle);
+        return new LuminTask<(T1, T2, T3)>(TupleJoin<T1, T2, T3>.Create(false, task1, task2, task3));
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static unsafe LuminTask<(T1, T2, T3, T4)> WhenAll<T1, T2, T3, T4>(in LuminTask<T1> task1, in LuminTask<T2> task2, in LuminTask<T3> task3, in LuminTask<T4> task4)
+    public static LuminTask<(T1, T2, T3, T4)> WhenAll<T1, T2, T3, T4>(in LuminTask<T1> task1, in LuminTask<T2> task2, in LuminTask<T3> task3, in LuminTask<T4> task4)
     {
         if (task1.Status.IsCompletedSuccessfully() && task2.Status.IsCompletedSuccessfully() && task3.Status.IsCompletedSuccessfully() && task4.Status.IsCompletedSuccessfully())
         {
             return new LuminTask<(T1, T2, T3, T4)>((task1.GetAwaiter().GetResult(), task2.GetAwaiter().GetResult(), task3.GetAwaiter().GetResult(), task4.GetAwaiter().GetResult()));
         }
 
-        var promise = new WhenAllPromise<T1, T2, T3, T4>(task1, task2, task3, task4);
-        return new LuminTask<(T1, T2, T3, T4)>(promise.Handle);
+        return new LuminTask<(T1, T2, T3, T4)>(TupleJoin<T1, T2, T3, T4>.Create(false, task1, task2, task3, task4));
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -135,7 +128,7 @@ public partial struct LuminTask
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static unsafe LuminTask WhenAll(in LuminTask task1, in LuminTask task2)
+    public static LuminTask WhenAll(in LuminTask task1, in LuminTask task2)
     {
         if (task1.Status.IsCompletedSuccessfully() && task2.Status.IsCompletedSuccessfully())
         {
@@ -144,12 +137,11 @@ public partial struct LuminTask
             return FromResult();
         }
 
-        var promise = new WhenAllPromise2(task1, task2);
-        return new LuminTask(promise.Handle);
+        return new LuminTask(VoidJoin.Create(false, 2, null, task1, task2));
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static unsafe LuminTask WhenAll(in LuminTask task1, in LuminTask task2, in LuminTask task3)
+    public static LuminTask WhenAll(in LuminTask task1, in LuminTask task2, in LuminTask task3)
     {
         if (task1.Status.IsCompletedSuccessfully() && task2.Status.IsCompletedSuccessfully() && task3.Status.IsCompletedSuccessfully())
         {
@@ -159,12 +151,11 @@ public partial struct LuminTask
             return FromResult();
         }
 
-        var promise = new WhenAllPromise3(task1, task2, task3);
-        return new LuminTask(promise.Handle);
+        return new LuminTask(VoidJoin.Create(false, 3, null, task1, task2, task3));
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static unsafe LuminTask WhenAll(in LuminTask task1, in LuminTask task2, in LuminTask task3, in LuminTask task4)
+    public static LuminTask WhenAll(in LuminTask task1, in LuminTask task2, in LuminTask task3, in LuminTask task4)
     {
         if (task1.Status.IsCompletedSuccessfully() && task2.Status.IsCompletedSuccessfully() && task3.Status.IsCompletedSuccessfully() && task4.Status.IsCompletedSuccessfully())
         {
@@ -175,7 +166,6 @@ public partial struct LuminTask
             return FromResult();
         }
 
-        var promise = new WhenAllPromise4(task1, task2, task3, task4);
-        return new LuminTask(promise.Handle);
+        return new LuminTask(VoidJoin.Create(false, 4, null, task1, task2, task3, task4));
     }
 }

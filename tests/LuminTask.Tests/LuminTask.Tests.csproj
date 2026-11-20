@@ -7,10 +7,6 @@
         <Nullable>enable</Nullable>
     </PropertyGroup>
 
-    <PropertyGroup>
-      <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    </PropertyGroup>
-
     <ItemGroup>
       <ProjectReference Include="..\..\src\LuminTask\LuminTask.csproj" />
       <!-- AsyncEx 已拆分为独立程序集，使用其原语的测试需要显式引用 -->

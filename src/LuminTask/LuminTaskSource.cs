@@ -17,8 +17,16 @@ namespace LuminThread;
 // setters are Try* because the first completion wins - a late or duplicated call is ignored rather
 // than throwing, which is what makes them safe to call from a cancellation callback racing the
 // player loop.
-public static class LuminTaskSource
+public static partial class LuminTaskSource
 {
+    /// <summary>Storage owned by the library. Each subsystem is sampled under its own gate.</summary>
+    public static LuminTaskStorageStatistics GetStorageStatistics()
+    {
+        SlotStore.Snapshot(out int live, out int capacity, out int peak, out int directoryLength);
+        return new LuminTaskStorageStatistics(live, capacity, peak, directoryLength,
+            Utility.LuminTaskIdleCache.RetainedBytes, PlayerLoopHelper.GetBufferBytes());
+    }
+
     /// <summary>
     /// Rents a source and returns the task that observes it. The caller owns exactly one completion
     /// of <paramref name="handle"/>; a handle that is never completed keeps its slot rented.
@@ -37,7 +45,7 @@ public static class LuminTaskSource
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static LuminTask<T> Create<T>(out LuminTaskHandle handle)
     {
-        handle = LuminTask.RentSlot();
+        handle = LuminTaskResultBridge.Rent<T>();
 
         return new LuminTask<T>(handle);
     }
@@ -53,7 +61,7 @@ public static class LuminTaskSource
 
     /// <summary>Typed counterpart of <see cref="Rent(out LuminTaskHandle)"/>.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static void Rent<T>(out LuminTaskHandle handle) => handle = LuminTask.RentSlot();
+    public static void Rent<T>(out LuminTaskHandle handle) => handle = LuminTaskResultBridge.Rent<T>();
 
     /// <summary>
     /// Rebuilds the task that observes <paramref name="handle"/>. A zero handle means "no source"
@@ -70,7 +78,7 @@ public static class LuminTaskSource
 
     /// <summary>Completes the source successfully. Returns false if it was already completed.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static bool SetResult(LuminTaskHandle handle) => LuminTaskCoreSource.TrySetResult(handle);
+    public static bool SetResult(LuminTaskHandle handle) => LuminTaskSource.TrySetResult(handle);
 
     /// <summary>Completes the source with a result. Returns false if it was already completed.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -80,10 +88,27 @@ public static class LuminTaskSource
     /// <summary>Completes the source with a fault. Returns false if it was already completed.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static bool SetException(LuminTaskHandle handle, Exception exception)
-        => LuminTaskCoreSource.TrySetException(handle, exception);
+        => LuminTaskSource.TrySetException(handle, exception);
 
     /// <summary>Completes the source as canceled. Returns false if it was already completed.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static bool SetCanceled(LuminTaskHandle handle, CancellationToken cancellationToken = default)
-        => LuminTaskCoreSource.TrySetCanceled(handle, cancellationToken);
+        => LuminTaskSource.TrySetCanceled(handle, cancellationToken);
+}
+public readonly struct LuminTaskStorageStatistics
+{
+    public readonly int ActiveSlots, BackedSlots, PeakActiveSlots, DirectoryEntries;
+    public readonly int IdleObjectBytes;
+    public readonly long SlotArrayBytes, SchedulerArrayBytes;
+
+    internal LuminTaskStorageStatistics(int live, int capacity, int peak, int directoryLength, int idleBytes, long bufferBytes)
+    {
+        ActiveSlots = live;
+        BackedSlots = capacity;
+        PeakActiveSlots = peak;
+        DirectoryEntries = directoryLength;
+        IdleObjectBytes = idleBytes;
+        SlotArrayBytes = (long)capacity * Unsafe.SizeOf<Slot>();
+        SchedulerArrayBytes = bufferBytes;
+    }
 }

@@ -1,5 +1,7 @@
 # LuminTask
 
+**2.0** 使用一个全局任务源和纯托管分页槽。同步完成直接返回；真正挂起时才租用状态机。空闲对象跨线程共享，默认预算为 64 KiB，使用 `LuminTaskIdleCache.MaxIdleObjectBytes` 配置，场景卸载时可调用 `LuminTaskSource.Trim()`。通过 `LuminTaskSource.GetStorageStatistics()` 可读取活跃槽、已分配槽、槽数组字节数、缓存计费字节数和调度队列容量。原生分配器钩子和裸槽租还接口已移除，写入大值或含引用结构体的生产端请使用 `LuminTaskSource.Create<T>/Rent<T>`。
+
 LuminTask 是一款面向 .NET 与 Unity 的高性能 async/await 库。用 `LuminTask` / `LuminTask<T>`（命名空间 `LuminThread`）替代 `Task` / `ValueTask`，`await`、`try/catch` 与 `CancellationToken` 用法完全不变，但异步热路径的开销被压到接近零。
 
 它的设计初衷是同时解决移动端最关心的两件事：**包体**与**帧率稳定性**。泛型异步代码会为每个具体类型生成元数据与机器码，游戏里每一个 `async` 方法都会让 `global-metadata.dat` 与 `GameAssembly.dll` 变大——小游戏平台对首包体积极其敏感；而 `Task` 在异步路径上的每次分配最终都要由 GC 回收，移动端一次 GC 就是一次掉帧风险。LuminTask 围绕**极致性能、0 GC、更少的元数据、可控的缓存池内存驻留**设计，让中小型游戏项目直接受益。

@@ -7,21 +7,9 @@ using LuminThread.Utility;
 
 namespace LuminThread;
 
-public unsafe partial struct LuminTask
+public partial struct LuminTask
 {
-    // Rents a slot from the bag and clears it. Factories, completion sources and suspended async
-    // methods all share this single lifecycle, which is why there is no per-source kind any more.
-    internal static LuminTaskHandle RentSlot()
-    {
-        short id = LuminTaskBag.GetId();
-        ref var item = ref LuminTaskBag.GetItem(id);
-
-        LuminTaskHandle handle = LuminTaskHandleBits.Create(id, item.Generation);
-
-        LuminTaskLeakTracker.OnRent(handle); // DEBUG-only; compiled out in Release
-
-        return handle;
-    }
+    internal static ulong RentSlot() => SlotStore.Rent(0, null);
 
     [DebuggerHidden]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -49,7 +37,7 @@ public unsafe partial struct LuminTask
         }
 
         var handle = RentSlot();
-        LuminTaskCoreSource.TrySetException(handle, ex);
+        LuminTaskSource.TrySetException(handle, ex);
 
         return new LuminTask(handle);
     }
@@ -64,7 +52,7 @@ public unsafe partial struct LuminTask
         }
 
         var handle = RentSlot();
-        LuminTaskCoreSource.TrySetException(handle, ex);
+        LuminTaskSource.TrySetException(handle, ex);
 
         return new LuminTask<T>(handle);
     }
@@ -74,7 +62,7 @@ public unsafe partial struct LuminTask
     public static LuminTask FromCanceled(CancellationToken cancellationToken = default)
     {
         var handle = RentSlot();
-        LuminTaskCoreSource.TrySetCanceled(handle, cancellationToken);
+        LuminTaskSource.TrySetCanceled(handle, cancellationToken);
 
         return new LuminTask(handle);
     }
@@ -84,44 +72,27 @@ public unsafe partial struct LuminTask
     public static LuminTask<T> FromCanceled<T>(CancellationToken cancellationToken = default)
     {
         var handle = RentSlot();
-        LuminTaskCoreSource.TrySetCanceled(handle, cancellationToken);
+        LuminTaskSource.TrySetCanceled(handle, cancellationToken);
 
         return new LuminTask<T>(handle);
     }
 
-    // The handle was just rented, so it is valid by construction and does not need the checking
-    // resolve path.
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static ref LuminTaskItem GetRentedItem(LuminTaskHandle handle)
-        => ref LuminTaskBag.GetItem((int)handle.SlotRaw() - 1);
-
-    // Same as GetRentedItem, but also hands back the cold side and the chunk-local index, which is
-    // what the loop-driven sources need for their scratch and their registration.
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static ref LuminTaskItem GetRentedSlot(LuminTaskHandle handle, out LuminTaskCold cold, out int index)
-    {
-        int id = (int)handle.SlotRaw() - 1;
-        cold = LuminTaskBag.GetCold(id);
-        index = id & LuminTaskBag.CHUNK_MASK;
-        return ref LuminTaskBag.GetItem(id);
-    }
-
-    // Attaches an outside-in cancellation to a slot (Never, and the cancelImmediately option of the
-    // loop-driven sources). The slot owns the registration and the core releases it on Return, so
-    // nothing leaks if the task is consumed after cancellation.
     private static void AttachCancellation(LuminTaskHandle handle, CancellationToken cancellationToken)
         => AttachCancellation(handle, cancellationToken, CancellationCallbackState.Callback);
 
     private static void AttachCancellation(LuminTaskHandle handle, CancellationToken cancellationToken, Action<object> callback)
     {
-        ref var item = ref GetRentedSlot(handle, out var cold, out int index);
-
-        if (Unsafe.IsNullRef(ref item))
-            return;
-
-        var box = new CancellationCallbackState(handle, cancellationToken);
-
-        cold.SetRegistration(index, cancellationToken.RegisterWithoutCaptureExecutionContext(callback, box));
+        var binding = new CancellationCallbackState(handle, cancellationToken);
+        try
+        {
+            binding.Registration = cancellationToken.RegisterWithoutCaptureExecutionContext(callback, binding);
+            LuminTaskSource.AttachRegistration(handle, binding);
+        }
+        catch
+        {
+            LuminTaskSource.AbandonUnpublished(handle);
+            throw;
+        }
     }
 
     [DebuggerHidden]
@@ -132,7 +103,7 @@ public unsafe partial struct LuminTask
 
         if (cancellationToken.IsCancellationRequested)
         {
-            LuminTaskCoreSource.TrySetCanceled(handle, cancellationToken);
+            LuminTaskSource.TrySetCanceled(handle, cancellationToken);
         }
         else if (cancellationToken.CanBeCanceled)
         {
@@ -153,7 +124,7 @@ public unsafe partial struct LuminTask
 
         if (cancellationToken.IsCancellationRequested)
         {
-            LuminTaskCoreSource.TrySetCanceled(handle, cancellationToken);
+            LuminTaskSource.TrySetCanceled(handle, cancellationToken);
         }
         else if (cancellationToken.CanBeCanceled)
         {
@@ -208,15 +179,16 @@ internal sealed class CancellationCallbackState
     internal static readonly Action<object> Callback = static state =>
     {
         var box = (CancellationCallbackState)state;
-        LuminTaskCoreSource.TrySetCanceled(box.Handle, box.CancellationToken);
+        LuminTaskSource.TrySetCanceled(box.Handle, box.CancellationToken);
     };
 
     internal static readonly Action<object> CompleteCallback = static state =>
     {
         var box = (CancellationCallbackState)state;
-        LuminTaskCoreSource.TrySetResult(box.Handle);
+        LuminTaskSource.TrySetResult(box.Handle);
     };
 
+    internal CancellationTokenRegistration Registration;
     internal readonly LuminTaskHandle Handle;
     internal readonly CancellationToken CancellationToken;
 

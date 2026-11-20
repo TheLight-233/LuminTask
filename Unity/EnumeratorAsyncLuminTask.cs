@@ -9,7 +9,7 @@ using LuminThread.Utility;
 using LuminThread.Interface;
 using UnityEngine;
 
-public static unsafe class EnumeratorAsyncLuminTask
+public static class EnumeratorAsyncLuminTask
 {
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static IEnumerator Core(IEnumerator inner, MonoBehaviour coroutineRunner, ulong handle)

@@ -13,13 +13,15 @@ public partial struct LuminTask
     // instance - so nine state machines disappear without adding a runner per adapter, which is what
     // would grow the AOT instance count instead of shrinking it. The adapters are static readonly
     // fields, so forwarding costs a delegate call, never an allocation.
-    private static readonly Action<object> InvokeActionAdapter = static state => ((Action)state)();
-
-    private static readonly Func<object, LuminTask> InvokeFuncAdapter = static state => ((Func<LuminTask>)state)();
+    private static class RunAdapters
+    {
+        internal static readonly Action<object> Action = static state => ((Action)state)();
+        internal static readonly Func<object, LuminTask> Func = static state => ((Func<LuminTask>)state)();
+    }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static LuminTask Run(Action action, bool configureAwait = true)
-        => Run<object>(InvokeActionAdapter, action, configureAwait);
+        => Run<object>(RunAdapters.Action, action, configureAwait);
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static LuminTask Run(Action<object> action, object state, bool configureAwait = true)
@@ -80,7 +82,7 @@ public partial struct LuminTask
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static LuminTask<LuminTask> Run(Func<LuminTask> func, bool configureAwait = true)
-        => Run<object, LuminTask>(InvokeFuncAdapter, func, configureAwait);
+        => Run<object, LuminTask>(RunAdapters.Func, func, configureAwait);
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static async LuminTask<T> Run<T>(Func<LuminTask<T>> func, bool configureAwait = true)
@@ -169,7 +171,7 @@ public partial struct LuminTask
     }
 
     public static LuminTask RunOnThreadPool(Action action, bool configureAwait = true, CancellationToken cancellationToken = default)
-        => RunOnThreadPool<object>(InvokeActionAdapter, action, configureAwait, cancellationToken);
+        => RunOnThreadPool<object>(RunAdapters.Action, action, configureAwait, cancellationToken);
 
     public static LuminTask RunOnThreadPool(Action<object> action, object state, bool configureAwait = true, CancellationToken cancellationToken = default)
         => RunOnThreadPool<object>(action, state, configureAwait, cancellationToken);

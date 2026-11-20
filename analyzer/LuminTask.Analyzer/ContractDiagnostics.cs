@@ -12,23 +12,23 @@ namespace LuminThread.Analyzer
     {
         internal const string Category = "LuminTask.Contract";
 
-        /// <summary>LUM1001: a LuminTask is never consumed (or not consumed on all paths) — native source leak.</summary>
+        /// <summary>LUM1001: a LuminTask is never consumed (or not consumed on all paths) — leased slot leak.</summary>
         internal static readonly DiagnosticDescriptor UnconsumedTask = new(
             id: "LUM1001",
             title: "LuminTask 未被消费",
-            messageFormat: "LuminTask '{0}' 从未被消费（必须 await、Forget 或转移所有权），未消费的任务源将泄漏原生内存与任务槽位{1}",
+            messageFormat: "LuminTask '{0}' 从未被消费（必须 await、Forget 或转移所有权），未消费的任务源将持续占用任务槽位{1}",
             category: Category,
             defaultSeverity: DiagnosticSeverity.Error,
             isEnabledByDefault: true,
             description:
                 "LuminTask 遵循单次消费约定：每个实例必须被 await、Forget() 消费一次，或通过参数/返回值/赋值转移所有权。" +
-                "未消费的任务源位于非托管内存，GC 无法回收。");
+                "任务槽在单次消费后归还，丢弃句柄会使槽位及其引用持续驻留。");
 
-        /// <summary>LUM1002: a LuminTask is consumed more than once — second consumer touches released memory.</summary>
+        /// <summary>LUM1002: a LuminTask is consumed more than once — stale handle on second consumption.</summary>
         internal static readonly DiagnosticDescriptor DoubleConsumedTask = new(
             id: "LUM1002",
             title: "LuminTask 被重复消费",
-            messageFormat: "LuminTask '{0}' 已被消费（或已转移所有权），此处构成第二次消费；任务源仅允许被消费一次，重复消费可能读取已释放的原生内存{1}",
+            messageFormat: "LuminTask '{0}' 已被消费（或已转移所有权），此处构成第二次消费；任务源仅允许被消费一次，重复消费会使用失效的任务句柄{1}",
             category: Category,
             defaultSeverity: DiagnosticSeverity.Error,
             isEnabledByDefault: true,
@@ -56,7 +56,7 @@ namespace LuminThread.Analyzer
             defaultSeverity: DiagnosticSeverity.Error,
             isEnabledByDefault: true,
             description:
-                "创建后未被完成的完成源将永久占用任务槽位与原生内存。确保每个完成源恰好被完成一次，" +
+                "创建后未被完成的完成源将永久占用任务槽位及关联状态。确保每个完成源恰好被完成一次，" +
                 "或将其转移（参数 / 字段）由其他代码完成。");
 
         /// <summary>LUM1005: a LuminTask is assigned to a discard — the discard does not release the source.</summary>

@@ -3,9 +3,6 @@
 #endif
 
 using System;
-using System.Collections.Concurrent;
-using System.Collections.Generic;
-using System.Runtime.CompilerServices;
 using System.Threading;
 using LuminThread;
 using LuminThread.Interface;
@@ -31,181 +28,21 @@ namespace LuminThread.Unity
     /// strategy - a LuminTaskState plus a cached managed MoveNext - so this assembly contains no
     /// calli site for UnityLinker to analyze.
     /// </summary>
-    internal sealed class UnityMainThreadPlayLoopStrategy : IPlayLoopStrategy
+    internal sealed class UnityMainThreadPlayLoopStrategy : ManagedPlayerLoop
     {
-        // 排空后保留的小额常驻容量（低于它不收缩，避免每帧重复扩容）。
-        private const int IdleActiveTasksCapacity = 64;
-
-        private readonly struct ScheduledAction
-        {
-            internal readonly LuminTaskState State;
-            internal readonly MoveNext MoveNext;
-
-            internal ScheduledAction(in LuminTaskState state, MoveNext moveNext)
-            {
-                State = state;
-                MoveNext = moveNext;
-            }
-        }
-
-        // 首次实际入队才创建下面的队列/活动表：启动时为 16 个 timing 各建一套是固定成本，
-        // 绝大多数项目只用其中一两个。_activeTasks 同时是发布标记，用 Volatile 读写做双检锁，
-        // 保证跨线程首次入队只创建一次，且创建后时机语义与之前完全一致。
-        private readonly object _initLock = new object();
-        private ConcurrentQueue<ScheduledAction> _incomingTasks;
-        private ConcurrentQueue<Action> _continuations;
-        private List<ScheduledAction> _activeTasks;
-        private int _disposed;
-
         internal readonly PlayerLoopSystem.UpdateFunction UpdateDelegate;
-
-        internal UnityMainThreadPlayLoopStrategy()
+        internal UnityMainThreadPlayLoopStrategy(PlayerLoopTiming timing)
         {
             UpdateDelegate = RunCore;
-        }
-
-        // 首次入队路径上的最坏代价是一次锁；之后只是 _activeTasks 的 volatile 读与分支。
-        private void EnsureInfrastructure()
-        {
-            if (Volatile.Read(ref _activeTasks) != null)
-                return;
-
-            lock (_initLock)
+#if UNITY_WEBGL && !UNITY_EDITOR
+            // Web players progress the default DotNet timing on the main thread.
+            if (timing == PlayerLoopTiming.Update)
             {
-                if (_activeTasks != null)
-                    return;
-
-                // Dispose 取同一把锁，晚到的 AddAction 不会在拆除之后再复活策略。
-                if (Volatile.Read(ref _disposed) != 0)
-                    throw new ObjectDisposedException(nameof(UnityMainThreadPlayLoopStrategy));
-
-                _incomingTasks = new ConcurrentQueue<ScheduledAction>();
-                _continuations = new ConcurrentQueue<Action>();
-                // 发布标记放最后：看到它非空就一定能看到上面两个队列。
-                Volatile.Write(ref _activeTasks, new List<ScheduledAction>());
+                var fallback = new ManagedPlayerLoop();
+                PlayerLoopHelper.SetStrategy(PlayerLoopTiming.DotNet, fallback);
+                UpdateDelegate += fallback.RunCore;
             }
-        }
-
-        public void AddAction(LuminTaskState state, MoveNext moveNext)
-        {
-            if (moveNext == null) throw new ArgumentNullException(nameof(moveNext));
-            ThrowIfDisposed();
-            EnsureInfrastructure();
-            _incomingTasks.Enqueue(new ScheduledAction(state, moveNext));
-        }
-
-        public void AddContinuation(Action continuation)
-        {
-            if (continuation == null) throw new ArgumentNullException(nameof(continuation));
-            ThrowIfDisposed();
-            EnsureInfrastructure();
-            _continuations.Enqueue(continuation);
-        }
-
-        public void RunCore()
-        {
-            if (Volatile.Read(ref _disposed) != 0)
-                return;
-
-            // 该 timing 从未被入队过，没有需要排空的基础设施。
-            var active = Volatile.Read(ref _activeTasks);
-            if (active == null)
-                return;
-
-            ProcessContinuations();
-            DrainIncoming(active);
-            ProcessActiveTasks(active);
-        }
-
-        private void ProcessContinuations()
-        {
-            var continuations = _continuations;
-            if (continuations == null)
-                return;
-
-            while (continuations.TryDequeue(out var continuation))
-            {
-                try
-                {
-                    continuation();
-                }
-                catch (Exception exception)
-                {
-                    Debug.LogException(exception);
-                }
-            }
-        }
-
-        private void DrainIncoming(List<ScheduledAction> active)
-        {
-            var incoming = _incomingTasks;
-            if (incoming == null)
-                return;
-
-            while (incoming.TryDequeue(out var action))
-                active.Add(action);
-        }
-
-        private void ProcessActiveTasks(List<ScheduledAction> active)
-        {
-            var count = active.Count;
-            if (count == 0)
-                return;
-
-            var writeIndex = 0;
-            for (var readIndex = 0; readIndex < count; readIndex++)
-            {
-                var action = active[readIndex];
-                var keep = false;
-                try
-                {
-                    keep = action.MoveNext(action.State);
-                }
-                catch (Exception exception)
-                {
-                    Debug.LogException(exception);
-                }
-
-                if (keep)
-                    active[writeIndex++] = action;
-            }
-
-            if (writeIndex < count)
-                active.RemoveRange(writeIndex, count - writeIndex);
-
-            // 与核心 StandardPlayLoopStrategy 一致：峰值排空后释放多余容量，只用小额下限
-            // 兜住常规负载，避免每帧归零后反复扩容。
-            if (active.Count == 0 && active.Capacity > IdleActiveTasksCapacity)
-            {
-                active.Capacity = IdleActiveTasksCapacity;
-            }
-        }
-
-        private void ThrowIfDisposed()
-        {
-            if (Volatile.Read(ref _disposed) != 0)
-                throw new ObjectDisposedException(nameof(UnityMainThreadPlayLoopStrategy));
-        }
-
-        public void Dispose()
-        {
-            if (Interlocked.Exchange(ref _disposed, 1) != 0)
-                return;
-
-            lock (_initLock)
-            {
-                if (_incomingTasks != null)
-                {
-                    while (_incomingTasks.TryDequeue(out _)) { }
-                }
-
-                if (_continuations != null)
-                {
-                    while (_continuations.TryDequeue(out _)) { }
-                }
-
-                _activeTasks?.Clear();
-            }
+#endif
         }
     }
 
@@ -277,10 +114,12 @@ namespace LuminThread.Unity
 
             try
             {
+                if (SynchronizationContext.Current != null)
+                    PlayerLoopHelper.RegisterMainThread(SynchronizationContext.Current);
                 for (var i = 0; i < s_injectionPoints.Length; i++)
                 {
                     var timing = s_injectionPoints[i].Timing;
-                    var strategy = new UnityMainThreadPlayLoopStrategy();
+                    var strategy = new UnityMainThreadPlayLoopStrategy(timing);
                     s_strategies[(int)timing] = strategy;
                     PlayerLoopHelper.SetStrategy(timing, strategy);
                 }
@@ -288,6 +127,8 @@ namespace LuminThread.Unity
                 var playerLoop = PlayerLoop.GetCurrentPlayerLoop();
                 InjectPlayerLoopSystems(ref playerLoop);
                 PlayerLoop.SetPlayerLoop(playerLoop);
+                Application.lowMemory -= LuminTaskSource.Trim;
+                Application.lowMemory += LuminTaskSource.Trim;
 
 #if UNITY_EDITOR
                 EditorApplication.playModeStateChanged -= OnPlayModeStateChanged;
@@ -439,6 +280,8 @@ namespace LuminThread.Unity
 
         private static void ShutdownStrategies()
         {
+            Application.lowMemory -= LuminTaskSource.Trim;
+            PlayerLoopHelper.UnregisterMainThread();
             for (var i = 0; i < s_strategies.Length; i++)
             {
                 s_strategies[i]?.Dispose();

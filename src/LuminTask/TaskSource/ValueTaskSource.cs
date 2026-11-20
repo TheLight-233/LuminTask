@@ -5,7 +5,7 @@ using System.Threading.Tasks.Sources;
 namespace LuminThread.TaskSource;
 
 // Thin IValueTaskSource wrapper: it holds nothing but a 64-bit handle and forwards every operation
-// to the global LuminTaskCoreSource. The token is part of the ValueTask protocol shape; the
+// to the global LuminTaskSource. The token is part of the ValueTask protocol shape; the
 // handle's own generation already carries the validation duty, so it is ignored here.
 //
 // The generic operator LuminTask<T> -> ValueTask<T> was removed on purpose: IL2CPP materialises
@@ -27,14 +27,14 @@ public sealed class ValueTaskSource : IValueTaskSource
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public ValueTaskSourceStatus GetStatus(short token)
-        => (ValueTaskSourceStatus)(int)LuminTaskCoreSource.GetStatus(_handle);
+        => (ValueTaskSourceStatus)(int)LuminTaskSource.GetStatus(_handle);
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public void GetResult(short token) => LuminTaskCoreSource.ConsumeVoid(_handle);
+    public void GetResult(short token) => LuminTaskSource.ConsumeVoid(_handle);
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void OnCompleted(Action<object> continuation, object state, short token, ValueTaskSourceOnCompletedFlags flags)
-        => LuminTaskCoreSource.OnCompleted(_handle, continuation, state);
+        => LuminTaskSource.OnCompleted(_handle, continuation, state);
 }
 
 public sealed class ValueTaskSource<T> : IValueTaskSource<T>
@@ -48,12 +48,12 @@ public sealed class ValueTaskSource<T> : IValueTaskSource<T>
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public ValueTaskSourceStatus GetStatus(short token)
-        => (ValueTaskSourceStatus)(int)LuminTaskCoreSource.GetStatus(_handle);
+        => (ValueTaskSourceStatus)(int)LuminTaskSource.GetStatus(_handle);
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public T GetResult(short token) => LuminTaskResultBridge.Get<T>(_handle);
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void OnCompleted(Action<object> continuation, object state, short token, ValueTaskSourceOnCompletedFlags flags)
-        => LuminTaskCoreSource.OnCompleted(_handle, continuation, state);
+        => LuminTaskSource.OnCompleted(_handle, continuation, state);
 }

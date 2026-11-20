@@ -14,15 +14,17 @@ public static class BenchBuild
         string output = null;
         var target = Array.IndexOf(arguments, "-bench32") >= 0
             ? BuildTarget.StandaloneWindows : BuildTarget.StandaloneWindows64;
+        if (Array.IndexOf(arguments, "-benchWebGL") >= 0) target = BuildTarget.WebGL;
+        var namedTarget = target == BuildTarget.WebGL ? NamedBuildTarget.WebGL : NamedBuildTarget.Standalone;
         for (int i = 0; i + 1 < arguments.Length; i++)
             if (arguments[i] == "-benchBuildOut") output = arguments[i + 1];
         if (output == null) throw new ArgumentException("-benchBuildOut is required");
 
-        PlayerSettings.SetScriptingBackend(NamedBuildTarget.Standalone, ScriptingImplementation.IL2CPP);
-        PlayerSettings.SetManagedStrippingLevel(NamedBuildTarget.Standalone, ManagedStrippingLevel.High);
-        PlayerSettings.SetIl2CppCodeGeneration(NamedBuildTarget.Standalone, Il2CppCodeGeneration.OptimizeSize);
-        PlayerSettings.SetIl2CppCompilerConfiguration(NamedBuildTarget.Standalone, Il2CppCompilerConfiguration.Release);
-        PlayerSettings.allowUnsafeCode = true;
+        PlayerSettings.SetScriptingBackend(namedTarget, ScriptingImplementation.IL2CPP);
+        PlayerSettings.SetManagedStrippingLevel(namedTarget, ManagedStrippingLevel.High);
+        PlayerSettings.SetIl2CppCodeGeneration(namedTarget, Il2CppCodeGeneration.OptimizeSize);
+        PlayerSettings.SetIl2CppCompilerConfiguration(namedTarget, Il2CppCompilerConfiguration.Release);
+        PlayerSettings.allowUnsafeCode = false;
         var scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
         new GameObject("Benchmark").AddComponent<BenchEntry>();
         const string scenePath = "Assets/BenchScene.unity";

@@ -6,9 +6,9 @@
         <TargetFrameworks>netstandard2.1;net8.0;net9.0;net10.0</TargetFrameworks>
         <!-- 库自身实现不受面向使用方的单次消费契约约束，与主项目一致屏蔽 LUM 诊断。 -->
         <NoWarn>$(NoWarn);CS1591;CA2255;LUM1001;LUM1002;LUM1003;LUM1004;LUM1005;LUM1006;LUM1007;LUM1008;LUM9999</NoWarn>
-        <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+        <AllowUnsafeBlocks>false</AllowUnsafeBlocks>
         <PackageId>LuminTask.AsyncEx</PackageId>
-        <Version>1.0.7</Version>
+        <Version>2.0.0</Version>
         <Authors>TheLight233</Authors>
         <Description>Optional async synchronization primitives for LuminTask (AsyncLock, AsyncSemaphore, AsyncLazy, async events, ...). Also bundled inside the LuminTask package.</Description>
         <PackageTags>async;asyncex;luminTask;synchronization;zero-allocation</PackageTags>

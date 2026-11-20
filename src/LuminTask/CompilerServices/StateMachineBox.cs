@@ -1,71 +1,55 @@
 using System;
 using System.Runtime.CompilerServices;
+using System.Threading;
+using LuminThread.Utility;
 
-namespace LuminThread.CompilerServices
+namespace LuminThread.CompilerServices;
+
+internal abstract class StateMachineBox : ILuminCacheNode
 {
-    // Heap home for a suspended async state machine. One pool per TStateMachine (i.e. per async
-    // method signature); the cached MoveNext delegate is allocated once per box and reused across
-    // every suspension and every rent/return cycle, so after warmup an async method that suspends
-    // allocates nothing. The pool is per-thread (ThreadStatic): a box may be rented on one thread
-    // and returned on another, which only rebalances the per-thread free lists — a given box is
-    // only ever touched by one logical invocation at a time.
-    internal interface IStateMachineBox
+    private readonly int _charge;
+    private int _owners;
+    internal readonly Action MoveNextAction;
+    public ILuminCacheNode? CacheNext { get; set; }
+
+    protected StateMachineBox(int size)
     {
-        Action MoveNextAction { get; }
-        void Return();
+        _charge = (size + 16 * IntPtr.Size + 7) & ~7;
+        MoveNextAction = Resume;
     }
 
-    internal sealed class StateMachineBox<TStateMachine> : IStateMachineBox
-        where TStateMachine : IAsyncStateMachine
+    protected void Acquire() => _owners = 2; // first registration and producer
+
+    private void Resume()
     {
-        private const int MaxRetainedPerThread = 16;
-        [ThreadStatic] private static StateMachineBox<TStateMachine>? _freeList;
-        [ThreadStatic] private static int _freeCount;
-
-        private StateMachineBox<TStateMachine>? _next;
-        public TStateMachine StateMachine = default!;
-        private readonly Action _moveNext;
-
-        private StateMachineBox()
-        {
-            _moveNext = MoveNext;
-        }
-
-        public Action MoveNextAction
-        {
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            get => _moveNext;
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static StateMachineBox<TStateMachine> Rent()
-        {
-            var box = _freeList;
-            if (box != null)
-            {
-                _freeList = box._next;
-                box._next = null;
-                _freeCount--;
-                return box;
-            }
-            return new StateMachineBox<TStateMachine>();
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void Return()
-        {
-            StateMachine = default!;
-            if (_freeCount >= MaxRetainedPerThread)
-            {
-                _next = null;
-                return;
-            }
-
-            _next = _freeList;
-            _freeList = this;
-            _freeCount++;
-        }
-
-        private void MoveNext() => StateMachine.MoveNext();
+        Interlocked.Increment(ref _owners);
+        try { Advance(); }
+        finally { Exit(); }
     }
+
+    internal void Exit()
+    {
+        if (Interlocked.Decrement(ref _owners) != 0) return;
+        Clear();
+        LuminTaskIdleCache.Return(this, _charge);
+    }
+
+    protected abstract void Advance();
+    protected abstract void Clear();
+}
+
+internal sealed class StateMachineBox<TStateMachine> : StateMachineBox where TStateMachine : IAsyncStateMachine
+{
+    internal TStateMachine Machine = default!;
+    private StateMachineBox() : base(Unsafe.SizeOf<TStateMachine>()) { }
+
+    internal static StateMachineBox<TStateMachine> Rent()
+    {
+        var runner = LuminTaskIdleCache.TakeRunner<StateMachineBox<TStateMachine>>() ?? new StateMachineBox<TStateMachine>();
+        runner.Acquire();
+        return runner;
+    }
+
+    protected override void Advance() => Machine.MoveNext();
+    protected override void Clear() => Machine = default!;
 }

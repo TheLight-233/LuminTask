@@ -95,7 +95,7 @@ namespace LuminThread.Unity
             }
         }
 
-        public unsafe struct AsyncOperationHandleLuminTaskConfiguredSource
+        public struct AsyncOperationHandleLuminTaskConfiguredSource
         {
 struct PromiseState
             {
@@ -256,7 +256,7 @@ struct PromiseState
             return AsyncOperationHandleLuminTaskConfiguredSource<T>.Create(handle, timing, progress, cancellationToken, cancelImmediately, autoReleaseWhenCanceled);
         }
 
-public unsafe struct AsyncOperationHandleLuminTaskConfiguredSource<T>
+public struct AsyncOperationHandleLuminTaskConfiguredSource<T>
         {
             struct PromiseState
             {

@@ -1,3 +1,4 @@
+using LuminThread.Utility;
 using System;
 using System.Runtime.CompilerServices;
 using System.Threading;
@@ -164,6 +165,9 @@ namespace LuminThread.AsyncEx
 
     internal sealed class ManualResetEventState : IEventPoolableState
     {
+        public ILuminCacheNode? CacheNext { get; set; }
+        public int Charge => 192;
+
         private readonly object _mutex = new();
         private readonly IAsyncWaitQueue<object> _queue;
         private volatile bool _isSet;
@@ -242,6 +246,9 @@ namespace LuminThread.AsyncEx
 
     internal sealed class ManualResetEventState<T> : IEventPoolableState
     {
+        public ILuminCacheNode? CacheNext { get; set; }
+        public int Charge => 192 + Unsafe.SizeOf<T>();
+
         private readonly object _mutex = new();
         private readonly IAsyncWaitQueue<T> _queue;
         private volatile bool _isSet;
@@ -324,6 +331,9 @@ namespace LuminThread.AsyncEx
 
     internal sealed class AutoResetEventState : IEventPoolableState
     {
+        public ILuminCacheNode? CacheNext { get; set; }
+        public int Charge => 192;
+
         private readonly object _mutex = new();
         private readonly IAsyncWaitQueue<object> _queue;
         private volatile bool _isSet;
@@ -392,6 +402,9 @@ namespace LuminThread.AsyncEx
 
     internal sealed class AutoResetEventState<T> : IEventPoolableState
     {
+        public ILuminCacheNode? CacheNext { get; set; }
+        public int Charge => 192 + Unsafe.SizeOf<T>();
+
         private readonly object _mutex = new();
         private readonly IAsyncWaitQueue<T> _queue;
         private volatile bool _isSet;

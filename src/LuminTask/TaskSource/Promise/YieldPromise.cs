@@ -12,11 +12,11 @@ internal static class YieldPromise
     {
         if (state.CancellationToken.IsCancellationRequested)
         {
-            LuminTaskCoreSource.TrySetCanceled(state.Handle, state.CancellationToken);
+            LuminTaskSource.TrySetCanceled(state.Handle, state.CancellationToken);
             return false;
         }
 
-        LuminTaskCoreSource.TrySetResult(state.Handle);
+        LuminTaskSource.TrySetResult(state.Handle);
         return false;
     }
 }

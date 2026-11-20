@@ -357,18 +357,10 @@ namespace LuminThread.Unity
         }
     }
 
-    sealed class PooledTweenCallback
+    sealed class PooledTweenCallback : ILuminCacheNode
     {
-        // Bounded per-thread free list: the instance is its own delegate target, so Create does not
-        // allocate once the list has warmed up. It is returned before the continuation runs, because
-        // the continuation may immediately create another pooled callback of this shape.
-        const int MaxRetainedPerThread = 16;
-
-        [ThreadStatic] static PooledTweenCallback _freeList;
-        [ThreadStatic] static int _freeCount;
-
-        PooledTweenCallback next;
-        Action continuation;
+        public ILuminCacheNode CacheNext { get; set; }
+        private Action continuation;
         readonly TweenCallback runDelegate;
 
         PooledTweenCallback()
@@ -379,18 +371,7 @@ namespace LuminThread.Unity
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static TweenCallback Create(Action continuation)
         {
-            var item = _freeList;
-            if (item != null)
-            {
-                _freeList = item.next;
-                item.next = null;
-                _freeCount--;
-            }
-            else
-            {
-                item = new PooledTweenCallback();
-            }
-
+            var item = (PooledTweenCallback)LuminTaskIdleCache.Take(typeof(PooledTweenCallback)) ?? new PooledTweenCallback();
             item.continuation = continuation;
             return item.runDelegate;
         }
@@ -401,17 +382,7 @@ namespace LuminThread.Unity
             var call = continuation;
             continuation = null;
 
-            if (_freeCount < MaxRetainedPerThread)
-            {
-                next = _freeList;
-                _freeList = this;
-                _freeCount++;
-            }
-            else
-            {
-                next = null;
-            }
-
+            LuminTaskIdleCache.Return(this, 144);
             call?.Invoke();
         }
     }

@@ -34,11 +34,11 @@ internal interface IPooledResult
     void ReturnToPool();
 }
 
-public class StateTuple<T> : IDisposable, IPooledResult
+public class StateTuple<T> : IDisposable, IPooledResult, ILuminCacheNode
 {
-    public T Item;
+    public T Item = default!;
     private int _disposed; // 0 = 可用, 1 = 已归还/Dispose 中
-    internal StateTuple<T>? Next;
+    ILuminCacheNode? ILuminCacheNode.CacheNext { get; set; }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void Deconstruct(out T item)
@@ -52,7 +52,7 @@ public class StateTuple<T> : IDisposable, IPooledResult
         if (Interlocked.Exchange(ref _disposed, 1) != 0)
             return;
 
-        StatePool<T>.Return(this);
+        StatePool<T>.ReturnCleared(this);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -64,74 +64,19 @@ public class StateTuple<T> : IDisposable, IPooledResult
 
 public static class StatePool<T>
 {
-    // Cap on how many containers a single closed T keeps warm. Without it the overflow chain grows to
-    // whatever peak the process reached and never shrinks, which is exactly the resident memory the
-    // pool is supposed to bound. The cap includes the fast slot and the overflow entries.
-    private const int MaxRetained = 32;
-
-    private static StateTuple<T>? _fastItem;
-    private static StateTuple<T>? _overflow;
-    private static int _overflowCount;
-    private static SpinLock _overflowLock = new(enableThreadOwnerTracking: false);
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static StateTuple<T> Create(in T item)
     {
-        var tuple = Interlocked.Exchange(ref _fastItem, null);
-        if (tuple is null)
-        {
-            var lockTaken = false;
-            try
-            {
-                _overflowLock.Enter(ref lockTaken);
-                tuple = _overflow;
-                if (tuple is not null)
-                {
-                    _overflow = tuple.Next;
-                    _overflowCount--;
-                    tuple.Next = null;
-                }
-            }
-            finally
-            {
-                if (lockTaken)
-                    _overflowLock.Exit(useMemoryBarrier: false);
-            }
-        }
-
-        tuple ??= new StateTuple<T>();
+        var tuple = (StateTuple<T>?)LuminTaskIdleCache.Take(typeof(StateTuple<T>)) ?? new StateTuple<T>();
         tuple.Reset();
         tuple.Item = item;
         return tuple;
     }
 
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static void Return(StateTuple<T> tuple)
+    public static void Return(StateTuple<T> tuple) => tuple.Dispose();
+
+    internal static void ReturnCleared(StateTuple<T> tuple)
     {
-        tuple.Item = default;
-        tuple.Next = null;
-
-        if (Interlocked.CompareExchange(ref _fastItem, tuple, null) is null)
-            return;
-
-        var lockTaken = false;
-        try
-        {
-            _overflowLock.Enter(ref lockTaken);
-
-            // Past the cap the container is simply dropped: it costs one GC, once, and keeps the
-            // pool's retained size bounded instead of tracking the high-water mark forever.
-            if (_overflowCount >= MaxRetained - 1)
-                return;
-
-            tuple.Next = _overflow;
-            _overflow = tuple;
-            _overflowCount++;
-        }
-        finally
-        {
-            if (lockTaken)
-                _overflowLock.Exit(useMemoryBarrier: false);
-        }
+        tuple.Item = default!;
+        LuminTaskIdleCache.Return(tuple, (Unsafe.SizeOf<T>() + 6 * IntPtr.Size + 7) & ~7);
     }
 }

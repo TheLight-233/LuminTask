@@ -51,7 +51,7 @@ namespace LuminThread
             }
             else
             {
-                LuminTaskCoreSource.OnCompleted(task._handle, continuation, state);
+                LuminTaskSource.OnCompleted(task._handle, continuation, state);
             }
         }
 
@@ -62,7 +62,7 @@ namespace LuminThread
             if (task is null) throw new ArgumentNullException(nameof(task));
             if (task.IsCompleted) return ConvertCompletedTask(task, cancellationToken);
 
-            var handle = LuminTask.RentSlot();
+            var handle = LuminTaskResultBridge.Rent<T>();
             var state = StateTuple.Create((handle, cancellationToken));
             task.ContinueWith(
                 static (completed, boxedState) => CompleteTaskConversion(completed, boxedState),
@@ -138,11 +138,11 @@ namespace LuminThread
             }
             catch (OperationCanceledException canceled)
             {
-                LuminTaskCoreSource.TrySetCanceled(handle, SelectCancellationToken(canceled, fallbackToken));
+                LuminTaskSource.TrySetCanceled(handle, SelectCancellationToken(canceled, fallbackToken));
             }
             catch (Exception exception)
             {
-                LuminTaskCoreSource.TrySetException(handle, exception);
+                LuminTaskSource.TrySetException(handle, exception);
             }
         }
 
@@ -156,15 +156,15 @@ namespace LuminThread
             try
             {
                 task.GetAwaiter().GetResult();
-                LuminTaskCoreSource.TrySetResult(handle);
+                LuminTaskSource.TrySetResult(handle);
             }
             catch (OperationCanceledException canceled)
             {
-                LuminTaskCoreSource.TrySetCanceled(handle, SelectCancellationToken(canceled, fallbackToken));
+                LuminTaskSource.TrySetCanceled(handle, SelectCancellationToken(canceled, fallbackToken));
             }
             catch (Exception exception)
             {
-                LuminTaskCoreSource.TrySetException(handle, exception);
+                LuminTaskSource.TrySetException(handle, exception);
             }
         }
 
@@ -182,9 +182,9 @@ namespace LuminThread
         private static void TrySetExceptionOrCanceled(LuminTaskHandle handle, Exception exception)
         {
             if (exception is OperationCanceledException canceled)
-                LuminTaskCoreSource.TrySetCanceled(handle, canceled.CancellationToken);
+                LuminTaskSource.TrySetCanceled(handle, canceled.CancellationToken);
             else
-                LuminTaskCoreSource.TrySetException(handle, exception);
+                LuminTaskSource.TrySetException(handle, exception);
         }
 
         // Timeout/cancellation only stops waiting; it does not transfer ownership of the
@@ -405,7 +405,14 @@ namespace LuminThread
                 var stateTuple = StateTuple.Create(task._handle);
                 var state = new LuminTaskState(handle, cancellationToken, stateTuple);
 
-                PlayerLoopHelper.AddAction(PlayerLoopTiming.DotNet, state, MoveNextAction);
+                state.OnShutdown = static stateObject =>
+                {
+                    var box = (StateTuple<LuminTaskHandle>)stateObject;
+                    var input = box.Item;
+                    box.Dispose();
+                    Drain(input);
+                };
+                PlayerLoopHelper.Schedule(PlayerLoopTiming.DotNet, state, MoveNextAction);
                 return new LuminTask(handle);
             }
 
@@ -421,7 +428,7 @@ namespace LuminThread
                     try
                     {
                         Drain(innerHandle);
-                        LuminTaskCoreSource.TrySetCanceled(state.Handle, state.CancellationToken);
+                        LuminTaskSource.TrySetCanceled(state.Handle, state.CancellationToken);
                     }
                     finally
                     {
@@ -431,12 +438,12 @@ namespace LuminThread
                     return false;
                 }
 
-                if (LuminTaskCoreSource.GetStatus(innerHandle) != LuminTaskStatus.Pending)
+                if (LuminTaskSource.GetStatus(innerHandle) != LuminTaskStatus.Pending)
                 {
                     try
                     {
                         LuminTaskSource.ToTask(innerHandle).GetAwaiter().GetResult();
-                        LuminTaskCoreSource.TrySetResult(state.Handle);
+                        LuminTaskSource.TrySetResult(state.Handle);
                     }
                     catch (Exception ex)
                     {
@@ -463,14 +470,21 @@ namespace LuminThread
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public static LuminTask<T> Create(LuminTask<T> task, CancellationToken cancellationToken)
             {
-                var handle = LuminTask.RentSlot();
+                var handle = LuminTaskResultBridge.Rent<T>();
 
                 // Same as the non-generic promise: the inner task is a handle, so this promise adds no
                 // per-T container pool of its own - both share StatePool<LuminTaskHandle>.
                 var stateTuple = StateTuple.Create(task._handle);
                 var state = new LuminTaskState(handle, cancellationToken, stateTuple);
 
-                PlayerLoopHelper.AddAction(PlayerLoopTiming.DotNet, state, MoveNextAction);
+                state.OnShutdown = static stateObject =>
+                {
+                    var box = (StateTuple<LuminTaskHandle>)stateObject;
+                    var input = box.Item;
+                    box.Dispose();
+                    Drain(input);
+                };
+                PlayerLoopHelper.Schedule(PlayerLoopTiming.DotNet, state, MoveNextAction);
                 return new LuminTask<T>(handle);
             }
 
@@ -486,7 +500,7 @@ namespace LuminThread
                     try
                     {
                         Drain(innerHandle);
-                        LuminTaskCoreSource.TrySetCanceled(state.Handle, state.CancellationToken);
+                        LuminTaskSource.TrySetCanceled(state.Handle, state.CancellationToken);
                     }
                     finally
                     {
@@ -496,7 +510,7 @@ namespace LuminThread
                     return false;
                 }
 
-                if (LuminTaskCoreSource.GetStatus(innerHandle) != LuminTaskStatus.Pending)
+                if (LuminTaskSource.GetStatus(innerHandle) != LuminTaskStatus.Pending)
                 {
                     try
                     {
@@ -620,7 +634,14 @@ namespace LuminThread
                 var stateTuple = StateTuple.Create((task._handle, stateData));
                 var state = new LuminTaskState(handle, cancellationToken, stateTuple);
 
-                PlayerLoopHelper.AddAction(PlayerLoopTiming.DotNet, state, MoveNextAction);
+                state.OnShutdown = static stateObject =>
+                {
+                    var box = (StateTuple<(LuminTaskHandle, TimeoutStateData)>)stateObject;
+                    var input = box.Item.Item1;
+                    box.Dispose();
+                    Drain(input);
+                };
+                PlayerLoopHelper.Schedule(PlayerLoopTiming.DotNet, state, MoveNextAction);
                 return new LuminTask(handle);
             }
 
@@ -635,7 +656,7 @@ namespace LuminThread
                 if (state.CancellationToken.IsCancellationRequested)
                 {
                     Drain(innerHandle);
-                    LuminTaskCoreSource.TrySetCanceled(state.Handle, state.CancellationToken);
+                    LuminTaskSource.TrySetCanceled(state.Handle, state.CancellationToken);
                     stateTuple.Dispose();
                     return false;
                 }
@@ -643,17 +664,17 @@ namespace LuminThread
                 if (Stopwatch.GetTimestamp() - data.StartTimestamp >= data.TimeoutTimestampTicks)
                 {
                     Drain(innerHandle);
-                    LuminTaskCoreSource.TrySetException(state.Handle, new TimeoutException());
+                    LuminTaskSource.TrySetException(state.Handle, new TimeoutException());
                     stateTuple.Dispose();
                     return false;
                 }
 
-                if (LuminTaskCoreSource.GetStatus(innerHandle) != LuminTaskStatus.Pending)
+                if (LuminTaskSource.GetStatus(innerHandle) != LuminTaskStatus.Pending)
                 {
                     try
                     {
                         LuminTaskSource.ToTask(innerHandle).GetAwaiter().GetResult();
-                        LuminTaskCoreSource.TrySetResult(state.Handle);
+                        LuminTaskSource.TrySetResult(state.Handle);
                     }
                     catch (Exception ex)
                     {
@@ -674,7 +695,7 @@ namespace LuminThread
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public static LuminTask<T> Create(LuminTask<T> task, TimeSpan timeout, CancellationToken cancellationToken)
             {
-                var handle = LuminTask.RentSlot();
+                var handle = LuminTaskResultBridge.Rent<T>();
 
                 var stateData = new TimeoutStateData
                 {
@@ -685,7 +706,14 @@ namespace LuminThread
                 var stateTuple = StateTuple.Create((task._handle, stateData));
                 var state = new LuminTaskState(handle, cancellationToken, stateTuple);
 
-                PlayerLoopHelper.AddAction(PlayerLoopTiming.DotNet, state, MoveNextAction);
+                state.OnShutdown = static stateObject =>
+                {
+                    var box = (StateTuple<(LuminTaskHandle, TimeoutStateData)>)stateObject;
+                    var input = box.Item.Item1;
+                    box.Dispose();
+                    Drain(input);
+                };
+                PlayerLoopHelper.Schedule(PlayerLoopTiming.DotNet, state, MoveNextAction);
                 return new LuminTask<T>(handle);
             }
 
@@ -700,7 +728,7 @@ namespace LuminThread
                 if (state.CancellationToken.IsCancellationRequested)
                 {
                     Drain(innerHandle);
-                    LuminTaskCoreSource.TrySetCanceled(state.Handle, state.CancellationToken);
+                    LuminTaskSource.TrySetCanceled(state.Handle, state.CancellationToken);
                     stateTuple.Dispose();
                     return false;
                 }
@@ -708,12 +736,12 @@ namespace LuminThread
                 if (Stopwatch.GetTimestamp() - data.StartTimestamp >= data.TimeoutTimestampTicks)
                 {
                     Drain(innerHandle);
-                    LuminTaskCoreSource.TrySetException(state.Handle, new TimeoutException());
+                    LuminTaskSource.TrySetException(state.Handle, new TimeoutException());
                     stateTuple.Dispose();
                     return false;
                 }
 
-                if (LuminTaskCoreSource.GetStatus(innerHandle) != LuminTaskStatus.Pending)
+                if (LuminTaskSource.GetStatus(innerHandle) != LuminTaskStatus.Pending)
                 {
                     try
                     {
@@ -785,7 +813,7 @@ namespace LuminThread
             else
             {
                 // Forget discards the result, so the non-generic block (which exits through
-                // LuminTaskCoreSource.ConsumeVoid and returns the pooled result container on the way)
+                // LuminTaskSource.ConsumeVoid and returns the pooled result container on the way)
                 // covers LuminTask<T> as well. Sharing it drops the per-T ForgetBlock<T> generic
                 // instantiation entirely.
                 ForgetBlock.Schedule(awaiter, null);
@@ -870,7 +898,14 @@ namespace LuminThread
                 var stateTuple = StateTuple.Create((task, continuation));
                 var state = new LuminTaskState(handle, CancellationToken.None, stateTuple);
 
-                PlayerLoopHelper.AddAction(loopTiming, state, MoveNextAction);
+                state.OnShutdown = static stateObject =>
+                {
+                    var box = (StateTuple<(LuminTask<T>, Action<T>)>)stateObject;
+                    var input = box.Item.Item1._handle;
+                    box.Dispose();
+                    Drain(input);
+                };
+                PlayerLoopHelper.Schedule(loopTiming, state, MoveNextAction);
                 return new LuminTask(handle);
             }
 
@@ -887,7 +922,7 @@ namespace LuminThread
                 {
                     var result = innerTask.GetAwaiter().GetResult();
                     continuation(result);
-                    LuminTaskCoreSource.TrySetResult(state.Handle);
+                    LuminTaskSource.TrySetResult(state.Handle);
                 }
                 catch (Exception ex)
                 {
@@ -906,11 +941,18 @@ namespace LuminThread
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public static LuminTask<TR> Create(LuminTask<T> task, Func<T, TR> continuation, PlayerLoopTiming loopTiming = PlayerLoopTiming.DotNet)
             {
-                var handle = LuminTask.RentSlot();
+                var handle = LuminTaskResultBridge.Rent<TR>();
                 var stateTuple = StateTuple.Create((task, continuation));
                 var state = new LuminTaskState(handle, CancellationToken.None, stateTuple);
 
-                PlayerLoopHelper.AddAction(loopTiming, state, MoveNextAction);
+                state.OnShutdown = static stateObject =>
+                {
+                    var box = (StateTuple<(LuminTask<T>, Func<T, TR>)>)stateObject;
+                    var input = box.Item.Item1._handle;
+                    box.Dispose();
+                    Drain(input);
+                };
+                PlayerLoopHelper.Schedule(loopTiming, state, MoveNextAction);
                 return new LuminTask<TR>(handle);
             }
 
@@ -963,7 +1005,14 @@ namespace LuminThread
                 var stateTuple = StateTuple.Create((task, stateData));
                 var state = new LuminTaskState(handle, CancellationToken.None, stateTuple);
 
-                PlayerLoopHelper.AddAction(loopTiming, state, MoveNextAction);
+                state.OnShutdown = static stateObject =>
+                {
+                    var box = (StateTuple<(LuminTask<T>, StateData)>)stateObject;
+                    var input = box.Item.Item2.WaitingForContinuation ? box.Item.Item2.ContinuationTask._handle : box.Item.Item1._handle;
+                    box.Dispose();
+                    Drain(input);
+                };
+                PlayerLoopHelper.Schedule(loopTiming, state, MoveNextAction);
                 return new LuminTask(handle);
             }
 
@@ -987,7 +1036,7 @@ namespace LuminThread
                         if (data.ContinuationTask.Status != LuminTaskStatus.Pending)
                         {
                             data.ContinuationTask.GetAwaiter().GetResult();
-                            LuminTaskCoreSource.TrySetResult(state.Handle);
+                            LuminTaskSource.TrySetResult(state.Handle);
                             stateTuple.Dispose();
                             return false;
                         }
@@ -1007,7 +1056,7 @@ namespace LuminThread
                     try
                     {
                         data.ContinuationTask.GetAwaiter().GetResult();
-                        LuminTaskCoreSource.TrySetResult(state.Handle);
+                        LuminTaskSource.TrySetResult(state.Handle);
                     }
                     catch (Exception ex)
                     {
@@ -1037,7 +1086,7 @@ namespace LuminThread
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public static LuminTask<TR> Create(LuminTask<T> task, Func<T, LuminTask<TR>> continuation, PlayerLoopTiming loopTiming = PlayerLoopTiming.DotNet)
             {
-                var handle = LuminTask.RentSlot();
+                var handle = LuminTaskResultBridge.Rent<TR>();
                 var stateData = new StateData
                 {
                     Continuation = continuation,
@@ -1046,7 +1095,14 @@ namespace LuminThread
                 var stateTuple = StateTuple.Create((task, stateData));
                 var state = new LuminTaskState(handle, CancellationToken.None, stateTuple);
 
-                PlayerLoopHelper.AddAction(loopTiming, state, MoveNextAction);
+                state.OnShutdown = static stateObject =>
+                {
+                    var box = (StateTuple<(LuminTask<T>, StateData)>)stateObject;
+                    var input = box.Item.Item2.WaitingForContinuation ? box.Item.Item2.ContinuationTask._handle : box.Item.Item1._handle;
+                    box.Dispose();
+                    Drain(input);
+                };
+                PlayerLoopHelper.Schedule(loopTiming, state, MoveNextAction);
                 return new LuminTask<TR>(handle);
             }
 
@@ -1116,7 +1172,14 @@ namespace LuminThread
                 var stateTuple = StateTuple.Create((task, continuation));
                 var state = new LuminTaskState(handle, CancellationToken.None, stateTuple);
 
-                PlayerLoopHelper.AddAction(loopTiming, state, MoveNextAction);
+                state.OnShutdown = static stateObject =>
+                {
+                    var box = (StateTuple<(LuminTask, Action)>)stateObject;
+                    var input = box.Item.Item1._handle;
+                    box.Dispose();
+                    Drain(input);
+                };
+                PlayerLoopHelper.Schedule(loopTiming, state, MoveNextAction);
                 return new LuminTask(handle);
             }
 
@@ -1133,7 +1196,7 @@ namespace LuminThread
                 {
                     innerTask.GetAwaiter().GetResult();
                     continuation();
-                    LuminTaskCoreSource.TrySetResult(state.Handle);
+                    LuminTaskSource.TrySetResult(state.Handle);
                 }
                 catch (Exception ex)
                 {
@@ -1152,11 +1215,18 @@ namespace LuminThread
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public static LuminTask<T> Create(LuminTask task, Func<T> continuation, PlayerLoopTiming loopTiming = PlayerLoopTiming.DotNet)
             {
-                var handle = LuminTask.RentSlot();
+                var handle = LuminTaskResultBridge.Rent<T>();
                 var stateTuple = StateTuple.Create((task, continuation));
                 var state = new LuminTaskState(handle, CancellationToken.None, stateTuple);
 
-                PlayerLoopHelper.AddAction(loopTiming, state, MoveNextAction);
+                state.OnShutdown = static stateObject =>
+                {
+                    var box = (StateTuple<(LuminTask, Func<T>)>)stateObject;
+                    var input = box.Item.Item1._handle;
+                    box.Dispose();
+                    Drain(input);
+                };
+                PlayerLoopHelper.Schedule(loopTiming, state, MoveNextAction);
                 return new LuminTask<T>(handle);
             }
 
@@ -1209,7 +1279,14 @@ namespace LuminThread
                 var stateTuple = StateTuple.Create((task, stateData));
                 var state = new LuminTaskState(handle, CancellationToken.None, stateTuple);
 
-                PlayerLoopHelper.AddAction(loopTiming, state, MoveNextAction);
+                state.OnShutdown = static stateObject =>
+                {
+                    var box = (StateTuple<(LuminTask, StateData)>)stateObject;
+                    var input = box.Item.Item2.WaitingForContinuation ? box.Item.Item2.ContinuationTask._handle : box.Item.Item1._handle;
+                    box.Dispose();
+                    Drain(input);
+                };
+                PlayerLoopHelper.Schedule(loopTiming, state, MoveNextAction);
                 return new LuminTask(handle);
             }
 
@@ -1233,7 +1310,7 @@ namespace LuminThread
                         if (data.ContinuationTask.Status != LuminTaskStatus.Pending)
                         {
                             data.ContinuationTask.GetAwaiter().GetResult();
-                            LuminTaskCoreSource.TrySetResult(state.Handle);
+                            LuminTaskSource.TrySetResult(state.Handle);
                             stateTuple.Dispose();
                             return false;
                         }
@@ -1253,7 +1330,7 @@ namespace LuminThread
                     try
                     {
                         data.ContinuationTask.GetAwaiter().GetResult();
-                        LuminTaskCoreSource.TrySetResult(state.Handle);
+                        LuminTaskSource.TrySetResult(state.Handle);
                     }
                     catch (Exception ex)
                     {
@@ -1283,7 +1360,7 @@ namespace LuminThread
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public static LuminTask<T> Create(LuminTask task, Func<LuminTask<T>> continuation, PlayerLoopTiming loopTiming = PlayerLoopTiming.DotNet)
             {
-                var handle = LuminTask.RentSlot();
+                var handle = LuminTaskResultBridge.Rent<T>();
                 var stateData = new StateData
                 {
                     Continuation = continuation,
@@ -1292,7 +1369,14 @@ namespace LuminThread
                 var stateTuple = StateTuple.Create((task, stateData));
                 var state = new LuminTaskState(handle, CancellationToken.None, stateTuple);
 
-                PlayerLoopHelper.AddAction(loopTiming, state, MoveNextAction);
+                state.OnShutdown = static stateObject =>
+                {
+                    var box = (StateTuple<(LuminTask, StateData)>)stateObject;
+                    var input = box.Item.Item2.WaitingForContinuation ? box.Item.Item2.ContinuationTask._handle : box.Item.Item1._handle;
+                    box.Dispose();
+                    Drain(input);
+                };
+                PlayerLoopHelper.Schedule(loopTiming, state, MoveNextAction);
                 return new LuminTask<T>(handle);
             }
 

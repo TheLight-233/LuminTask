@@ -28,8 +28,9 @@ internal interface IWaitNodeOwner
 /// <summary>
 /// 等待节点：字段全部非泛型，可在不同 T 的队列间共享同一池，避免每封闭 T 各留一份空闲链。
 /// </summary>
-internal sealed class WaitNode
+internal sealed class WaitNode : ILuminCacheNode
 {
+    public ILuminCacheNode? CacheNext { get; set; }
     internal WaitNode? Next;
     internal WaitNode? Previous;
     internal IWaitNodeOwner? Owner;
@@ -48,37 +49,10 @@ internal static class WaitNodePool
 {
     private static readonly Action<object> s_cancellationCallback = CancellationCallback;
 
-    // 侵入式空闲链（复用节点 Next 指针），无锁快槽 + 有界链表回退。
-    private static WaitNode? s_fastNode;
-    private static WaitNode? s_poolHead;
-    private static int s_poolCount;
-    private static readonly int s_maxRetainedNodes = Math.Max(16, Environment.ProcessorCount * 4);
-    private static readonly object s_poolGate = new();
-
     internal static Action<object> CancellationCallbackDelegate => s_cancellationCallback;
 
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal static WaitNode Rent()
-    {
-        var node = Interlocked.Exchange(ref s_fastNode, null);
-        if (node == null)
-        {
-            lock (s_poolGate)
-            {
-                if (s_poolHead != null)
-                {
-                    node = s_poolHead;
-                    s_poolHead = node.Next;
-                    node.Next = null;
-                    s_poolCount--;
-                }
-            }
-        }
+    internal static WaitNode Rent() => (WaitNode?)LuminTaskIdleCache.Take(typeof(WaitNode)) ?? new WaitNode();
 
-        return node ?? new WaitNode();
-    }
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal static void Return(WaitNode node)
     {
         node.Owner = null;
@@ -89,19 +63,8 @@ internal static class WaitNodePool
         node.IsQueued = false;
         node.Previous = null;
 
-        if (Interlocked.CompareExchange(ref s_fastNode, node, null) == null)
-            return;
-
-        lock (s_poolGate)
-        {
-            // 快槽已经占用 1 个名额，链条只能补到上限 - 1，真实驻留才等于声明的上限。
-            if (s_poolCount >= s_maxRetainedNodes - 1)
-                return;
-
-            node.Next = s_poolHead;
-            s_poolHead = node;
-            s_poolCount++;
-        }
+        node.Next = null;
+        LuminTaskIdleCache.Return(node, 128);
     }
 
     private static void CancellationCallback(object state)
@@ -119,6 +82,7 @@ internal static class WaitNodePool
 /// </summary>
 internal abstract class AsyncWaitQueueCore : IWaitNodeOwner
 {
+    protected abstract ulong RentResultSlot();
     private WaitNode? _head;
     private WaitNode? _tail;
     protected readonly object _queueLock = new();
@@ -144,7 +108,7 @@ internal abstract class AsyncWaitQueueCore : IWaitNodeOwner
             UnlinkLocked(node);
         }
 
-        LuminTaskCoreSource.TrySetCanceled(node.Handle, node.CancellationToken);
+        LuminTaskSource.TrySetCanceled(node.Handle, node.CancellationToken);
 
         // 回调自身在执行中：不入池，仅清除引用，避免与后续租用者纠缠。
         node.Owner = null;
@@ -164,7 +128,7 @@ internal abstract class AsyncWaitQueueCore : IWaitNodeOwner
     {
         lock (_queueLock)
         {
-            var handle = LuminTask.RentSlot();
+            var handle = RentResultSlot();
             var node = WaitNodePool.Rent();
             node.Owner = this;
             node.Handle = handle;
@@ -185,7 +149,7 @@ internal abstract class AsyncWaitQueueCore : IWaitNodeOwner
 
         lock (_queueLock)
         {
-            var rented = LuminTask.RentSlot();
+            var rented = RentResultSlot();
             var node = WaitNodePool.Rent();
             node.Owner = this;
             node.Handle = rented;
@@ -305,7 +269,7 @@ internal abstract class AsyncWaitQueueCore : IWaitNodeOwner
             return false;
 
         ReleaseRegistration(node);
-        LuminTaskCoreSource.TrySetCanceled(node.Handle, cancellationToken);
+        LuminTaskSource.TrySetCanceled(node.Handle, cancellationToken);
         WaitNodePool.Return(node);
         return true;
     }
@@ -318,7 +282,7 @@ internal abstract class AsyncWaitQueueCore : IWaitNodeOwner
         {
             var next = node.Next;
             ReleaseRegistration(node);
-            LuminTaskCoreSource.TrySetCanceled(node.Handle, cancellationToken);
+            LuminTaskSource.TrySetCanceled(node.Handle, cancellationToken);
             WaitNodePool.Return(node);
             node = next;
         }
@@ -331,6 +295,7 @@ internal abstract class AsyncWaitQueueCore : IWaitNodeOwner
 /// </summary>
 internal sealed class DefaultAsyncWaitQueue<T> : AsyncWaitQueueCore, IAsyncWaitQueue<T>
 {
+    protected override ulong RentResultSlot() => LuminTaskResultBridge.Rent<T>();
     public LuminTask<T> Enqueue()
     {
         return new LuminTask<T>(EnqueueCore());

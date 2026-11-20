@@ -15,7 +15,7 @@ internal static class WaitWhilePromise
 
         if (state.CancellationToken.IsCancellationRequested)
         {
-            LuminTaskCoreSource.TrySetCanceled(state.Handle, state.CancellationToken);
+            LuminTaskSource.TrySetCanceled(state.Handle, state.CancellationToken);
             return false;
         }
 
@@ -26,11 +26,11 @@ internal static class WaitWhilePromise
         }
         catch (Exception ex)
         {
-            LuminTaskCoreSource.TrySetException(state.Handle, ex);
+            LuminTaskSource.TrySetException(state.Handle, ex);
             return false;
         }
 
-        LuminTaskCoreSource.TrySetResult(state.Handle);
+        LuminTaskSource.TrySetResult(state.Handle);
         return false;
     }
 }
@@ -45,18 +45,13 @@ internal static class WaitWhilePromise<TState>
     {
         var predicate = (Func<TState, bool>)state.State!;
 
-        ref var item = ref LuminTaskCoreSource.TryResolve(state.Handle, out var cold, out int index);
-
-        if (Unsafe.IsNullRef(ref item))
-            return false;
-
         if (state.CancellationToken.IsCancellationRequested)
         {
-            LuminTaskCoreSource.TrySetCanceled(state.Handle, state.CancellationToken);
+            LuminTaskSource.TrySetCanceled(state.Handle, state.CancellationToken);
             return false;
         }
 
-        TState current = LuminTaskResultBridge.GetState<TState>(cold, index);
+        if (!LuminTaskResultBridge.TryReadState(state.Handle, out TState current)) return false;
 
         try
         {
@@ -65,11 +60,11 @@ internal static class WaitWhilePromise<TState>
         }
         catch (Exception ex)
         {
-            LuminTaskCoreSource.TrySetException(state.Handle, ex);
+            LuminTaskSource.TrySetException(state.Handle, ex);
             return false;
         }
 
-        LuminTaskCoreSource.TrySetResult(state.Handle);
+        LuminTaskSource.TrySetResult(state.Handle);
         return false;
     }
 }

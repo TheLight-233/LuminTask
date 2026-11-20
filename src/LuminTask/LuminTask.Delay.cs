@@ -8,7 +8,7 @@ using LuminThread.Utility;
 
 namespace LuminThread;
 
-public unsafe partial struct LuminTask
+public partial struct LuminTask
 {
     [DebuggerHidden]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -21,24 +21,17 @@ public unsafe partial struct LuminTask
         if (millisecondsDelay == 0)
             return CompletedTask();
 
-        var handle = RentSlot();
-        ref var item = ref GetRentedSlot(handle, out var cold, out int index);
-
-        // The pending state gets its own unmanaged block, sized to what Delay actually needs (two
-        // timestamps). The slot holds only the pointer, and Return frees it.
-        unsafe
+        var timing = new Inline16
         {
-            void* scratch = MemoryHelper.Alloc(LuminTaskCold.LoopStateSize);
-            UnsafeMemory.Write(scratch, Stopwatch.GetTimestamp());
-            UnsafeMemory.Write((byte*)scratch + sizeof(long),
-                DelayPromise.MillisecondsToStopwatchTicks(millisecondsDelay));
-            cold.SetPayload(index, (nint)scratch);
-        }
+            First = Stopwatch.GetTimestamp(),
+            Second = DelayPromise.MillisecondsToStopwatchTicks(millisecondsDelay)
+        };
+        var handle = LuminTaskResultBridge.RentState(in timing);
 
         if (cancelImmediately && cancellationToken.CanBeCanceled)
             AttachCancellation(handle, cancellationToken);
 
-        PlayerLoopHelper.AddAction(loopTiming, new LuminTaskState(handle, cancellationToken), DelayPromise.MoveNextAction);
+        PlayerLoopHelper.Schedule(loopTiming, new LuminTaskState(handle, cancellationToken), DelayPromise.MoveNextAction);
 
         return new LuminTask(handle);
     }

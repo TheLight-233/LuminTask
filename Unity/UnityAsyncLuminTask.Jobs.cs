@@ -27,7 +27,7 @@ namespace LuminThread.Unity
         private static class JobHandlePromise
         {
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public static unsafe LuminTask Create(JobHandle jobHandle, PlayerLoopTiming timing, CancellationToken cancellationToken)
+            public static LuminTask Create(JobHandle jobHandle, PlayerLoopTiming timing, CancellationToken cancellationToken)
             {
                 if (cancellationToken.IsCancellationRequested)
                 {

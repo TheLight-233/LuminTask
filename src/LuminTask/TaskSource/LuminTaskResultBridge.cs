@@ -1,174 +1,158 @@
 using System;
 using System.Runtime.CompilerServices;
-using LuminThread.CompilerServices;
+using System.Threading;
 using LuminThread.Interface;
 using LuminThread.Utility;
 
 namespace LuminThread.TaskSource;
 
-// The only generic seam in the library: writing and reading the result payload.
-//
-// It needs no vtable slot, no ops table and no function pointer, because both ends already know T
-// at compile time - the producer is a generic source (a completion source, a combinator, a
-// loop-driven source) and the consumer is LuminTask<T>.GetResult.
-//
-// Three storage kinds, chosen from per-T compile-time intrinsics so the JIT (and IL2CPP) folds the
-// branches away where specialization permits. GC safety is never a mode switch; warmed storage
-// and containers avoid managed allocation while their bounded capacities suffice:
-//
-//   reference type            -> the chunk's Ref array (plain reference assignment)
-//   ref-containing value type -> a pooled StateTuple<T> in the chunk's Ref array. The container's
-//                                field is a strong-typed T, so assigning the value does NOT box -
-//                                that is why a pooled container is required rather than an `object`
-//                                slot. The pool is the shared StatePool<T>, so this path adds no new
-//                                pool of its own.
-//   unmanaged value type      -> pointer-sized inline entry, or a lazy 16-byte entry; larger values
-//                                use a MemoryHelper block freed when the slot is consumed.
-internal static unsafe class LuminTaskResultBridge
+internal static class LuminTaskResultBridge
 {
-    // ---------------------------------------------------------------- write side
+    // IL2CPP may walk struct fields to classify T. Cache the immutable answer once per result type.
+    private static class Layout<T>
+    {
+        internal static readonly long Kind = Classify<T>();
+    }
+
+    private static long Classify<T>()
+    {
+        if (!RuntimeHelpers.IsReferenceOrContainsReferences<T>())
+        {
+            int size = Unsafe.SizeOf<T>();
+            return size <= 16 ? (long)size << LuminTaskSource.KindShift : LuminTaskSource.Cell;
+        }
+        return typeof(T).IsValueType ? LuminTaskSource.Cell : LuminTaskSource.Reference;
+    }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal static bool TrySetResult<T>(LuminTaskHandle handle, in T value)
+    internal static ulong Rent<T>()
     {
-        ref var item = ref LuminTaskCoreSource.TryResolve(handle, out var cold, out int index);
+        long kind = Layout<T>.Kind;
+        if (kind != LuminTaskSource.Cell) return SlotStore.Rent(kind, null);
+        var cell = StatePool<T>.Create(default!);
+        try { return SlotStore.Rent(kind, cell); }
+        catch { cell.Dispose(); throw; }
+    }
 
-        if (Unsafe.IsNullRef(ref item))
-            return false;
+    internal static bool TrySetResult<T>(ulong handle, in T value)
+    {
+        long kind = Layout<T>.Kind;
+        if (kind < LuminTaskSource.Reference)
+            return TrySetInline(handle, kind, ref Unsafe.As<T, byte>(ref Unsafe.AsRef(in value)));
+        return TrySetManaged(handle, in value);
+    }
 
-        if (!LuminTaskCoreSource.TryBeginCompletion(ref item, handle.Generation()))
-            return false;
-
-        Store(cold, index, in value);
-        LuminTaskCoreSource.PublishStatus(ref item, LuminTaskStatus.Succeeded);
-        LuminTaskCoreSource.Drain(ref item);
-
+    // Keep IL2CPP's fully shared generics out of the slot protocol for common game values.
+    private static bool TrySetInline(ulong handle, long kind, ref byte value)
+    {
+        var page = LuminTaskSource.Enter(handle, out int i, out long control, pendingOnly: true);
+        if (page == null) return false;
+        ref var slot = ref page.Slots[i];
+        long prepared = control & LuminTaskSource.KindMask;
+        if (prepared != 0 && prepared != kind)
+        {
+            Volatile.Write(ref slot.Control, control);
+            throw new InvalidOperationException("Result storage does not match T.");
+        }
+        Unsafe.CopyBlockUnaligned(ref Unsafe.As<Inline16, byte>(ref slot.Data), ref value,
+            (uint)(kind >> LuminTaskSource.KindShift));
+        LuminTaskSource.Publish(ref slot, control | kind, LuminTaskStatus.Succeeded);
         return true;
     }
 
-    // The async method builder's completion: hand the state machine box back to its pool and publish
-    // the result off a single slot resolve. See LuminTaskCoreSource.TrySetResultAndReturnBox for why
-    // returning the box before the completion is safe.
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal static bool TrySetResultAndReturnBox<T>(LuminTaskHandle handle, in T value)
+    private static bool TrySetManaged<T>(ulong handle, in T value)
     {
-        ref var item = ref LuminTaskCoreSource.TryResolve(handle, out var cold, out int index);
-
-        if (Unsafe.IsNullRef(ref item))
-            return false;
-
-        (cold.BoxAt(index) as IStateMachineBox)?.Return();
-
-        if (!LuminTaskCoreSource.TryBeginCompletion(ref item, handle.Generation()))
-            return false;
-
-        Store(cold, index, in value);
-        LuminTaskCoreSource.PublishStatus(ref item, LuminTaskStatus.Succeeded);
-        LuminTaskCoreSource.Drain(ref item);
-
+        var page = LuminTaskSource.Enter(handle, out int i, out long control, pendingOnly: true);
+        if (page == null) return false;
+        ref var slot = ref page.Slots[i];
+        try { Store(ref slot, ref control, in value); }
+        catch { Volatile.Write(ref slot.Control, control); throw; }
+        LuminTaskSource.Publish(ref slot, control, LuminTaskStatus.Succeeded);
         return true;
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal static void Store<T>(LuminTaskCold cold, int index, in T value)
+    private static void Store<T>(ref Slot slot, ref long control, in T value)
     {
-        if (RuntimeHelpers.IsReferenceOrContainsReferences<T>())
-        {
-            if (typeof(T).IsValueType)
-            {
-                // A reference-containing struct cannot be memcpy'd into unmanaged memory (that
-                // would be a GC hole) and must not be boxed (that would allocate). StatePool<T>
-                // hands out a container whose field is typed `T`: the value is stored into a
-                // strong-typed slot without boxing, and the container goes back to the pool when
-                // the slot is consumed.
-                cold.SetRef(index, StatePool<T>.Create(value));
-            }
-            else
-            {
-                cold.SetRef(index, (object?)value);
-            }
-
-            return;
-        }
-
-        if (Unsafe.SizeOf<T>() <= IntPtr.Size)
-        {
-            nint inline = 0;
-            UnsafeMemory.Write(&inline, in value);
-            cold.SetInlinePayload(index, inline);
-            return;
-        }
-
-        if (Unsafe.SizeOf<T>() <= 16)
-        {
-            // Managed byrefs stay visible to the GC, and CopyBlock also supports 32-bit IL2CPP.
-            Unsafe.CopyBlock(ref cold.WidePayloadForWrite(index),
-                ref Unsafe.As<T, byte>(ref Unsafe.AsRef(in value)), (uint)Unsafe.SizeOf<T>());
-            return;
-        }
-
-        // Large unmanaged results are freed by Return when the slot is consumed.
-        void* payload = MemoryHelper.Alloc((nuint)Unsafe.SizeOf<T>());
-        UnsafeMemory.Write(payload, in value);
-        cold.SetPayload(index, (nint)payload);
-    }
-
-    // ---------------------------------------------------------------- pending state
-
-    // Loop-driven sources (WaitUntil<TState> and friends) borrow the slot's result storage for
-    // their pending state, using the same three storage kinds. Such a task never produces a
-    // result, so this cannot collide with the result read path, and Return releases whichever kind
-    // was used.
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal static void SetState<T>(LuminTaskCold cold, int index, in T state) => Store(cold, index, in state);
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal static T GetState<T>(LuminTaskCold cold, int index) => Read<T>(cold, index);
-
-    // ---------------------------------------------------------------- read side
-
-    // Reads the result and releases the slot. Only called once the task is known to be drained.
-    // Every exit path releases: the exception is captured locally before Return, because Return
-    // recycles the slot and a faulted or canceled task must not strand it.
-    internal static T Get<T>(LuminTaskHandle handle)
-    {
-        ref var item = ref LuminTaskCoreSource.ResolveForResult(handle, out var cold, out int index);
-
-        var status = item.Status;
-        if (status != LuminTaskStatus.Succeeded)
-            LuminTaskCoreSource.ThrowForResult(handle, ref item, cold, index, status);
-        T result = Read<T>(cold, index);
-        LuminTaskCoreSource.Return(handle, ref item, cold, index);
-        return result;
+        long kind = Layout<T>.Kind;
+        long prepared = control & LuminTaskSource.KindMask;
+        if (prepared != kind && (prepared != 0 || kind == LuminTaskSource.Cell))
+            throw new InvalidOperationException("Result storage does not match T. Rent the source with Rent<T>.");
+        if (kind == LuminTaskSource.Reference) slot.Payload = value;
+        else if (kind == LuminTaskSource.Cell) ((StateTuple<T>)slot.Payload!).Item = value;
+        else Unsafe.CopyBlockUnaligned(ref Unsafe.As<Inline16, byte>(ref slot.Data),
+            ref Unsafe.As<T, byte>(ref Unsafe.AsRef(in value)), (uint)(kind >> LuminTaskSource.KindShift));
+        control |= kind;
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal static T Read<T>(LuminTaskCold cold, int index)
+    private static T Read<T>(ref Slot slot)
     {
-        if (RuntimeHelpers.IsReferenceOrContainsReferences<T>())
-        {
-            var cell = cold.RefAt(index);
-            if (typeof(T).IsValueType)
-            {
-                return ((StateTuple<T>)cell!).Item;
-            }
-            
-            return (T)cell!;
-        }
-        
-        if (Unsafe.SizeOf<T>() <= IntPtr.Size)
-        {
-            nint payload = cold.PayloadAt(index);
-            return UnsafeMemory.Read<T>(&payload);
-        }
+        long kind = Layout<T>.Kind;
+        if ((slot.Control & LuminTaskSource.KindMask) != kind)
+            throw new InvalidOperationException("Result storage does not match the requested type.");
+        if (kind == LuminTaskSource.Reference) return (T)slot.Payload!;
+        if (kind == LuminTaskSource.Cell) return ((StateTuple<T>)slot.Payload!).Item;
+        T value = default!;
+        Unsafe.CopyBlockUnaligned(ref Unsafe.As<T, byte>(ref value),
+            ref Unsafe.As<Inline16, byte>(ref slot.Data), (uint)(kind >> LuminTaskSource.KindShift));
+        return value;
+    }
 
-        if (Unsafe.SizeOf<T>() <= 16)
-        {
-            T result = default!;
-            Unsafe.CopyBlock(ref Unsafe.As<T, byte>(ref result), ref cold.WidePayloadAt(index), (uint)Unsafe.SizeOf<T>());
-            return result;
-        }
+    internal static T Get<T>(ulong handle)
+    {
+        long kind = Layout<T>.Kind;
+        if (kind >= LuminTaskSource.Reference) return GetManaged<T>(handle);
+        T value = default!;
+        GetInline(handle, kind, ref Unsafe.As<T, byte>(ref value));
+        return value;
+    }
 
-        return UnsafeMemory.Read<T>((void*)cold.PayloadAt(index));
+    private static void GetInline(ulong handle, long kind, ref byte destination)
+    {
+        var page = LuminTaskSource.ClaimResult(handle, out int i, out long control);
+        ref var slot = ref page.Slots[i];
+        if ((control & LuminTaskSource.KindMask) != kind)
+        {
+            var cell = (control & LuminTaskSource.KindMask) == LuminTaskSource.Cell ? (IPooledResult?)slot.Payload : null;
+            LuminTaskSource.ReleaseResult(page, i, handle);
+            cell?.ReturnToPool();
+            throw new InvalidOperationException("Result storage does not match the requested type.");
+        }
+        Unsafe.CopyBlockUnaligned(ref destination, ref Unsafe.As<Inline16, byte>(ref slot.Data),
+            (uint)(kind >> LuminTaskSource.KindShift));
+        LuminTaskSource.ReleaseResult(page, i, handle);
+    }
+
+    private static T GetManaged<T>(ulong handle)
+    {
+        var page = LuminTaskSource.ClaimResult(handle, out int i, out long control);
+        ref var slot = ref page.Slots[i];
+        var cell = (control & LuminTaskSource.KindMask) == LuminTaskSource.Cell ? (IPooledResult?)slot.Payload : null;
+        try { return Read<T>(ref slot); }
+        finally
+        {
+            LuminTaskSource.ReleaseResult(page, i, handle);
+            cell?.ReturnToPool();
+        }
+    }
+
+    internal static ulong RentState<T>(in T value)
+    {
+        ulong handle = Rent<T>();
+        var page = SlotStore.Find(handle, out int i)!;
+        ref var slot = ref page.Slots[i];
+        long control = slot.Control;
+        Store(ref slot, ref control, in value);
+        return handle;
+    }
+
+    internal static bool TryReadState<T>(ulong handle, out T value)
+    {
+        var page = LuminTaskSource.Enter(handle, out int i, out long control, pendingOnly: true);
+        if (page == null) { value = default!; return false; }
+        ref var slot = ref page.Slots[i];
+        try { value = Read<T>(ref slot); return true; }
+        finally { Volatile.Write(ref slot.Control, control); }
     }
 }

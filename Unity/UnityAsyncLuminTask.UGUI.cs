@@ -246,7 +246,7 @@ namespace LuminThread.Unity
 
         #region AsyncUnityLuminTaskEventPromise（无返回值）
 
-        private static unsafe class AsyncUnityLuminTaskEventPromise
+        private static class AsyncUnityLuminTaskEventPromise
         {
             [StructLayout(LayoutKind.Sequential)]
             private struct StateData
@@ -340,7 +340,7 @@ namespace LuminThread.Unity
 
         #region AsyncUnityLuminTaskEventPromise<T>（有返回值）
 
-        private static unsafe class AsyncUnityLuminTaskEventPromise<T>
+        private static class AsyncUnityLuminTaskEventPromise<T>
         {
             [StructLayout(LayoutKind.Sequential)]
             private struct StateData

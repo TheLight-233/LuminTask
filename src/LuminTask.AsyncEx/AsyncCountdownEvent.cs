@@ -1,3 +1,4 @@
+using LuminThread.Utility;
 using System;
 using System.Runtime.CompilerServices;
 using System.Threading;
@@ -70,6 +71,9 @@ namespace LuminThread.AsyncEx
 
     internal sealed class CountdownEventState : IEventPoolableState
     {
+        public ILuminCacheNode? CacheNext { get; set; }
+        public int Charge => 192;
+
         private readonly object _mutex = new();
         private readonly IAsyncWaitQueue<object> _queue;
         private volatile int _currentCount;

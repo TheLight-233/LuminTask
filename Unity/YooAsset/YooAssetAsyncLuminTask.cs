@@ -50,7 +50,7 @@ namespace LuminThread.Unity
             return HandleBaseLuminTaskConfiguredSource.Create(handle, timing, progress, cancellationToken, autoReleaseWhenCanceled);
         }
 
-        public unsafe struct HandleBaseLuminTaskConfiguredSource
+        public struct HandleBaseLuminTaskConfiguredSource
         {
 struct PromiseState
             {
@@ -204,7 +204,7 @@ struct PromiseState
             return AssetHandleLuminTaskConfiguredSource.Create(handle, timing, progress, cancellationToken, autoReleaseWhenCanceled);
         }
 
-public unsafe struct AssetHandleLuminTaskConfiguredSource
+public struct AssetHandleLuminTaskConfiguredSource
         {
             struct PromiseState
             {
@@ -358,7 +358,7 @@ public unsafe struct AssetHandleLuminTaskConfiguredSource
             return SceneHandleLuminTaskConfiguredSource.Create(handle, timing, progress, cancellationToken, autoReleaseWhenCanceled);
         }
 
-public unsafe struct SceneHandleLuminTaskConfiguredSource
+public struct SceneHandleLuminTaskConfiguredSource
         {
             struct PromiseState
             {
@@ -512,7 +512,7 @@ public unsafe struct SceneHandleLuminTaskConfiguredSource
             return RawFileHandleLuminTaskConfiguredSource.Create(handle, timing, progress, cancellationToken, autoReleaseWhenCanceled);
         }
 
-public unsafe struct RawFileHandleLuminTaskConfiguredSource
+public struct RawFileHandleLuminTaskConfiguredSource
         {
             struct PromiseState
             {
@@ -666,7 +666,7 @@ public unsafe struct RawFileHandleLuminTaskConfiguredSource
             return SubAssetsHandleLuminTaskConfiguredSource.Create(handle, timing, progress, cancellationToken, autoReleaseWhenCanceled);
         }
 
-public unsafe struct SubAssetsHandleLuminTaskConfiguredSource
+public struct SubAssetsHandleLuminTaskConfiguredSource
         {
             struct PromiseState
             {

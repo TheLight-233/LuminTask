@@ -15,7 +15,7 @@ internal static class WaitUntilPromise
 
         if (state.CancellationToken.IsCancellationRequested)
         {
-            LuminTaskCoreSource.TrySetCanceled(state.Handle, state.CancellationToken);
+            LuminTaskSource.TrySetCanceled(state.Handle, state.CancellationToken);
             return false;
         }
 
@@ -26,18 +26,17 @@ internal static class WaitUntilPromise
         }
         catch (Exception ex)
         {
-            LuminTaskCoreSource.TrySetException(state.Handle, ex);
+            LuminTaskSource.TrySetException(state.Handle, ex);
             return false;
         }
 
-        LuminTaskCoreSource.TrySetResult(state.Handle);
+        LuminTaskSource.TrySetResult(state.Handle);
         return false;
     }
 }
 
-// Stateful version: the predicate lives in LuminTaskState.State and TState borrows the item's
-// result storage while pending (a managed slot for references, inline bytes for unmanaged values
-// up to 64 bytes). The pending state therefore stays inside the item as well.
+// The predicate is queued with the work. Its typed argument uses the pending slot's
+// normal result layout and stays visible to the GC across frames.
 internal static class WaitUntilPromise<TState>
 {
     internal static readonly MoveNext MoveNextAction = MoveNext;
@@ -46,18 +45,13 @@ internal static class WaitUntilPromise<TState>
     {
         var predicate = (Func<TState, bool>)state.State!;
 
-        ref var item = ref LuminTaskCoreSource.TryResolve(state.Handle, out var cold, out int index);
-
-        if (Unsafe.IsNullRef(ref item))
-            return false;
-
         if (state.CancellationToken.IsCancellationRequested)
         {
-            LuminTaskCoreSource.TrySetCanceled(state.Handle, state.CancellationToken);
+            LuminTaskSource.TrySetCanceled(state.Handle, state.CancellationToken);
             return false;
         }
 
-        TState current = LuminTaskResultBridge.GetState<TState>(cold, index);
+        if (!LuminTaskResultBridge.TryReadState(state.Handle, out TState current)) return false;
 
         try
         {
@@ -66,11 +60,11 @@ internal static class WaitUntilPromise<TState>
         }
         catch (Exception ex)
         {
-            LuminTaskCoreSource.TrySetException(state.Handle, ex);
+            LuminTaskSource.TrySetException(state.Handle, ex);
             return false;
         }
 
-        LuminTaskCoreSource.TrySetResult(state.Handle);
+        LuminTaskSource.TrySetResult(state.Handle);
         return false;
     }
 }

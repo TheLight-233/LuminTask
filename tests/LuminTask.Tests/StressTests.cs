@@ -30,19 +30,13 @@ public static class StressTests
 
     private static async LuminTask BitMap()
     {
-        var count = LuminTaskBag.GetAvailableCount();
-        short[] ids  = new short[count];
-        
-        for (int i = 0; i < count; i++)
+        var handles = new ulong[128];
+        for (int i = 0; i < handles.Length; i++) LuminTaskSource.Rent(out handles[i]);
+        foreach (ulong h in handles)
         {
-            ids[i] = LuminTaskBag.GetId();
+            LuminTaskSource.SetResult(h);
+            LuminTaskSource.ToTask(h).GetResult();
         }
-        
-        for (int i = 0; i < count; i++)
-        {
-            LuminTaskBag.ResetId(ids[i]);
-        }
-        
         await LuminTask.Yield();
     }
     

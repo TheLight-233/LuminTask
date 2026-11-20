@@ -12,7 +12,7 @@ internal static class WaitUntilCanceledPromise
     {
         if (state.CancellationToken.IsCancellationRequested)
         {
-            LuminTaskCoreSource.TrySetResult(state.Handle);
+            LuminTaskSource.TrySetResult(state.Handle);
             return false;
         }
 

@@ -212,81 +212,24 @@ public readonly struct SwitchToAwaitable : ICriticalNotifyCompletion
     //
     // Only .NET 5+ exposes the interface; on netstandard2.1 (Unity) the WaitCallback path above is
     // kept as-is.
-    sealed class ThreadPoolWorkItem : IThreadPoolWorkItem
+    sealed class ThreadPoolWorkItem : IThreadPoolWorkItem, ILuminCacheNode
     {
-        // Bounded: one lock-free fast slot plus a small locked overflow list.
-        const int MaxRetained = 32;
+        public ILuminCacheNode? CacheNext { get; set; }
+        private Action? _continuation;
 
-        static ThreadPoolWorkItem? fastItem;
-        static ThreadPoolWorkItem? overflow;
-        static int overflowCount;
-        static SpinLock overflowLock = new(enableThreadOwnerTracking: false);
-
-        ThreadPoolWorkItem? next;
-        Action? continuation;
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static ThreadPoolWorkItem Create(Action continuation)
         {
-            var item = Interlocked.Exchange(ref fastItem, null);
-            if (item == null)
-            {
-                var lockTaken = false;
-                try
-                {
-                    overflowLock.Enter(ref lockTaken);
-                    item = overflow;
-                    if (item != null)
-                    {
-                        overflow = item.next;
-                        overflowCount--;
-                        item.next = null;
-                    }
-                }
-                finally
-                {
-                    if (lockTaken)
-                        overflowLock.Exit(useMemoryBarrier: false);
-                }
-            }
-
-            item ??= new ThreadPoolWorkItem();
-            item.continuation = continuation;
+            var item = (ThreadPoolWorkItem?)LuminTaskIdleCache.Take(typeof(ThreadPoolWorkItem)) ?? new ThreadPoolWorkItem();
+            item._continuation = continuation;
             return item;
         }
 
         void IThreadPoolWorkItem.Execute()
         {
-            var call = continuation;
-            continuation = null;
-
-            // Return before invoking: the continuation may queue more work of this shape.
-            if (Interlocked.CompareExchange(ref fastItem, this, null) != null)
-            {
-                var lockTaken = false;
-                try
-                {
-                    overflowLock.Enter(ref lockTaken);
-                    // 快槽已经占用 1 个名额，溢出链只能补到上限 - 1。
-                    if (overflowCount < MaxRetained - 1)
-                    {
-                        next = overflow;
-                        overflow = this;
-                        overflowCount++;
-                    }
-                    else
-                    {
-                        next = null;
-                    }
-                }
-                finally
-                {
-                    if (lockTaken)
-                        overflowLock.Exit(useMemoryBarrier: false);
-                }
-            }
-
-            call?.Invoke();
+            var call = _continuation;
+            _continuation = null;
+            LuminTaskIdleCache.Return(this, 48);
+            call!();
         }
     }
 

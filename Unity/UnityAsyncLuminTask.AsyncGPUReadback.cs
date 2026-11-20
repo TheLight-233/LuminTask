@@ -49,7 +49,7 @@ namespace LuminThread.Unity
                 public ulong Handle;
             }
 
-            public static unsafe LuminTask<AsyncGPUReadbackRequest> Create(AsyncGPUReadbackRequest asyncOperation, PlayerLoopTiming timing, CancellationToken cancellationToken, bool cancelImmediately)
+            public static LuminTask<AsyncGPUReadbackRequest> Create(AsyncGPUReadbackRequest asyncOperation, PlayerLoopTiming timing, CancellationToken cancellationToken, bool cancelImmediately)
             {
                 var task = LuminTaskSource.Create<AsyncGPUReadbackRequest>(out ulong handle);
                 var stateData = new StateData

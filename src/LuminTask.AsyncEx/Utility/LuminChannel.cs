@@ -91,7 +91,7 @@ public sealed class LuminChannelClosedException : InvalidOperationException
     public LuminChannelClosedException(string message, Exception innerException) : base(message, innerException) { }
 }
 
-internal unsafe class SingleConsumerUnboundedLuminChannel<T> : LuminChannel<T>, IDisposable
+internal class SingleConsumerUnboundedLuminChannel<T> : LuminChannel<T>, IDisposable
 {
     readonly Queue<T> items;
     readonly SingleConsumerUnboundedLuminChannelReader readerSource;
@@ -145,7 +145,7 @@ internal unsafe class SingleConsumerUnboundedLuminChannel<T> : LuminChannel<T>, 
         }
 
         if (completionSource != 0)
-            LuminTaskCoreSource.TrySetCanceled(completionSource);
+            LuminTaskSource.TrySetCanceled(completionSource);
 
         readerSource.CancelPendingWaiter();
     }
@@ -217,9 +217,9 @@ internal unsafe class SingleConsumerUnboundedLuminChannel<T> : LuminChannel<T>, 
             if (completionSource != 0)
             {
                 if (error == null)
-                    LuminTaskCoreSource.TrySetResult(completionSource);
+                    LuminTaskSource.TrySetResult(completionSource);
                 else
-                    LuminTaskCoreSource.TrySetException(completionSource, error);
+                    LuminTaskSource.TrySetException(completionSource, error);
             }
 
             if (waiting && completeNow)
@@ -314,9 +314,9 @@ internal unsafe class SingleConsumerUnboundedLuminChannel<T> : LuminChannel<T>, 
             if (completionSource != 0)
             {
                 if (parent.completionError == null)
-                    LuminTaskCoreSource.TrySetResult(completionSource);
+                    LuminTaskSource.TrySetResult(completionSource);
                 else
-                    LuminTaskCoreSource.TrySetException(completionSource, parent.completionError);
+                    LuminTaskSource.TrySetException(completionSource, parent.completionError);
             }
 
             return true;
@@ -407,9 +407,9 @@ internal unsafe class SingleConsumerUnboundedLuminChannel<T> : LuminChannel<T>, 
             cancellationTokenRegistration.Release();
 
             if (error is OperationCanceledException)
-                LuminTaskCoreSource.TrySetCanceled(source, token);
+                LuminTaskSource.TrySetCanceled(source, token);
             else if (error != null)
-                LuminTaskCoreSource.TrySetException(source, error);
+                LuminTaskSource.TrySetException(source, error);
             else
                 LuminTaskResultBridge.TrySetResult(source, in result);
         }

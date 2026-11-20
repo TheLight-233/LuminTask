@@ -34,6 +34,9 @@ public static class Program
         await BasicTests.RunAll(r);
         Console.WriteLine();
 
+        Console.WriteLine("[Runtime 2.0]");
+        await RuntimeV2Tests.RunAll(r);
+
         Console.WriteLine("[Combinators]");
         await CombinatorTests.RunAll(r);
         Console.WriteLine();

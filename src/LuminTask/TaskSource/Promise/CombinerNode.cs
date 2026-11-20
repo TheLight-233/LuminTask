@@ -1,98 +1,203 @@
 using System;
 using System.Runtime.CompilerServices;
 using System.Threading;
-using LuminThread.TaskSource;
 using LuminThread.Utility;
 
 namespace LuminThread.TaskSource.Promise;
 
-// Shared, non-generic bookkeeping for every combinator (WhenAll / WhenAny, fixed arity and array
-// forms alike).
-//
-// The rule the redux follows is that no arity and no result type keeps its own copy of the
-// protocol: this node owns the combined task's handle, the child counter and the single-completion
-// path, while the typed (and arity-shaped) writers only aggregate results and call Complete/Fault.
-// That keeps the arity families thin instead of each carrying its own claim logic.
-//
-// Lifetime: child continuations keep the node alive after the combined task has been consumed, so
-// a late child completion just finds a stale handle and TrySet* quietly returns false.
-internal abstract class CombinerNode
+// One installing owner and one owner per installed callback. A slow loser retains
+// its observation and this cleared node, never the other inputs or the output array.
+internal abstract class CombinerNode : ILuminCacheNode
 {
-    // 固定元数组合子共用的子任务完成入口：委托与 T 无关，4 个静态实例由全程序集复用，
-    // 索引只是分派用的常量子任务编号，具体逻辑（聚合、竞速、失败处理）经 OnChildCompleted
-    // 虚分派落到各自的 TryInvokeContinuationTN。这样每个 (T1..TN) 组合、每个非泛型元数
-    // 都不再生成自己的 lambda 缓存类型（<>c）与静态委托字段。
-    internal static readonly Action<object> ChildContinuation0 = static state => ((CombinerNode)state).OnChildCompleted(0);
-    internal static readonly Action<object> ChildContinuation1 = static state => ((CombinerNode)state).OnChildCompleted(1);
-    internal static readonly Action<object> ChildContinuation2 = static state => ((CombinerNode)state).OnChildCompleted(2);
-    internal static readonly Action<object> ChildContinuation3 = static state => ((CombinerNode)state).OnChildCompleted(3);
-
-    // The combined task. Never exposed; the writers hand it to LuminTask/LuminTask<T>.
-    internal readonly LuminTaskHandle Handle;
-
-    private int _completedCount;
-
-    protected CombinerNode()
+    private readonly struct Observation
     {
-        Handle = LuminTask.RentSlot();
-    }
-
-    // 仅固定元数组合子覆写（数组版组合子走下面句柄状态的那条共享路径）。
-    // 默认实现直接抛出，误接线时立刻暴露，而不是静默丢失一次完成。
-    internal virtual void OnChildCompleted(int index) => throw new NotSupportedException();
-
-    // 数组组合子（WhenAll/WhenAny 的任务数组版）共用的挂起孩子状态：owner、孩子的句柄、下标。
-    //
-    // 挂起中的孩子必定拥有槽位（句柄 0 表示同步完成），所以句柄就能唯一确定它，结果类型 T
-    // 完全不进入这个状态。于是每种 T、两个组合子、泛型与非泛型版本都共用同一个 StatePool 与
-    // 同一个非泛型委托，而不是 N 种结果类型各带两份元组状态与各自的 lambda 缓存类型。
-    internal readonly struct ChildState
-    {
-        internal readonly CombinerNode Owner;
-        internal readonly LuminTaskHandle Handle;
+        internal readonly CombinerNode Join;
+        internal readonly ulong Handle;
         internal readonly int Index;
-
-        internal ChildState(CombinerNode owner, LuminTaskHandle handle, int index)
-        {
-            Owner = owner;
-            Handle = handle;
-            Index = index;
-        }
+        internal Observation(CombinerNode join, ulong handle, int index) =>
+            (Join, Handle, Index) = (join, handle, index);
     }
 
-    private static readonly Action<object> ChildStateContinuationAction = OnChildStateCompleted;
+    private int _owners, _remaining;
+    protected bool Any, Closed;
+    protected ulong Handle;
+    protected abstract int Charge { get; }
+    public ILuminCacheNode? CacheNext { get; set; }
 
-    // 状态是池化的 StateTuple<ChildState>；所有者必须自己消费孩子，完成权竞争与失败处理
-    // 仍留在各自的 TryInvokeContinuation 里。
-    internal static Action<object> ChildStateContinuation => ChildStateContinuationAction;
-
-    private static void OnChildStateCompleted(object state)
+    protected void Begin(ulong handle, bool any, int count)
     {
-        var tuple = (StateTuple<ChildState>)state;
-        var child = tuple.Item;
-        tuple.Dispose();
-
-        child.Owner.OnSuspendedChildCompleted(child.Handle, child.Index);
+        Handle = handle;
+        Any = any;
+        Closed = false;
+        _remaining = count;
+        _owners = 1;
     }
 
-    // 由数组组合子覆写：从孩子句柄重建带 T 的任务并消费它（含抢不到完成权时的 Forget）。
-    internal virtual void OnSuspendedChildCompleted(LuminTaskHandle handle, int index)
-        => throw new NotSupportedException();
+    protected void Watch(ulong handle, int index)
+    {
+        if (handle == 0 || LuminTaskSource.IsCompleted(handle))
+        {
+            Observe(handle, index);
+            return;
+        }
+        var observation = StateTuple.Create(new Observation(this, handle, index));
+        Interlocked.Increment(ref _owners);
+        // OnCompleted may invoke synchronously. Observe isolates callback exceptions.
+        try { LuminTaskSource.OnCompleted(handle, OnReady, observation); }
+        catch { observation.Dispose(); Exit(); throw; }
+    }
 
-    // Increments the child counter, returning true when the caller is the one that brought the
-    // count up to expected (i.e. it owns the aggregate publication).
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    protected bool IncrementCompleted(int expected) => Interlocked.Increment(ref _completedCount) == expected;
+    private static void OnReady(object state)
+    {
+        var box = (StateTuple<Observation>)state;
+        var child = box.Item;
+        box.Dispose();
+        try { child.Join.Observe(child.Handle, child.Index); }
+        catch (Exception ex) { LuminTaskScheduler.PublishUnobservedTaskException(ex); }
+        finally { child.Join.Exit(); }
+    }
 
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    protected void Complete() => LuminTaskCoreSource.TrySetResult(Handle);
+    // With this gate held, only the winner can transition to Closed.
+    protected bool SucceedLocked() => Closed = Any || --_remaining == 0;
 
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    protected void Complete<TResult>(in TResult result) => LuminTaskResultBridge.TrySetResult(Handle, in result);
+    private void Observe(ulong handle, int index)
+    {
+        Exception? error = null;
+        bool drain;
+        lock (this)
+        {
+            drain = Closed;
+            if (!drain)
+            {
+                try
+                {
+                    if (handle != 0) Read(handle, index);
+                    if (!SucceedLocked()) return;
+                }
+                catch (Exception ex) { error = ex; Closed = true; }
+            }
+        }
+        if (drain)
+        {
+            if (handle != 0) LuminTaskSource.Forget(handle);
+        }
+        else if (error != null)
+        {
+            Clear();
+            LuminTaskSource.TrySetException(Handle, error);
+        }
+        else Publish(index);
+    }
 
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    protected void Fault(Exception exception) => LuminTaskCoreSource.TrySetException(Handle, exception);
+    protected abstract void Read(ulong handle, int index);
+    protected abstract void Publish(int index);
+    protected virtual void Clear() { }
 
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    protected void Cancel(CancellationToken cancellationToken) => LuminTaskCoreSource.TrySetCanceled(Handle, cancellationToken);
+    protected void Reject()
+    {
+        lock (this) Closed = true;
+        // A callback may have won publication and still be outside the lock.
+        // Consume through the normal waiting path in either case.
+        LuminTaskSource.TrySetResult(Handle);
+        LuminTaskSource.ToTask(Handle).Forget();
+    }
+
+    protected void Exit()
+    {
+        if (Interlocked.Decrement(ref _owners) != 0) return;
+        Clear();
+        Handle = 0;
+        LuminTaskIdleCache.Return(this, Charge);
+    }
+}
+
+internal sealed class VoidJoin : CombinerNode
+{
+    protected override int Charge => 96;
+    protected override void Read(ulong handle, int index) => LuminTaskSource.ConsumeVoid(handle);
+    protected override void Publish(int index)
+    {
+        if (Any) LuminTaskResultBridge.TrySetResult(Handle, index);
+        else LuminTaskSource.TrySetResult(Handle);
+    }
+
+    internal static ulong Create(bool any, int count, LuminTask[]? tasks,
+        LuminTask a = default, LuminTask b = default, LuminTask c = default, LuminTask d = default)
+    {
+        var join = (VoidJoin?)LuminTaskIdleCache.Take(typeof(VoidJoin)) ?? new VoidJoin();
+        ulong handle = LuminTask.RentSlot();
+        join.Begin(handle, any, count);
+        try
+        {
+            if (tasks != null)
+                for (int i = 0; i < count; i++) join.Watch(tasks[i]._handle, i);
+            else
+            {
+                join.Watch(a._handle, 0);
+                join.Watch(b._handle, 1);
+                if (count > 2) join.Watch(c._handle, 2);
+                if (count > 3) join.Watch(d._handle, 3);
+            }
+            return handle;
+        }
+        catch { join.Reject(); throw; }
+        finally { join.Exit(); }
+    }
+}
+
+internal sealed class ArrayJoin<T> : CombinerNode
+{
+    private T[]? _results;
+    private T _winner = default!;
+    protected override int Charge => 104 + Unsafe.SizeOf<T>();
+    protected override void Clear() { _winner = default!; _results = null; }
+
+    internal static ulong Create(bool any, LuminTask<T>[] tasks)
+    {
+        var output = any ? null : new T[tasks.Length];
+        var join = (ArrayJoin<T>?)LuminTaskIdleCache.Take(typeof(ArrayJoin<T>)) ?? new ArrayJoin<T>();
+        ulong handle = any ? LuminTaskResultBridge.Rent<(int, T)>() : LuminTaskResultBridge.Rent<T[]>();
+        join.Begin(handle, any, tasks.Length);
+        join._results = output;
+        try
+        {
+            for (int i = 0; i < tasks.Length; i++)
+            {
+                var task = tasks[i];
+                if (task._handle != 0) join.Watch(task._handle, i);
+                else join.Inline(task._result!, i);
+            }
+            return handle;
+        }
+        catch { join.Reject(); throw; }
+        finally { join.Exit(); }
+    }
+
+    private void Inline(T value, int index)
+    {
+        lock (this)
+        {
+            if (Closed) return;
+            Store(value, index);
+            if (!SucceedLocked()) return;
+        }
+        Publish(index);
+    }
+
+    private void Store(T value, int index)
+    {
+        if (Any) _winner = value;
+        else _results![index] = value;
+    }
+
+    protected override void Read(ulong handle, int index) => Store(LuminTaskResultBridge.Get<T>(handle), index);
+
+    protected override void Publish(int index)
+    {
+        var winner = _winner;
+        var output = _results;
+        Clear();
+        if (Any) LuminTaskResultBridge.TrySetResult(Handle, (index, winner));
+        else LuminTaskResultBridge.TrySetResult(Handle, output);
+    }
 }

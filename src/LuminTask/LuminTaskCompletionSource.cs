@@ -24,7 +24,7 @@ namespace LuminThread
 
         public LuminTaskCompletionSource()
         {
-            _handle = LuminTask.RentSlot();
+            _handle = LuminTaskResultBridge.Rent<T>();
         }
 
         public LuminTask<T> Task
@@ -48,11 +48,11 @@ namespace LuminThread
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool TrySetException(Exception exception)
-            => LuminTaskCoreSource.TrySetException(_handle, exception);
+            => LuminTaskSource.TrySetException(_handle, exception);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool TrySetCanceled(CancellationToken cancellationToken = default)
-            => LuminTaskCoreSource.TrySetCanceled(_handle, cancellationToken);
+            => LuminTaskSource.TrySetCanceled(_handle, cancellationToken);
     }
 
     public sealed class LuminTaskCompletionSource
@@ -79,14 +79,14 @@ namespace LuminThread
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool TrySetResult()
-            => LuminTaskCoreSource.TrySetResult(_handle);
+            => LuminTaskSource.TrySetResult(_handle);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool TrySetException(Exception exception)
-            => LuminTaskCoreSource.TrySetException(_handle, exception);
+            => LuminTaskSource.TrySetException(_handle, exception);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool TrySetCanceled(CancellationToken cancellationToken = default)
-            => LuminTaskCoreSource.TrySetCanceled(_handle, cancellationToken);
+            => LuminTaskSource.TrySetCanceled(_handle, cancellationToken);
     }
 }

@@ -7,13 +7,11 @@ namespace LuminTaskUnitTest;
 
 public static class BasicTests
 {
-    // The hot item must stay small: the result bytes and the per-frame scratch moved out into the
-    // slot's arenas, so only the fields every operation touches remain here. This guards against a
-    // future change quietly growing the item again.
-    private static unsafe void ItemLayoutStaysTight()
+    private static void ItemLayoutStaysTight()
     {
-        Assert.Equal(40, sizeof(LuminTaskItem),
-            "LuminTaskItem layout drifted: the hot fields should occupy 40 bytes");
+        var slot = typeof(LuminTask).Assembly.GetType("LuminThread.Slot")!;
+        var sizeOf = typeof(System.Runtime.CompilerServices.Unsafe).GetMethod("SizeOf")!;
+        Assert.Equal(24 + 4 * IntPtr.Size, (int)sizeOf.MakeGenericMethod(slot).Invoke(null, null)!);
     }
 
     public static async Task RunAll(TestRunner r)
@@ -381,9 +379,8 @@ public static class BasicTests
         Assert.Equal(7, fromAsync);
 
         var ranOnPool = false;
-        var mainThreadId = Environment.CurrentManagedThreadId;
-        await LuminTask.Run(() => ranOnPool = Environment.CurrentManagedThreadId != mainThreadId);
-        Assert.True(ranOnPool, "Run should execute the delegate off the calling thread");
+        await LuminTask.Run(() => ranOnPool = Thread.CurrentThread.IsThreadPoolThread);
+        Assert.True(ranOnPool, "Run should execute the delegate on a thread-pool thread");
 
         await Assert.ThrowsAsync<InvalidOperationException>(
             () => LuminTask.Run(() => throw new InvalidOperationException("run-boom")));
@@ -391,11 +388,10 @@ public static class BasicTests
 
     private static async LuminTask RunOnThreadPoolThread()
     {
-        var mainThreadId = Environment.CurrentManagedThreadId;
         var ran = false;
         var result = await LuminTask.RunOnThreadPool(() =>
         {
-            ran = Environment.CurrentManagedThreadId != mainThreadId;
+            ran = Thread.CurrentThread.IsThreadPoolThread;
             return 11;
         });
         Assert.Equal(11, result);

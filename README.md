@@ -1,5 +1,9 @@
 # **LuminTask**
 
+**2.0** 使用一个全局任务源和纯托管分页槽。同步完成直接返回；真正挂起时才租用状态机。空闲对象跨线程共享，默认预算为 64 KiB，使用 `LuminTaskIdleCache.MaxIdleObjectBytes` 配置，场景卸载时可调用 `LuminTaskSource.Trim()`。通过 `LuminTaskSource.GetStorageStatistics()` 可读取活跃槽、已分配槽、槽数组字节数、缓存计费字节数和调度队列容量。原生分配器钩子和裸槽租还接口已移除，写入大值或含引用结构体的生产端请使用 `LuminTaskSource.Create<T>/Rent<T>`。
+
+[2.0 核心架构](LuminTask-2.0-Core.md)。下文与 UniTask 的历史基准来自 1.x。
+
 ## 📑 目录
 
 - [📖 简介](#intro)

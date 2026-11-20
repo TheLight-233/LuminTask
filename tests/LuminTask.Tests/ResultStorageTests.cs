@@ -9,18 +9,18 @@ public static class ResultStorageTests
 {
     public static async Task RunAll(TestRunner runner)
     {
-        await runner.Run("small results avoid native allocations; large results are freed", NativeAllocationBoundary);
+        await runner.Run("inline and typed managed results round-trip", ResultLayoutBoundary);
         await runner.Run("mixed result kinds survive item reuse", MixedResults);
         await runner.Run("suspended results survive cross-thread completion", CrossThreadResults);
-        await runner.Run("loop state shares inline and native result storage", LoopState);
+        await runner.Run("loop state shares managed result storage", LoopState);
         await runner.Run("cancellation registration can race completion", CancellationRegistrationRace);
-        await runner.Run("idle cold storage is released and rebuilt", IdleColdStorage);
+        await runner.Run("empty pages are reclaimed with another page still live", IdleColdStorage);
         await runner.Run("zero inline result keeps its cold block alive", ZeroResultSurvivesTrim);
-        await runner.Run("packed allocator preserves exclusive ownership under contention", ConcurrentRentalAndTrim);
-        await runner.Run("packed allocator reaches its full 16-bit capacity", FullCapacity);
+        await runner.Run("page allocator preserves exclusive ownership under contention", ConcurrentRentalAndTrim);
+        await runner.Run("page allocator reaches its full 16-bit capacity", FullCapacity);
         await runner.Run("exhausted generations retire without leaks or stale aliases", RetiredGeneration);
-        await runner.Run("status alone never permits result consumption", CompletionRequiresSentinel);
-        await runner.Run("state pool includes its fast item in the retention cap", StatePoolBound);
+        await runner.Run("pending and duplicate consumption are rejected", ConsumeRequiresTerminalState);
+        await runner.Run("shared cache respects the global byte cap", StatePoolBound);
     }
 
     [StructLayout(LayoutKind.Sequential, Pack = 1)]
@@ -43,50 +43,20 @@ public static class ResultStorageTests
         public void Dispose() => Disposed = true;
     }
 
-    private static int _nativeAllocations;
-    private static int _nativeFrees;
-
-    private static unsafe void* Allocate(nuint size)
+    private static void ResultLayoutBoundary()
     {
-        Interlocked.Increment(ref _nativeAllocations);
-        return NativeMemory.Alloc(size);
-    }
-
-    private static unsafe void Free(void* pointer)
-    {
-        Interlocked.Increment(ref _nativeFrees);
-        NativeMemory.Free(pointer);
-    }
-
-    private static unsafe void NativeAllocationBoundary()
-    {
-        _nativeAllocations = _nativeFrees = 0;
-        MemoryHelper.Set(&Allocate, &Free);
-        try
-        {
-            RoundTrip(0);
-            RoundTrip(-1);
-            RoundTrip(byte.MaxValue);
-            RoundTrip(short.MinValue);
-            RoundTrip(new ThreeBytes(0xAB, short.MinValue));
-            RoundTrip(float.NegativeInfinity);
-            Assert.Equal(0, _nativeAllocations);
-
-            RoundTrip(long.MinValue);
-            RoundTrip(BitConverter.Int64BitsToDouble(unchecked((long)0xFFF0123456789ABC)));
-            RoundTrip(new NineBytes(long.MinValue, 0xCD));
-            RoundTrip(new SixteenBytes(long.MinValue, long.MaxValue));
-            Assert.Equal(0, _nativeAllocations);
-
-            RoundTrip(new SeventeenBytes(long.MinValue, long.MaxValue, 0xCD));
-            RoundTrip(new Large(1, 2, 3, 4, 5, 6, 7, 8, long.MinValue));
-            Assert.Equal(2, _nativeAllocations);
-            Assert.Equal(_nativeAllocations, _nativeFrees);
-        }
-        finally
-        {
-            MemoryHelper.Set(null, null);
-        }
+        RoundTrip(0);
+        RoundTrip(-1);
+        RoundTrip(byte.MaxValue);
+        RoundTrip(short.MinValue);
+        RoundTrip(new ThreeBytes(0xAB, short.MinValue));
+        RoundTrip(float.NegativeInfinity);
+        RoundTrip(long.MinValue);
+        RoundTrip(BitConverter.Int64BitsToDouble(unchecked((long)0xFFF0123456789ABC)));
+        RoundTrip(new NineBytes(long.MinValue, 0xCD));
+        RoundTrip(new SixteenBytes(long.MinValue, long.MaxValue));
+        RoundTrip(new SeventeenBytes(long.MinValue, long.MaxValue, 0xCD));
+        RoundTrip(new Large(1, 2, 3, 4, 5, 6, 7, 8, long.MinValue));
     }
 
     private static void RoundTrip<T>(T expected)
@@ -190,50 +160,30 @@ public static class ResultStorageTests
         }
     }
 
-    private const BindingFlags Hidden = BindingFlags.Instance | BindingFlags.NonPublic;
-
-    private const BindingFlags StaticHidden = BindingFlags.Static | BindingFlags.NonPublic;
-    private static readonly FieldInfo IdleSince = typeof(LuminTaskBag).GetField("_idleSinceTimestamp", StaticHidden)!;
-    private static readonly Action TrimCallback = (Action)typeof(LuminTaskBag).GetMethod("TrimColdBlocks", StaticHidden)!
-        .CreateDelegate(typeof(Action));
-
-    private static void Trim()
-    {
-        IdleSince.SetValue(null, unchecked(Environment.TickCount - 2000));
-        TrimCallback();
-    }
-
-    private static Array Table(LuminTaskCold cold, string name)
-        => (Array)typeof(LuminTaskCold).GetField(name, Hidden)!.GetValue(cold)!;
-
     private static void IdleColdStorage()
     {
-        var task = LuminTaskSource.Create<string>(out var handle);
-        Assert.True(LuminTaskSource.SetResult(handle, "before trim"));
-        var cold = LuminTaskBag.GetCold((int)(handle & 0xFFFF) - 1);
-        Assert.Equal("before trim", task.GetAwaiter().GetResult());
-        Assert.NotNull(Table(cold, "_ref"));
-        Trim();
-        Assert.True(typeof(LuminTaskCold).GetField("_ref", Hidden)!.GetValue(cold) is null);
-        RoundTrip("after trim");
-        RoundTrip(new NineBytes(long.MinValue, 1));
+        LuminTaskSource.Trim();
+        var held = LuminTaskSource.Create<string>(out var live);
+        var handles = new ulong[128];
+        for (int i = 0; i < handles.Length; i++) LuminTaskSource.Rent(out handles[i]);
+        foreach (ulong h in handles) { LuminTaskSource.SetResult(h); LuminTaskSource.ToTask(h).GetResult(); }
+        int peak = LuminTaskBag.Capacity;
+        LuminTaskSource.Trim();
+        Assert.True(LuminTaskBag.Capacity < peak);
+        Assert.True(LuminTaskSource.SetResult(live, "kept"));
+        Assert.Equal("kept", held.GetResult());
+        var liveHandles = new ulong[handles.Length];
+        for (int i = 0; i < handles.Length; i++) LuminTaskSource.Rent(out liveHandles[i]);
+        foreach (ulong h in handles) Assert.False(LuminTaskSource.SetResult(h));
+        foreach (ulong h in liveHandles) { LuminTaskSource.SetResult(h); LuminTaskSource.ToTask(h).GetResult(); }
     }
 
     private static void ZeroResultSurvivesTrim()
     {
         var task = LuminTaskSource.Create<int>(out var handle);
         Assert.True(LuminTaskSource.SetResult(handle, 0));
-        int id = (int)(handle & 0xFFFF) - 1;
-        var cold = LuminTaskBag.GetCold(id);
-        var table = Table(cold, "_payload");
-        int blockIndex = (id & 255) >> 6;
-        var block = table.GetValue(blockIndex);
-        Assert.NotNull(block);
-        Trim();
-        Assert.True(ReferenceEquals(block, table.GetValue(blockIndex)), "zero is still a live result");
-        Assert.Equal(0, task.GetAwaiter().GetResult());
-        Trim();
-        Assert.True(typeof(LuminTaskCold).GetField("_payload", Hidden)!.GetValue(cold) is null);
+        LuminTaskSource.Trim();
+        Assert.Equal(0, task.GetResult());
     }
 
     private static void ConcurrentRentalAndTrim()
@@ -245,7 +195,7 @@ public static class ResultStorageTests
         {
             while (!stop.IsCancellationRequested)
             {
-                Trim();
+                LuminTaskSource.Trim();
                 Thread.Yield();
             }
         });
@@ -276,81 +226,82 @@ public static class ResultStorageTests
     private static void FullCapacity()
     {
         Assert.Equal(0, LuminTaskBag.GetLiveCount());
-        var ids = new short[short.MaxValue];
+        var handles = new ulong[short.MaxValue];
         var seen = new bool[short.MaxValue];
         int count = 0;
         try
         {
-            while (count < ids.Length && LuminTaskBag.TryGetId(out short id))
+            for (; count < handles.Length; count++)
             {
-                ids[count++] = id;
-                Assert.False(seen[id], "duplicate live id");
+                LuminTaskSource.Rent(out handles[count]);
+                int id = (ushort)handles[count] - 1;
+                Assert.False(seen[id]);
                 seen[id] = true;
             }
-            Assert.Equal(short.MaxValue, count);
-            Assert.Equal(short.MaxValue, LuminTaskBag.GetLiveCount());
             Assert.Equal(0, LuminTaskBag.GetAvailableCount());
-            Assert.False(LuminTaskBag.TryGetId(out _));
+            try { LuminTaskSource.Rent(out _); Assert.Fail("expected capacity failure"); }
+            catch (InvalidOperationException) { }
         }
         finally
         {
-            for (int i = 0; i < count; i++) LuminTaskBag.ResetId(ids[i]);
+            for (int i = 0; i < count; i++)
+            {
+                LuminTaskSource.SetResult(handles[i]);
+                LuminTaskSource.ToTask(handles[i]).GetResult();
+            }
         }
         Assert.Equal(0, LuminTaskBag.GetLiveCount());
     }
 
     private static void RetiredGeneration()
     {
-        int available = LuminTaskBag.GetAvailableCount();
-        short id = LuminTaskBag.GetId();
-        ref var item = ref LuminTaskBag.GetItem(id);
-        item.Reset();
-        item.SyncState = (long)(uint.MaxValue - 1) << 16;
-        ulong handle = ((ulong)(uint.MaxValue - 1) << 16) | (uint)(id + 1);
-        Assert.True(LuminTaskSource.SetResult(handle, 123));
-        Assert.Equal(123, LuminTaskSource.ToTask<int>(handle).GetAwaiter().GetResult());
-        Assert.Equal(0, LuminTaskBag.GetLiveCount());
-        Assert.Equal(available - 1, LuminTaskBag.GetAvailableCount());
-        Assert.False(LuminTaskSource.SetResult(handle, 456));
-        try
-        {
-            LuminTaskSource.ToTask<int>(handle).GetAwaiter().GetResult();
-            Assert.Fail("last issued generation must become stale");
-        }
-        catch (InvalidOperationException) { }
-        short next = LuminTaskBag.GetId();
-        Assert.True(next != id);
-        LuminTaskBag.ResetId(next);
+        LuminTaskSource.Trim();
+        var store = typeof(LuminTask).Assembly.GetType("LuminThread.SlotStore")!;
+        var directory = (Array)store.GetField("_directory", BindingFlags.Static | BindingFlags.NonPublic)!.GetValue(null)!;
+        var entry = directory.GetValue(0)!;
+        entry.GetType().GetField("Generation", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(entry, (1L << 48) - 2);
+        directory.SetValue(entry, 0);
+        var task = LuminTaskSource.Create(out var last);
+        Assert.Equal((1UL << 48) - 1, last >> 16);
+        LuminTaskSource.SetResult(last);
+        task.GetResult();
+        var next = LuminTaskSource.Create(out var fresh);
+        Assert.True((ushort)fresh > 64);
+        Assert.False(LuminTaskSource.SetResult(last));
+        LuminTaskSource.SetResult(fresh);
+        next.GetResult();
     }
 
-    private static void CompletionRequiresSentinel()
+    private static void ConsumeRequiresTerminalState()
     {
-        int live = LuminTaskBag.GetLiveCount();
         var task = LuminTaskSource.Create(out var handle);
-        ref var item = ref LuminTaskBag.GetItem((int)(handle & 0xFFFF) - 1);
-        item.Status = LuminThread.Interface.LuminTaskStatus.Succeeded;
-        Assert.False(task.IsCompleted);
-        try
-        {
-            task.GetAwaiter().GetResult();
-            Assert.Fail("status was published but producer has not drained");
-        }
+        try { LuminTaskSource.ToTask(handle).GetResult(); Assert.Fail("pending GetResult"); }
         catch (InvalidOperationException) { }
-        Assert.Equal(live + 1, LuminTaskBag.GetLiveCount());
-        item.Status = LuminThread.Interface.LuminTaskStatus.Pending;
-        Assert.True(LuminTaskSource.SetResult(handle));
-        LuminTaskSource.ToTask(handle).GetAwaiter().GetResult();
-        Assert.Equal(live, LuminTaskBag.GetLiveCount());
+        int callbacks = 0;
+        task.OnCompleted(() => callbacks++);
+        try { task.OnCompleted(() => callbacks += 100); Assert.Fail("duplicate registration"); }
+        catch (InvalidOperationException) { }
+        LuminTaskSource.SetResult(handle);
+        Assert.Equal(1, callbacks);
+        task.GetResult();
+        try { LuminTaskSource.ToTask(handle).GetResult(); Assert.Fail("duplicate consumption"); }
+        catch (InvalidOperationException) { }
     }
 
     private static void StatePoolBound()
     {
-        var items = new StateTuple<PoolBoundValue>[64];
-        for (int i = 0; i < items.Length; i++) items[i] = StatePool<PoolBoundValue>.Create(new PoolBoundValue(i));
-        foreach (var item in items) item.Dispose();
-        var pool = typeof(StatePool<PoolBoundValue>);
-        int overflow = (int)pool.GetField("_overflowCount", StaticHidden)!.GetValue(null)!;
-        int fast = pool.GetField("_fastItem", StaticHidden)!.GetValue(null) is null ? 0 : 1;
-        Assert.Equal(32, overflow + fast);
+        int previous = LuminTaskIdleCache.MaxIdleObjectBytes;
+        try
+        {
+            LuminTaskSource.Trim();
+            LuminTaskIdleCache.MaxIdleObjectBytes = 256;
+            var items = new StateTuple<PoolBoundValue>[64];
+            for (int i = 0; i < items.Length; i++) items[i] = StatePool<PoolBoundValue>.Create(new PoolBoundValue(i));
+            foreach (var item in items) item.Dispose();
+            Assert.True(LuminTaskIdleCache.RetainedBytes > 0 && LuminTaskIdleCache.RetainedBytes <= 256);
+            LuminTaskSource.Trim();
+            Assert.Equal(0, LuminTaskIdleCache.RetainedBytes);
+        }
+        finally { LuminTaskIdleCache.MaxIdleObjectBytes = previous; }
     }
 }

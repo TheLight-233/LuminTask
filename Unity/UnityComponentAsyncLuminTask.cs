@@ -61,7 +61,7 @@ namespace LuminThread.Unity
             return AudioSourceLuminTaskConfiguredSource.Create(audioSource, timing, cancellationToken);
         }
 
-        public unsafe struct AudioSourceLuminTaskConfiguredSource
+        public struct AudioSourceLuminTaskConfiguredSource
         {
             struct PromiseState
             {
@@ -196,7 +196,7 @@ namespace LuminThread.Unity
             return AnimatorLuminTaskConfiguredSource.Create(animator, layer, stateName, timing, cancellationToken);
         }
 
-        public unsafe struct AnimatorLuminTaskConfiguredSource
+        public struct AnimatorLuminTaskConfiguredSource
         {
             struct PromiseState
             {
@@ -335,7 +335,7 @@ namespace LuminThread.Unity
             return ParticleSystemLuminTaskConfiguredSource.Create(particleSystem, withChildren, timing, cancellationToken);
         }
 
-        public unsafe struct ParticleSystemLuminTaskConfiguredSource
+        public struct ParticleSystemLuminTaskConfiguredSource
         {
             struct PromiseState
             {
@@ -467,7 +467,7 @@ namespace LuminThread.Unity
             return VideoPlayerLuminTaskConfiguredSource.Create(videoPlayer, timing, cancellationToken);
         }
 
-        public unsafe struct VideoPlayerLuminTaskConfiguredSource
+        public struct VideoPlayerLuminTaskConfiguredSource
         {
             struct PromiseState
             {

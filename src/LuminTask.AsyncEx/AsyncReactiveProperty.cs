@@ -123,7 +123,7 @@ public readonly struct ReadonlyAsyncReactiveProperty<T> : IDisposable
     public static implicit operator T(ReadonlyAsyncReactiveProperty<T> property) => property.Value;
 }
 
-internal sealed unsafe class ReactivePropertyState<T> : IDisposable
+internal sealed class ReactivePropertyState<T> : IDisposable
 {
     private T _value;
     private readonly IEqualityComparer<T> _equalityComparer;
@@ -211,7 +211,7 @@ internal sealed unsafe class ReactivePropertyState<T> : IDisposable
         if (IsDisposed) return LuminTask.FromCanceled<T>(cancellationToken);
         if (cancellationToken.IsCancellationRequested) return LuminTask.FromCanceled<T>(cancellationToken);
 
-        var handle = LuminTask.RentSlot();
+        var handle = LuminTaskResultBridge.Rent<T>();
         var awaiter = new AsyncReactivePropertyAwaiter<T>(handle);
         var task = new LuminTask<T>(handle);
 
@@ -219,7 +219,7 @@ internal sealed unsafe class ReactivePropertyState<T> : IDisposable
         {
             if (IsDisposed)
             {
-                LuminTaskCoreSource.TrySetCanceled(handle);
+                LuminTaskSource.TrySetCanceled(handle);
                 return task;
             }
             awaiter.Next = _awaiterHead;
@@ -304,7 +304,7 @@ internal sealed class AsyncReactivePropertyAwaiter<T>
         var handle = TakeHandle(ref _handle);
         if (handle == 0) return;
 
-        LuminTaskCoreSource.TrySetCanceled(handle);
+        LuminTaskSource.TrySetCanceled(handle);
         _registration.Release();
     }
 

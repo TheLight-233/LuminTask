@@ -12,26 +12,12 @@ using LuminThread.Utility;
 
 namespace LuminThread;
 
-// A task is nothing but a 64-bit slot handle (see LuminTask.Handle.cs); a zero handle means the
-// task completed synchronously and holds no slot at all. Compared with the previous
-// {VTable*, void* source, short id} triple this drops the struct from 24 to 8 bytes, removes every
-// unmanaged source block and every per-T vtable, and - most importantly - leaves no raw pointer
-// alive: all operations validate the slot generation before touching the slot, so a stale handle
-// fails fast instead of reading recycled memory.
-//
-// The task is also its own async method builder. The two pieces of builder state that used to live
-// in AsyncLuminTaskMethodBuilder[<T>] are parked in the slot instead of in the struct: the state
-// machine box (LuminTaskCoreSource.SetBox / BoxAt, applied by LuminTaskBuilder) and a synchronously
-// raised exception (recorded by renting a slot and completing it faulted). What remains in the
-// struct is the handle - and for LuminTask<T> the inline result of the synchronous path - so the
-// size is unchanged: 8 bytes, and 8 + sizeof(T).
-//
-// `readonly` is applied member by member rather than to the struct, because the builder half has to
-// write the handle. Awaiter-side members are all readonly, so awaiting through a readonly field or
-// an `in` parameter still avoids a defensive copy.
+// A synchronous success uses the zero handle and stores a typed result in the task itself.
+// The builder rents a generation-checked slot on first suspension or fault. The slot owns
+// the runner while pending. Readonly awaiter members avoid defensive copies of the task.
 [AsyncMethodBuilder(typeof(LuminTask))]
 [StructLayout(LayoutKind.Sequential)]
-public unsafe partial struct LuminTask : ICriticalNotifyCompletion
+public partial struct LuminTask : ICriticalNotifyCompletion
 {
     internal LuminTaskHandle _handle;
 
@@ -52,7 +38,7 @@ public unsafe partial struct LuminTask : ICriticalNotifyCompletion
     {
         [DebuggerHidden]
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        get => _handle.IsNull() || LuminTaskCoreSource.IsCompleted(_handle);
+        get => _handle.IsNull() || LuminTaskSource.IsCompleted(_handle);
     }
 
     [DebuggerHidden]
@@ -62,12 +48,12 @@ public unsafe partial struct LuminTask : ICriticalNotifyCompletion
         if (_handle.IsNull())
             return;
 
-        LuminTaskCoreSource.ConsumeVoid(_handle);
+        LuminTaskSource.ConsumeVoid(_handle);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public readonly void OnCompleted(Action continuation)
-        => LuminTaskCoreSource.OnCompleted(_handle, continuation);
+        => LuminTaskSource.OnCompleted(_handle, continuation);
 
     [DebuggerHidden]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -79,7 +65,7 @@ public unsafe partial struct LuminTask : ICriticalNotifyCompletion
         }
         else
         {
-            LuminTaskCoreSource.OnCompleted(_handle, continuation, state);
+            LuminTaskSource.OnCompleted(_handle, continuation, state);
         }
     }
 
@@ -90,7 +76,7 @@ public unsafe partial struct LuminTask : ICriticalNotifyCompletion
     {
         [DebuggerHidden]
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        get => _handle.IsNull() ? LuminTaskStatus.Succeeded : LuminTaskCoreSource.GetStatus(_handle);
+        get => _handle.IsNull() ? LuminTaskStatus.Succeeded : LuminTaskSource.GetStatus(_handle);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -113,7 +99,7 @@ public unsafe partial struct LuminTask : ICriticalNotifyCompletion
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public readonly override string? ToString()
     {
-        return _handle.IsNull() ? "()" : "(" + LuminTaskCoreSource.GetStatus(_handle) + ")";
+        return _handle.IsNull() ? "()" : "(" + LuminTaskSource.GetStatus(_handle) + ")";
     }
 
     // ----------------------------------------------------------------------------------
@@ -155,10 +141,7 @@ public unsafe partial struct LuminTask : ICriticalNotifyCompletion
         if (handle.IsNull())
             return;
 
-        // Read everything needed first: returning the box zeroes the state machine that hosts this
-        // builder, so nothing may be read off `this` afterwards. The box return and the completion
-        // share one slot resolve (see LuminTaskCoreSource.TrySetResultAndReturnBox).
-        LuminTaskCoreSource.TrySetResultAndReturnBox(handle);
+        LuminTaskSource.TrySetResult(handle);
     }
 
     [DebuggerHidden]
@@ -172,7 +155,7 @@ public unsafe partial struct LuminTask : ICriticalNotifyCompletion
         if (handle.IsNull())
             handle = _handle = RentSlot();
 
-        LuminTaskCoreSource.TrySetExceptionAndReturnBox(handle, exception);
+        LuminTaskSource.TrySetException(handle, exception);
     }
 
     [DebuggerHidden]
@@ -183,7 +166,11 @@ public unsafe partial struct LuminTask : ICriticalNotifyCompletion
         where TAwaiter : INotifyCompletion
         where TStateMachine : IAsyncStateMachine
     {
-        awaiter.OnCompleted(LuminTaskBuilder.GetOrCreateBox(ref _handle, ref stateMachine).MoveNextAction);
+        bool first = _handle == 0;
+        if (first) _handle = RentSlot();
+        var runner = LuminTaskBuilder.GetRunner(_handle, ref stateMachine, first);
+        try { awaiter.OnCompleted(runner.MoveNextAction); }
+        finally { if (first) runner.Exit(); }
     }
 
     [DebuggerHidden]
@@ -195,13 +182,17 @@ public unsafe partial struct LuminTask : ICriticalNotifyCompletion
         where TAwaiter : ICriticalNotifyCompletion
         where TStateMachine : IAsyncStateMachine
     {
-        awaiter.UnsafeOnCompleted(LuminTaskBuilder.GetOrCreateBox(ref _handle, ref stateMachine).MoveNextAction);
+        bool first = _handle == 0;
+        if (first) _handle = RentSlot();
+        var runner = LuminTaskBuilder.GetRunner(_handle, ref stateMachine, first);
+        try { awaiter.UnsafeOnCompleted(runner.MoveNextAction); }
+        finally { if (first) runner.Exit(); }
     }
 }
 
 [AsyncMethodBuilder(typeof(LuminTask<>))]
 [StructLayout(LayoutKind.Sequential)]
-public unsafe partial struct LuminTask<T> : ICriticalNotifyCompletion
+public partial struct LuminTask<T> : ICriticalNotifyCompletion
 {
     internal LuminTaskHandle _handle;
 
@@ -238,7 +229,7 @@ public unsafe partial struct LuminTask<T> : ICriticalNotifyCompletion
     {
         [DebuggerHidden]
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        get => _handle.IsNull() || LuminTaskCoreSource.IsCompleted(_handle);
+        get => _handle.IsNull() || LuminTaskSource.IsCompleted(_handle);
     }
 
     [DebuggerHidden]
@@ -253,7 +244,7 @@ public unsafe partial struct LuminTask<T> : ICriticalNotifyCompletion
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public readonly void OnCompleted(Action continuation)
-        => LuminTaskCoreSource.OnCompleted(_handle, continuation);
+        => LuminTaskSource.OnCompleted(_handle, continuation);
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public readonly void UnsafeOnCompleted(Action continuation) => OnCompleted(continuation);
@@ -262,7 +253,7 @@ public unsafe partial struct LuminTask<T> : ICriticalNotifyCompletion
     {
         [DebuggerHidden]
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        get => _handle.IsNull() ? LuminTaskStatus.Succeeded : LuminTaskCoreSource.GetStatus(_handle);
+        get => _handle.IsNull() ? LuminTaskStatus.Succeeded : LuminTaskSource.GetStatus(_handle);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -292,7 +283,7 @@ public unsafe partial struct LuminTask<T> : ICriticalNotifyCompletion
     public readonly override string? ToString()
     {
         return _handle.IsNull() ? _result?.ToString()
-            : "(" + LuminTaskCoreSource.GetStatus(_handle) + ")";
+            : "(" + LuminTaskSource.GetStatus(_handle) + ")";
     }
 
     // ----------------------------------------------------------------------------------
@@ -335,10 +326,7 @@ public unsafe partial struct LuminTask<T> : ICriticalNotifyCompletion
             return;
         }
 
-        // `result` is a parameter, so it survives returning the box (which zeroes the state machine
-        // that hosts this builder); the handle is captured before that as well. The box return and
-        // the completion share one slot resolve.
-        LuminTaskResultBridge.TrySetResultAndReturnBox(handle, in result);
+        LuminTaskResultBridge.TrySetResult(handle, in result);
     }
 
     [DebuggerHidden]
@@ -350,7 +338,7 @@ public unsafe partial struct LuminTask<T> : ICriticalNotifyCompletion
         if (handle.IsNull())
             handle = _handle = LuminTask.RentSlot();
 
-        LuminTaskCoreSource.TrySetExceptionAndReturnBox(handle, exception);
+        LuminTaskSource.TrySetException(handle, exception);
     }
 
     [DebuggerHidden]
@@ -361,7 +349,11 @@ public unsafe partial struct LuminTask<T> : ICriticalNotifyCompletion
         where TAwaiter : INotifyCompletion
         where TStateMachine : IAsyncStateMachine
     {
-        awaiter.OnCompleted(LuminTaskBuilder.GetOrCreateBox(ref _handle, ref stateMachine).MoveNextAction);
+        bool first = _handle == 0;
+        if (first) _handle = LuminTaskResultBridge.Rent<T>();
+        var runner = LuminTaskBuilder.GetRunner(_handle, ref stateMachine, first);
+        try { awaiter.OnCompleted(runner.MoveNextAction); }
+        finally { if (first) runner.Exit(); }
     }
 
     [DebuggerHidden]
@@ -373,6 +365,10 @@ public unsafe partial struct LuminTask<T> : ICriticalNotifyCompletion
         where TAwaiter : ICriticalNotifyCompletion
         where TStateMachine : IAsyncStateMachine
     {
-        awaiter.UnsafeOnCompleted(LuminTaskBuilder.GetOrCreateBox(ref _handle, ref stateMachine).MoveNextAction);
+        bool first = _handle == 0;
+        if (first) _handle = LuminTaskResultBridge.Rent<T>();
+        var runner = LuminTaskBuilder.GetRunner(_handle, ref stateMachine, first);
+        try { awaiter.UnsafeOnCompleted(runner.MoveNextAction); }
+        finally { if (first) runner.Exit(); }
     }
 }

@@ -1,4 +1,5 @@
-﻿using System;
+using LuminThread.Utility;
+using System;
 using System.Collections.Concurrent;
 using System.Runtime.CompilerServices;
 using System.Threading;
@@ -351,8 +352,9 @@ namespace LuminThread.Unity
         // cancelled when the operation finishes still completes the task as canceled. That is the
         // contract the pre-shared-block adapter had, and it keeps "cancelled before the next poll"
         // from silently turning into a success.
-        private sealed class AsyncOperationState : IDisposable
+        private sealed class AsyncOperationState : IDisposable, ILuminCacheNode
         {
+            public ILuminCacheNode CacheNext { get; set; }
             private readonly Action<AsyncOperation> _onCompleted;
             private readonly Action _onCancelRequested;
 
@@ -539,38 +541,12 @@ namespace LuminThread.Unity
             }
         }
 
-        // Bounded, non-generic pool: all five adapters share one closed block type, and the blocks keep
-        // their cached callbacks warm. Mirrors the WaitNodePool shape used by AsyncEx (fast slot, then
-        // a capped chain) so nothing here grows with the peak the process reached.
         private static class AsyncOperationStatePool
         {
-            private const int MaxRetained = 16;
+            internal static AsyncOperationState Rent() =>
+                (AsyncOperationState)LuminTaskIdleCache.Take(typeof(AsyncOperationState)) ?? new AsyncOperationState();
 
-            private static AsyncOperationState _fast;
-            private static readonly ConcurrentQueue<AsyncOperationState> _overflow = new ConcurrentQueue<AsyncOperationState>();
-
-            internal static AsyncOperationState Rent()
-            {
-                var state = Interlocked.Exchange(ref _fast, null);
-                if (state != null)
-                    return state;
-
-                return _overflow.TryDequeue(out state) ? state : new AsyncOperationState();
-            }
-
-            internal static void Return(AsyncOperationState state)
-            {
-                if (Interlocked.CompareExchange(ref _fast, state, null) == null)
-                    return;
-
-                // The fast slot already holds one of the retained blocks, so the chain may only top up to
-                // MaxRetained - 1: otherwise the real retention is 17 and the constant lies. Same
-                // accounting as StatePool / WaitNodePool / EventStatePool / ThreadPoolWorkItem.
-                if (_overflow.Count >= MaxRetained - 1)
-                    return;
-
-                _overflow.Enqueue(state);
-            }
+            internal static void Return(AsyncOperationState state) => LuminTaskIdleCache.Return(state, 384);
         }
 
         private static class AsyncOperationPromise

@@ -79,7 +79,7 @@ namespace LuminThread.Unity
                 public ulong Handle;
             }
 
-            public static unsafe LuminTask<UnityEngine.Object[]> Create(AsyncInstantiateOperation asyncOperation, PlayerLoopTiming timing, IProgress<float> progress, CancellationToken cancellationToken, bool cancelImmediately)
+            public static LuminTask<UnityEngine.Object[]> Create(AsyncInstantiateOperation asyncOperation, PlayerLoopTiming timing, IProgress<float> progress, CancellationToken cancellationToken, bool cancelImmediately)
             {
                 var task = LuminTaskSource.Create<UnityEngine.Object[]>(out ulong handle);
                 var stateData = new StateData
@@ -189,7 +189,7 @@ namespace LuminThread.Unity
                 public ulong Handle;
             }
 
-            public static unsafe LuminTask<T[]> Create(AsyncInstantiateOperation<T> asyncOperation, PlayerLoopTiming timing, IProgress<float> progress, CancellationToken cancellationToken, bool cancelImmediately)
+            public static LuminTask<T[]> Create(AsyncInstantiateOperation<T> asyncOperation, PlayerLoopTiming timing, IProgress<float> progress, CancellationToken cancellationToken, bool cancelImmediately)
             {
                 var task = LuminTaskSource.Create<T[]>(out ulong handle);
                 var stateData = new StateData

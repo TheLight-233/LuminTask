@@ -9,8 +9,6 @@ namespace LuminThread;
 
 public partial struct LuminTask
 {
-    private static readonly MoveNext DelayFrameStepAction = DelayFrameStep;
-
     /// <summary>Yields to the selected player-loop timing for the requested number of frames.</summary>
     public static LuminTask DelayFrame(int frameCount, PlayerLoopTiming timing = PlayerLoopTiming.Update, CancellationToken cancellationToken = default)
     {
@@ -18,51 +16,30 @@ public partial struct LuminTask
         if (cancellationToken.IsCancellationRequested) return FromCanceled(cancellationToken);
         if (frameCount == 0) return CompletedTask();
 
-        var handle = RentSlot();
-        ref var item = ref GetRentedSlot(handle, out var cold, out int index);
+        long remaining = frameCount;
+        var handle = LuminTaskResultBridge.RentState(in remaining);
 
-        // The remaining frame count gets its own unmanaged block; the slot only holds the pointer.
-        unsafe
-        {
-            void* scratch = MemoryHelper.Alloc(sizeof(int));
-            UnsafeMemory.Write(scratch, frameCount);
-            cold.SetPayload(index, (nint)scratch);
-        }
-
-        PlayerLoopHelper.AddAction(timing, new LuminTaskState(handle, cancellationToken), DelayFrameStepAction);
+        PlayerLoopHelper.Schedule(timing, new LuminTaskState(handle, cancellationToken), DelayFrameStep);
 
         return new LuminTask(handle);
     }
 
     private static bool DelayFrameStep(in LuminTaskState state)
     {
-        ref var item = ref LuminTaskCoreSource.TryResolve(state.Handle, out var cold, out int index);
-
-        // The slot was already consumed and recycled (for example by cancelImmediately): drop the item.
-        if (Unsafe.IsNullRef(ref item))
-            return false;
-
         if (state.CancellationToken.IsCancellationRequested)
         {
-            LuminTaskCoreSource.TrySetCanceled(state.Handle, state.CancellationToken);
+            LuminTaskSource.TrySetCanceled(state.Handle, state.CancellationToken);
             return false;
         }
 
-        nint scratch = cold.PayloadAt(index);
+        var page = LuminTaskSource.Enter(state.Handle, out int i, out long control, pendingOnly: true);
+        if (page == null) return false;
+        ref var slot = ref page.Slots[i];
+        bool waiting = --slot.Data.First > 0;
+        Volatile.Write(ref slot.Control, control);
+        if (waiting) return true;
 
-        // Released already (the slot was consumed): drop the item.
-        if (scratch == 0)
-            return false;
-
-        unsafe
-        {
-            ref int remaining = ref Unsafe.AsRef<int>((void*)scratch);
-
-            if (--remaining > 0)
-                return true;
-        }
-
-        LuminTaskCoreSource.TrySetResult(state.Handle);
+        LuminTaskSource.TrySetResult(state.Handle);
         return false;
     }
 }
