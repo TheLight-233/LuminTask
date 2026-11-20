@@ -11,7 +11,12 @@ internal static class LuminTaskBuilder
         // this slot before that producer publishes a terminal outcome.
         var page = SlotStore.Find(handle, out int index)!;
         ref var slot = ref page.Slots[index];
-        if (!first) return (StateMachineBox)slot.ProducerState!;
+        if (!first)
+        {
+            var active = (StateMachineBox)slot.ProducerState!;
+            active.ReserveResume();
+            return active;
+        }
         var runner = StateMachineBox<TStateMachine>.Rent();
         runner.Machine = machine;
         slot.ProducerState = runner;

@@ -8,7 +8,7 @@ namespace LuminThread.CompilerServices;
 internal abstract class StateMachineBox : ILuminCacheNode
 {
     private readonly int _charge;
-    private int _owners;
+    private int _owners, _published;
     internal readonly Action MoveNextAction;
     public ILuminCacheNode? CacheNext { get; set; }
 
@@ -18,18 +18,29 @@ internal abstract class StateMachineBox : ILuminCacheNode
         MoveNextAction = Resume;
     }
 
-    protected void Acquire() => _owners = 2; // first registration and producer
+    // The first registration owns its frame and reserves a lease for the callback.
+    // Later suspensions reserve their callback before passing the delegate to the awaiter.
+    protected void Acquire()
+    {
+        _published = 0;
+        _owners = 2;
+    }
+
+    internal void ReserveResume() => Interlocked.Increment(ref _owners);
+    internal void Published() => Volatile.Write(ref _published, 1);
 
     private void Resume()
     {
-        Interlocked.Increment(ref _owners);
-        try { Advance(); }
+        try
+        {
+            if (Volatile.Read(ref _published) == 0) Advance();
+        }
         finally { Exit(); }
     }
 
     internal void Exit()
     {
-        if (Interlocked.Decrement(ref _owners) != 0) return;
+        if (Interlocked.Decrement(ref _owners) != 0 || Volatile.Read(ref _published) == 0) return;
         Clear();
         LuminTaskIdleCache.Return(this, _charge);
     }

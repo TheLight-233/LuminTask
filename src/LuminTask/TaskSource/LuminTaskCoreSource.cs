@@ -41,20 +41,30 @@ public static partial class LuminTaskSource
         (control & Active) != 0 && ((control ^ (long)handle) & IdentityMask) == 0;
 
     // Never hold the slot gate over a pool/allocator lock or a user callback.
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal static SlotStore.Page? Enter(ulong handle, out int offset, out long control, bool pendingOnly = false)
     {
         var page = SlotStore.Find(handle, out offset);
-        control = 0;
-        if (page == null) return null;
+        if (page == null) { control = 0; return null; }
+        ref long word = ref page.Slots[offset].Control;
+        control = Volatile.Read(ref word);
+        if (!Matches(control, handle) || (pendingOnly && (control & StatusMask) != 0)) return null;
+        if ((control & Busy) == 0 && Interlocked.CompareExchange(ref word, control | Busy, control) == control)
+            return page;
+        return EnterContended(page, offset, handle, pendingOnly, out control);
+    }
+
+    private static SlotStore.Page? EnterContended(SlotStore.Page page, int offset, ulong handle, bool pendingOnly, out long control)
+    {
         ref long word = ref page.Slots[offset].Control;
         var spin = new SpinWait();
         do
         {
+            spin.SpinOnce();
             control = Volatile.Read(ref word);
             if (!Matches(control, handle) || (pendingOnly && (control & StatusMask) != 0)) return null;
             if ((control & Busy) == 0 && Interlocked.CompareExchange(ref word, control | Busy, control) == control)
                 return page;
-            spin.SpinOnce();
         } while (true);
     }
 
@@ -188,7 +198,7 @@ public static partial class LuminTaskSource
         Volatile.Write(ref slot.Control, control | (long)status);
         // A consumer may already have recycled the slot.
         discarded?.ReturnToPool();
-        if (producer is StateMachineBox runner) runner.Exit();
+        if (producer is StateMachineBox runner) runner.Published();
         else if (producer is CancellationCallbackState binding) binding.Registration.Release();
         if (continuation != null) Invoke(continuation, state);
     }

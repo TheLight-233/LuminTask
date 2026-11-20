@@ -10,6 +10,7 @@ internal static class RuntimeV2Tests
     internal static async Task RunAll(TestRunner runner)
     {
         await runner.Run("inline registration retains the executing runner", InlineRegistration);
+        await runner.Run("a callback delivered after failed registration cannot resume a recycled machine", FailedRegistration);
         await runner.Run("two consumers and two producers each have exactly one winner", ConcurrentOwnership);
         await runner.Run("trim and cache pressure preserve reference-containing values", ManagedResults);
         await runner.Run("a late WhenAny loser and idle runner release the winner", WinnerCanBeCollected);
@@ -55,6 +56,41 @@ internal static class RuntimeV2Tests
             Assert.False(ReferenceEquals(first.Runner, next.Runner));
         };
         Assert.Equal(71, Immediate(first).GetResult());
+    }
+
+    private sealed class ThrowingAwaiter : ICriticalNotifyCompletion
+    {
+        internal Action? Late;
+        internal bool Continued;
+        public ThrowingAwaiter GetAwaiter() => this;
+        public bool IsCompleted => false;
+        public void GetResult() { }
+        public void OnCompleted(Action continuation) => UnsafeOnCompleted(continuation);
+        public void UnsafeOnCompleted(Action continuation)
+        {
+            Late = continuation;
+            throw new FormatException("registration");
+        }
+    }
+
+    private static async LuminTask AfterFailure(ThrowingAwaiter source)
+    {
+        await source;
+        source.Continued = true;
+    }
+
+    private static void FailedRegistration()
+    {
+        var first = new ThrowingAwaiter();
+        try { AfterFailure(first).GetResult(); Assert.Fail("expected registration failure"); }
+        catch (FormatException) { }
+        var second = new ThrowingAwaiter();
+        try { AfterFailure(second).GetResult(); Assert.Fail("expected registration failure"); }
+        catch (FormatException) { }
+        Assert.False(ReferenceEquals(first.Late!.Target, second.Late!.Target));
+        first.Late();
+        second.Late();
+        Assert.False(first.Continued || second.Continued);
     }
 
     private static void ConcurrentOwnership()
