@@ -13,7 +13,7 @@ namespace LuminThread.Utility
 
         internal override void Completed(ulong handle, int index)
         {
-            LuminTaskSource.Forget(handle);
+            LuminTaskSource.TryForget(handle);
         }
 
         private LuminTask _awaiter;
@@ -47,8 +47,9 @@ namespace LuminThread.Utility
 
             LuminTaskIdleCache.Return(b, 64);
 
+            if (handler == null) { LuminTaskSource.TryForget(awaiter._handle); return; }
             try { awaiter.GetResult(); }
-            catch (Exception ex) { handler?.Invoke(ex); }
+            catch (Exception ex) { handler(ex); }
         }
     }
 }

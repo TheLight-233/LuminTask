@@ -2,7 +2,6 @@ using System;
 using System.Runtime.CompilerServices;
 using System.Collections.Generic;
 using LuminThread.TaskSource;
-using System.Threading;
 
 namespace LuminThread.AsyncEx
 {
@@ -21,7 +20,7 @@ namespace LuminThread.AsyncEx
 
         public AsyncLazy(Func<T> factory, AsyncLazyFlags flags = AsyncLazyFlags.None)
         {
-            _state = new AsyncLazyState<T>(WrapFactory(factory), flags);
+            _state = new AsyncLazyState<T>(factory, flags);
         }
 
         public AsyncLazy(Func<LuminTask<T>> factory, AsyncLazyFlags flags = AsyncLazyFlags.None)
@@ -41,14 +40,11 @@ namespace LuminThread.AsyncEx
         private AsyncLazyState<T> GetState()
             => _state ?? throw new InvalidOperationException("AsyncLazy<T> 未初始化（default 值）或已释放");
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private static Func<LuminTask<T>> WrapFactory(Func<T> factory)
-            => () => LuminTask.FromResult(factory());
     }
 
     internal sealed class AsyncLazyState<T> : IDisposable
     {
-        private Func<LuminTask<T>>? _factory;
+        private Delegate? _factory;
         private readonly bool _executeOnCallingThread;
         private readonly bool _retryOnFailure;
 
@@ -59,9 +55,9 @@ namespace LuminThread.AsyncEx
         private bool _isCompleted;
         private T? _result;
         private Exception? _error;
-        private volatile bool _isDisposed;
+        private bool _isDisposed;
 
-        public AsyncLazyState(Func<LuminTask<T>> factory, AsyncLazyFlags flags)
+        internal AsyncLazyState(Delegate factory, AsyncLazyFlags flags)
         {
             if (factory == null)
                 throw new ArgumentNullException(nameof(factory));
@@ -85,13 +81,11 @@ namespace LuminThread.AsyncEx
         {
             get
             {
-                if (_isDisposed)
-                    throw new ObjectDisposedException(nameof(AsyncLazy<T>));
-
                 LuminTask<T> result;
-                var start = false;
+                Delegate? start = null;
                 lock (this)
                 {
+                    if (_isDisposed) throw new ObjectDisposedException(nameof(AsyncLazy<T>));
                     if (_isCompleted)
                     {
                         if (_error is null)
@@ -104,7 +98,7 @@ namespace LuminThread.AsyncEx
                     if (!_isStarted)
                     {
                         _isStarted = true;
-                        start = true;
+                        start = _factory;
                     }
 
                     result = LuminTaskSource.Create<T>(out var waiter);
@@ -113,20 +107,29 @@ namespace LuminThread.AsyncEx
                     else (_additionalWaiters ??= new List<ulong>()).Add(waiter);
                 }
 
-                if (start)
-                    ResolveAsync().Forget();
+                if (start != null) ResolveAsync(start).Forget();
                 return result;
             }
         }
 
-        private async LuminTask ResolveAsync()
+        private LuminTask<T> InvokeFactory(Delegate factory)
+        {
+            if (factory is Func<LuminTask<T>> asyncFactory)
+                return _executeOnCallingThread ? asyncFactory() : LuminTask.Run(asyncFactory);
+            var syncFactory = (Func<T>)factory;
+            return _executeOnCallingThread ? LuminTask.FromResult(syncFactory()) : LuminTask.Run(syncFactory);
+        }
+
+        private async LuminTask ResolveAsync(Delegate? factory)
         {
             T result = default!;
             Exception? error = null;
             try
             {
-                var factory = _factory!;
-                result = await (_executeOnCallingThread ? factory() : LuminTask.Run(factory)).ConfigureAwait(false);
+                var task = InvokeFactory(factory!);
+                // A pending initializer can outlive Dispose. Keep only the task across the await.
+                factory = null;
+                result = await task.ConfigureAwait(false);
             }
             catch (Exception ex) { error = ex; }
 
@@ -134,9 +137,12 @@ namespace LuminThread.AsyncEx
             List<ulong>? additional;
             lock (this)
             {
-                _result = result;
-                _error = error;
                 _isCompleted = error == null || !_retryOnFailure;
+                if (_isCompleted && !_isDisposed)
+                {
+                    _result = result;
+                    _error = error;
+                }
                 _isStarted = _isCompleted;
                 if (_isCompleted) _factory = null;
                 first = _firstWaiter;
@@ -162,7 +168,13 @@ namespace LuminThread.AsyncEx
 
         public void Dispose()
         {
-            _isDisposed = true;
+            lock (this)
+            {
+                _isDisposed = true;
+                _factory = null;
+                _result = default;
+                _error = null;
+            }
         }
     }
 

@@ -1,5 +1,6 @@
 using System.Runtime.CompilerServices;
 using LuminThread;
+using LuminThread.AsyncEx;
 using LuminThread.Interface;
 using LuminThread.Utility;
 
@@ -21,7 +22,14 @@ internal static class RuntimeV2Tests
         await runner.Run("ConfigureAwait captures and restores the execution context", CaptureContext);
         await runner.Run("WhenEach delivers queued, waiting and faulted results", WhenEachDelivery);
         await runner.Run("WhenEach disposal drains children and wakes pending MoveNext", EarlyDispose);
+        await runner.Run("suppressed cancellation and forgotten results release the right outcome", CancellationConsumption);
+        await runner.Run("WhenEach snapshots inline inputs and isolates reused sessions", EnumerationOwnership);
+        await runner.Run("a reentrant WhenEach consumer can close and start another enumeration", ReentrantEnumeration);
+        await runner.Run("forwarding preserves cells, references, faults and cancellation tokens", ForwardedOutcomes);
+        await runner.Run("disposed lazy copies release values and honor admitted waiters", LazyLifetime);
+        await runner.Run("wide WhenAny retains the winning position", WideAny);
 #if !DEBUG
+        await runner.Run("canceling warm tasks without observing exceptions allocates zero", CancellationAllocation);
         await runner.Run("cross-thread suspension reuses its runner", CrossThreadAllocation);
 #endif
     }
@@ -295,6 +303,232 @@ internal static class RuntimeV2Tests
         Assert.False(await move);
         LuminTaskSource.SetResult(handle, "late");
         Assert.Equal(before, LuminTaskBag.GetLiveCount());
+    }
+
+    private static void CancellationConsumption()
+    {
+        int live = LuminTaskBag.GetLiveCount();
+        using var source = new CancellationTokenSource();
+        source.Cancel();
+        foreach (var token in new[] { default, source.Token })
+        {
+            var pending = LuminTaskSource.Create(out var handle).SuppressCancellationThrow();
+            LuminTaskSource.SetCanceled(handle, token);
+            Assert.True(pending.GetResult());
+            Assert.True(LuminTask.FromCanceled<string>(token).SuppressCancellationThrow().GetResult().IsCanceled);
+
+            Exception? seen = null;
+            var forgotten = LuminTaskSource.Create<(object, long, long)>(out handle);
+            forgotten.Forget(error => seen = error);
+            LuminTaskSource.SetCanceled(handle, token);
+            Assert.Equal(token, ((OperationCanceledException)seen!).CancellationToken);
+            seen = null;
+            LuminTask.FromCanceled(token).Forget(error => seen = error);
+            Assert.Equal(token, ((OperationCanceledException)seen!).CancellationToken);
+        }
+        var failure = new FormatException();
+        var checkedResult = LuminTaskSource.Create<int>(out var failed).SuppressCancellationThrow();
+        LuminTaskSource.SetException(failed, failure);
+        try { checkedResult.GetResult(); Assert.Fail("expected the original fault"); }
+        catch (FormatException ex) { Assert.True(ReferenceEquals(failure, ex)); }
+
+        // A result implementing the pool interface belongs to the caller.
+        var userBox = StateTuple.Create(37);
+        var reference = LuminTaskSource.Create<object>(out var resultHandle);
+        LuminTaskSource.SetResult(resultHandle, (object)userBox);
+        reference.Forget();
+        Assert.Equal(37, userBox.Item);
+        userBox.Dispose();
+        Assert.Equal(live, LuminTaskBag.GetLiveCount());
+    }
+
+    private static void EnumerationOwnership()
+    {
+        var inline = new[] { LuminTask.FromResult("first"), LuminTask.FromResult("second") };
+        var enumerable = LuminTask.WhenEach(inline);
+        var first = enumerable.GetAsyncEnumerator();
+        Array.Clear(inline);
+        try { enumerable.GetAsyncEnumerator(); Assert.Fail("expected single consumption"); }
+        catch (InvalidOperationException) { }
+        Assert.True(first.MoveNextAsync().GetResult());
+        Assert.Equal("first", first.Current.Result);
+        Assert.True(first.MoveNextAsync().GetResult());
+        Assert.Equal("second", first.Current.Result);
+        first.DisposeAsync().GetResult();
+        Assert.False(first.MoveNextAsync().GetResult());
+
+        var old = LuminTask.WhenEach(LuminTaskSource.Create<string>(out var early)).GetAsyncEnumerator();
+        var waiting = old.MoveNextAsync();
+        old.DisposeAsync().GetResult();
+        Assert.False(waiting.GetResult());
+        var next = LuminTask.WhenEach(LuminTaskSource.Create<string>(out var current)).GetAsyncEnumerator();
+        var pending = next.MoveNextAsync();
+        LuminTaskSource.SetCanceled(early);
+        Assert.False(pending.IsCompleted);
+        LuminTaskSource.SetResult(current, "next");
+        Assert.True(pending.GetResult());
+        Assert.Equal("next", next.Current.Result);
+        next.DisposeAsync().GetResult();
+
+        var reused = LuminTask.WhenEach(LuminTaskSource.Create<string>(out var last)).GetAsyncEnumerator();
+        old.DisposeAsync().GetResult();
+        Assert.False(next.MoveNextAsync().GetResult());
+        LuminTaskSource.SetResult(last, "last");
+        Assert.True(reused.MoveNextAsync().GetResult());
+        Assert.Equal("last", reused.Current.Result);
+        reused.DisposeAsync().GetResult();
+    }
+
+    private static void ReentrantEnumeration()
+    {
+        var old = LuminTask.WhenEach(LuminTaskSource.Create<string>(out var handle)).GetAsyncEnumerator();
+        var next = old;
+        var move = old.MoveNextAsync();
+        ulong second = 0;
+        move.OnCompleted(() =>
+        {
+            Assert.True(move.GetResult());
+            Assert.Equal("one", old.Current.Result);
+            old.DisposeAsync().GetResult();
+            next = LuminTask.WhenEach(LuminTaskSource.Create<string>(out second)).GetAsyncEnumerator();
+        });
+        LuminTaskSource.SetResult(handle, "one");
+        Assert.False(old.MoveNextAsync().GetResult());
+        var waiting = next.MoveNextAsync();
+        LuminTaskSource.SetResult(second, "two");
+        Assert.True(waiting.GetResult());
+        Assert.Equal("two", next.Current.Result);
+        next.DisposeAsync().GetResult();
+
+        using var lifetime = new CancellationTokenSource();
+        var cancelable = LuminTask.WhenEach(LuminTaskSource.Create<string>(out var late))
+            .GetAsyncEnumerator(lifetime.Token);
+        var canceledMove = cancelable.MoveNextAsync();
+        lifetime.Cancel();
+        try { canceledMove.GetResult(); Assert.Fail("expected canceled MoveNext"); }
+        catch (OperationCanceledException ex) { Assert.Equal(lifetime.Token, ex.CancellationToken); }
+        cancelable.DisposeAsync().GetResult();
+        LuminTaskSource.SetCanceled(late, lifetime.Token);
+    }
+
+    private static async LuminTask ForwardedOutcomes()
+    {
+        using var lifetime = new CancellationTokenSource();
+        var limit = TimeSpan.FromSeconds(10);
+        var marker = new object();
+        var large = LuminTaskSource.Create<(object, long, long)>(out var h).WaitAsync(lifetime.Token).Timeout(limit);
+        LuminTaskSource.SetResult(h, (marker, 41L, 73L));
+        Assert.Equal((marker, 41L, 73L), await large);
+
+        var reference = LuminTaskSource.Create<object>(out h).Timeout(limit).WaitAsync(lifetime.Token);
+        LuminTaskSource.SetResult(h, marker);
+        Assert.True(ReferenceEquals(marker, await reference));
+
+        var viewed = (LuminTask)LuminTaskSource.Create<(object, long, long)>(out h);
+        var discard = viewed.Timeout(limit);
+        LuminTaskSource.SetResult(h, (marker, 1L, 2L));
+        await discard;
+
+        var error = new FormatException("original");
+        var fault = LuminTaskSource.Create<int>(out h).Timeout(limit).WaitAsync(lifetime.Token)
+            .ContinueWith(static _ => throw new AssertException("faulted input ran a callback"), PlayerLoopTiming.DotNet);
+        LuminTaskSource.SetException(h, error);
+        try { await fault; Assert.Fail("expected the original fault"); }
+        catch (FormatException ex) { Assert.True(ReferenceEquals(error, ex)); }
+
+        using var canceled = new CancellationTokenSource();
+        canceled.Cancel();
+        var input = LuminTaskSource.Create<int>(out h).WaitAsync(lifetime.Token).Timeout(limit);
+        LuminTaskSource.SetCanceled(h, canceled.Token);
+        try { await input; Assert.Fail("expected cancellation"); }
+        catch (OperationCanceledException ex) { Assert.Equal(canceled.Token, ex.CancellationToken); }
+
+        var callback = LuminTask.FromResult(3).ContinueWith(static n => LuminTask.FromResult((new object(), 1L, (long)n)));
+        Assert.Equal(3L, (await callback).Item3);
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static WeakReference DisposedLazyValue(out AsyncLazy<object> copy)
+    {
+        var value = new object();
+        var lazy = new AsyncLazy<object>(() => value, AsyncLazyFlags.ExecuteOnCallingThread);
+        copy = lazy;
+        Assert.True(ReferenceEquals(value, lazy.Task.GetResult()));
+        lazy.Dispose();
+        return new WeakReference(value);
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static WeakReference DisposePendingFactory(out LuminTask<int> wait, out ulong handle)
+    {
+        var marker = new object();
+        LuminTaskSource.Rent<int>(out handle);
+        var input = handle;
+        var lazy = new AsyncLazy<int>(() => { GC.KeepAlive(marker); return LuminTaskSource.ToTask<int>(input); }, AsyncLazyFlags.ExecuteOnCallingThread);
+        wait = lazy.Task;
+        lazy.Dispose();
+        return new WeakReference(marker);
+    }
+
+    private static void LazyLifetime()
+    {
+        var weak = DisposedLazyValue(out var retainedCopy);
+        GC.Collect(2, GCCollectionMode.Forced, blocking: true, compacting: true);
+        Assert.False(weak.IsAlive);
+        GC.KeepAlive(retainedCopy);
+
+        var capture = DisposePendingFactory(out var pending, out var producer);
+        GC.Collect(2, GCCollectionMode.Forced, blocking: true, compacting: true);
+        bool retainedFactory = capture.IsAlive;
+        LuminTaskSource.SetResult(producer, 13);
+        Assert.Equal(13, pending.GetResult());
+        Assert.False(retainedFactory, "pending resolver retained the disposed factory");
+
+        ulong handle = 0;
+        var lazy = new AsyncLazy<int>(() => LuminTaskSource.Create<int>(out handle), AsyncLazyFlags.ExecuteOnCallingThread);
+        var first = lazy.Task;
+        var second = lazy.Task;
+        lazy.Dispose();
+        try { lazy.Task.Forget(); Assert.Fail("expected disposed lazy"); }
+        catch (ObjectDisposedException) { }
+        LuminTaskSource.SetResult(handle, 7);
+        Assert.Equal(7, first.GetResult());
+        Assert.Equal(7, second.GetResult());
+    }
+
+    private static void WideAny()
+    {
+        var tasks = new LuminTask[96];
+        var handles = new ulong[tasks.Length];
+        for (int i = 0; i < tasks.Length; i++) tasks[i] = LuminTaskSource.Create(out handles[i]);
+        var winner = LuminTask.WhenAny(tasks);
+        LuminTaskSource.SetResult(handles[81]);
+        Assert.Equal(81, winner.GetResult());
+        for (int i = 0; i < tasks.Length; i++)
+            if (i != 81) LuminTaskSource.SetCanceled(handles[i]);
+    }
+
+    private static void CancellationAllocation()
+    {
+        using var source = new CancellationTokenSource();
+        source.Cancel();
+        var token = source.Token;
+        long mark = 0;
+        for (int i = 0; i < 1152; i++)
+        {
+            if (i == 128) mark = GC.GetAllocatedBytesForCurrentThread();
+            ConsumeCanceledPair(token);
+        }
+        Assert.Equal(0L, GC.GetAllocatedBytesForCurrentThread() - mark);
+    }
+
+    private static void ConsumeCanceledPair(CancellationToken token)
+    {
+        var checkedTask = LuminTaskSource.Create<int>(out var handle).SuppressCancellationThrow();
+        LuminTaskSource.SetCanceled(handle, token);
+        var result = checkedTask.GetResult();
+        Assert.True(result.IsCanceled);
+        LuminTask.FromCanceled(token).Forget();
     }
 
     private static async LuminTask<int> Echo(LuminTask<int> task) => await task;

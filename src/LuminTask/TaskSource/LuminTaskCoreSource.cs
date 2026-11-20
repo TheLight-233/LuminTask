@@ -211,8 +211,14 @@ public static partial class LuminTaskSource
             : Complete(handle, LuminTaskStatus.Faulted, ExceptionDispatchInfo.Capture(error));
     }
 
-    internal static bool TrySetCanceled(ulong handle, CancellationToken token = default) =>
-        Complete(handle, LuminTaskStatus.Canceled, token);
+    internal static bool TrySetCanceled(ulong handle, CancellationToken token = default)
+    {
+        if (!token.CanBeCanceled) return Complete(handle, LuminTaskStatus.Canceled, null);
+        var cell = StateTuple.Create(in token);
+        if (Complete(handle, LuminTaskStatus.Canceled, cell)) return true;
+        cell.Dispose();
+        return false;
+    }
 
     private static bool Complete(ulong handle, LuminTaskStatus status, object? outcome)
     {
@@ -259,9 +265,56 @@ public static partial class LuminTaskSource
             var error = slot.Payload;
             ReleaseResult(page, i, handle);
             if (status == (long)LuminTaskStatus.Faulted) ((ExceptionDispatchInfo)error!).Throw();
-            throw new OperationCanceledException((CancellationToken)error!);
+            var cell = (StateTuple<CancellationToken>?)error;
+            var token = cell?.Item ?? default;
+            cell?.Dispose();
+            throw new OperationCanceledException(token);
         }
         return page;
+    }
+
+    // A forwarding promise owns one terminal input. Move its payload before giving the input
+    // slot back; never hold the input and output gates at the same time or while running a callback.
+    internal static bool ForwardIfCompleted(ulong input, ulong output)
+    {
+        if (!IsCompleted(input)) return false;
+        var from = Enter(input, out int i, out long sourceControl);
+        if (from == null) LuminTaskExceptionHelper.ThrowStaleHandle();
+        ref var source = ref from!.Slots[i];
+        var status = (LuminTaskStatus)(sourceControl & StatusMask);
+        long kind = sourceControl & KindMask;
+        var data = source.Data;
+        var payload = source.Payload;
+        ReleaseResult(from, i, input);
+
+        var to = Enter(output, out int j, out long targetControl, pendingOnly: true);
+        if (to == null)
+        {
+            if (kind == Cell || status == LuminTaskStatus.Canceled) ((IPooledResult?)payload)?.ReturnToPool();
+            return true;
+        }
+
+        ref var target = ref to.Slots[j];
+        long prepared = targetControl & KindMask;
+        var discarded = prepared == Cell ? (IPooledResult?)target.Payload : null;
+        if (status == LuminTaskStatus.Succeeded && prepared != kind)
+        {
+            if (prepared != 0)
+            {
+                Volatile.Write(ref target.Control, targetControl);
+                if (kind == Cell) ((IPooledResult?)payload)?.ReturnToPool();
+                TrySetException(output, new InvalidOperationException("Result storage does not match the requested type."));
+                return true;
+            }
+            // A void view of a typed task discards even a reference-containing result.
+            if (kind == Cell) discarded = (IPooledResult?)payload;
+            payload = null;
+            kind = 0;
+        }
+        target.Data = data;
+        target.Payload = payload;
+        Publish(ref target, output, (targetControl & ~KindMask) | kind, status, discarded);
+        return true;
     }
 
     internal static void ReleaseResult(SlotStore.Page page, int i, ulong handle)
@@ -280,10 +333,22 @@ public static partial class LuminTaskSource
         cell?.ReturnToPool();
     }
 
-    // Called by combinators only from a terminal child's continuation.
-    internal static void Forget(ulong handle)
+    // Discarders consume ownership without materializing an exception for an unobserved outcome.
+    internal static bool TryForget(ulong handle)
     {
-        try { ConsumeVoid(handle); } catch (Exception) { }
+        var page = Enter(handle, out int i, out long control);
+        if (page == null) return false;
+        long status = control & StatusMask;
+        if (status == 0)
+        {
+            Volatile.Write(ref page.Slots[i].Control, control);
+            return false;
+        }
+        var cell = (control & KindMask) == Cell || status == (long)LuminTaskStatus.Canceled
+            ? (IPooledResult?)page.Slots[i].Payload : null;
+        ReleaseResult(page, i, handle);
+        cell?.ReturnToPool();
+        return true;
     }
 
     internal static void AttachRegistration(ulong handle, CancellationCallbackState binding)
@@ -297,6 +362,6 @@ public static partial class LuminTaskSource
     internal static void AbandonUnpublished(ulong handle)
     {
         TrySetResult(handle);
-        Forget(handle);
+        TryForget(handle);
     }
 }

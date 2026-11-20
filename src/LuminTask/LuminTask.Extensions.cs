@@ -116,15 +116,6 @@ namespace LuminThread
         private static CancellationToken NormalizeCanceledToken(CancellationToken token)
             => token.IsCancellationRequested ? token : new CancellationToken(canceled: true);
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private static void TrySetExceptionOrCanceled(LuminTaskHandle handle, Exception exception)
-        {
-            if (exception is OperationCanceledException canceled)
-                LuminTaskSource.TrySetCanceled(handle, canceled.CancellationToken);
-            else
-                LuminTaskSource.TrySetException(handle, exception);
-        }
-
         // The losing source still needs one consumer when it eventually finishes.
         private static void Drain(LuminTask task) => task.Forget();
         private static void Drain<T>(LuminTask<T> task) => task.Forget();
@@ -258,7 +249,7 @@ namespace LuminThread
                 return LuminTask.FromCanceled(cancellationToken);
             }
 
-            return AttachExternalCancellationPromise.Create(task, cancellationToken);
+            return new LuminTask(AttachExternalCancellationPromise.Create(task._handle, LuminTask.RentSlot(), cancellationToken));
         }
 
         public static LuminTask<T> AttachExternalCancellation<T>(this LuminTask<T> task, CancellationToken cancellationToken)
@@ -275,7 +266,7 @@ namespace LuminThread
                 return LuminTask.FromCanceled<T>(cancellationToken);
             }
 
-            return AttachExternalCancellationPromise<T>.Create(task, cancellationToken);
+            return new LuminTask<T>(AttachExternalCancellationPromise.Create(task._handle, LuminTaskResultBridge.RentForwarded<T>(), cancellationToken));
         }
 
         /// <summary>Waits for this task while allowing the wait to be canceled.</summary>
@@ -293,15 +284,9 @@ namespace LuminThread
             private static readonly MoveNext MoveNextAction = MoveNext;
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public static LuminTask Create(LuminTask task, CancellationToken cancellationToken)
+            public static ulong Create(ulong input, ulong handle, CancellationToken cancellationToken)
             {
-                var handle = LuminTask.RentSlot();
-
-                // The wrapped task travels as its handle, not as a boxed LuminTask: the state slot is an
-                // object, so storing the struct put a 24-byte box on every pending WaitAsync. The handle is
-                // 8 bytes of payload in a pooled container instead, and one pool serves every T (see also
-                // TimeoutPromise, which carries its inner handle the same way).
-                var stateTuple = StateTuple.Create(task._handle);
+                var stateTuple = StateTuple.Create(input);
                 var state = new LuminTaskState(handle, cancellationToken, stateTuple);
 
                 state.OnShutdown = static stateObject =>
@@ -312,7 +297,7 @@ namespace LuminThread
                     Drain(input);
                 };
                 PlayerLoopHelper.Schedule(PlayerLoopTiming.DotNet, state, MoveNextAction);
-                return new LuminTask(handle);
+                return handle;
             }
 
             public static bool MoveNext(in LuminTaskState state)
@@ -322,113 +307,21 @@ namespace LuminThread
 
                 var innerHandle = stateTuple.Item;
 
-                if (state.CancellationToken.IsCancellationRequested)
+                try
                 {
-                    try
+                    if (state.CancellationToken.IsCancellationRequested)
                     {
                         Drain(innerHandle);
                         LuminTaskSource.TrySetCanceled(state.Handle, state.CancellationToken);
                     }
-                    finally
-                    {
-                        stateTuple.Dispose();
-                    }
-
-                    return false;
+                    else if (!LuminTaskSource.ForwardIfCompleted(innerHandle, state.Handle)) return true;
                 }
-
-                if (LuminTaskSource.GetStatus(innerHandle) != LuminTaskStatus.Pending)
+                catch (Exception ex)
                 {
-                    try
-                    {
-                        LuminTaskSource.ToTask(innerHandle).GetAwaiter().GetResult();
-                        LuminTaskSource.TrySetResult(state.Handle);
-                    }
-                    catch (Exception ex)
-                    {
-                        TrySetExceptionOrCanceled(state.Handle, ex);
-                    }
-                    finally
-                    {
-                        // In a finally so the container goes back to the pool even when the completion
-                        // path throws; a missed return would silently shrink the pool instead.
-                        stateTuple.Dispose();
-                    }
-
-                    return false;
+                    LuminTaskSource.TrySetException(state.Handle, ex);
                 }
-
-                return true;
-            }
-        }
-
-        private static class AttachExternalCancellationPromise<T>
-        {
-            private static readonly MoveNext MoveNextAction = MoveNext;
-
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public static LuminTask<T> Create(LuminTask<T> task, CancellationToken cancellationToken)
-            {
-                var handle = LuminTaskResultBridge.Rent<T>();
-
-                // Same as the non-generic promise: the inner task is a handle, so this promise adds no
-                // per-T container pool of its own - both share StatePool<LuminTaskHandle>.
-                var stateTuple = StateTuple.Create(task._handle);
-                var state = new LuminTaskState(handle, cancellationToken, stateTuple);
-
-                state.OnShutdown = static stateObject =>
-                {
-                    var box = (StateTuple<LuminTaskHandle>)stateObject;
-                    var input = box.Item;
-                    box.Dispose();
-                    Drain(input);
-                };
-                PlayerLoopHelper.Schedule(PlayerLoopTiming.DotNet, state, MoveNextAction);
-                return new LuminTask<T>(handle);
-            }
-
-            public static bool MoveNext(in LuminTaskState state)
-            {
-                var stateTuple = Unsafe.As<StateTuple<LuminTaskHandle>>(state.State!);
-                if (stateTuple == null) return false;
-
-                var innerHandle = stateTuple.Item;
-
-                if (state.CancellationToken.IsCancellationRequested)
-                {
-                    try
-                    {
-                        Drain(innerHandle);
-                        LuminTaskSource.TrySetCanceled(state.Handle, state.CancellationToken);
-                    }
-                    finally
-                    {
-                        stateTuple.Dispose();
-                    }
-
-                    return false;
-                }
-
-                if (LuminTaskSource.GetStatus(innerHandle) != LuminTaskStatus.Pending)
-                {
-                    try
-                    {
-                        var result = LuminTaskSource.ToTask<T>(innerHandle).GetAwaiter().GetResult();
-                        LuminTaskResultBridge.TrySetResult(state.Handle, in result);
-                    }
-                    catch (Exception ex)
-                    {
-                        TrySetExceptionOrCanceled(state.Handle, ex);
-                    }
-                    finally
-                    {
-                        stateTuple.Dispose();
-                    }
-
-                    return false;
-                }
-
-                return true;
+                stateTuple.Dispose();
+                return false;
             }
         }
 
@@ -453,7 +346,7 @@ namespace LuminThread
                 Drain(task);
                 return LuminTask.FromException(new TimeoutException());
             }
-            return TimeoutPromise.Create(task, timeout, cancellationToken);
+            return new LuminTask(TimeoutPromise.Create(task._handle, LuminTask.RentSlot(), timeout, cancellationToken));
         }
 
         public static LuminTask<T> Timeout<T>(this LuminTask<T> task, TimeSpan timeout, CancellationToken cancellationToken = default)
@@ -473,7 +366,7 @@ namespace LuminThread
                 Drain(task);
                 return LuminTask.FromException<T>(new TimeoutException());
             }
-            return TimeoutPromise<T>.Create(task, timeout, cancellationToken);
+            return new LuminTask<T>(TimeoutPromise.Create(task._handle, LuminTaskResultBridge.RentForwarded<T>(), timeout, cancellationToken));
         }
 
         /// <summary>Waits for this task with a timeout and optional cancellation.</summary>
@@ -506,8 +399,7 @@ namespace LuminThread
             return ticks >= long.MaxValue ? long.MaxValue : (long)ticks;
         }
 
-        // Timing state shared by both Timeout promises. Declared once at this scope so the generic
-        // promise does not carry a second, per-T copy of the same two fields.
+        // Elapsed time is compared as a duration, including for very large finite timeouts.
         [StructLayout(LayoutKind.Sequential)]
         private struct TimeoutStateData
         {
@@ -520,17 +412,15 @@ namespace LuminThread
             private static readonly MoveNext MoveNextAction = MoveNext;
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public static LuminTask Create(LuminTask task, TimeSpan timeout, CancellationToken cancellationToken)
+            public static ulong Create(ulong input, ulong handle, TimeSpan timeout, CancellationToken cancellationToken)
             {
-                var handle = LuminTask.RentSlot();
-
                 var stateData = new TimeoutStateData
                 {
                     StartTimestamp = Stopwatch.GetTimestamp(),
                     TimeoutTimestampTicks = ToStopwatchTicks(timeout)
                 };
 
-                var stateTuple = StateTuple.Create((task._handle, stateData));
+                var stateTuple = StateTuple.Create((input, stateData));
                 var state = new LuminTaskState(handle, cancellationToken, stateTuple);
 
                 state.OnShutdown = static stateObject =>
@@ -541,7 +431,7 @@ namespace LuminThread
                     Drain(input);
                 };
                 PlayerLoopHelper.Schedule(PlayerLoopTiming.DotNet, state, MoveNextAction);
-                return new LuminTask(handle);
+                return handle;
             }
 
             public static bool MoveNext(in LuminTaskState state)
@@ -552,111 +442,26 @@ namespace LuminThread
                 var innerHandle = stateTuple.Item.Item1;
                 var data = stateTuple.Item.Item2;
 
-                if (state.CancellationToken.IsCancellationRequested)
+                try
                 {
-                    Drain(innerHandle);
-                    LuminTaskSource.TrySetCanceled(state.Handle, state.CancellationToken);
-                    stateTuple.Dispose();
-                    return false;
-                }
-
-                if (Stopwatch.GetTimestamp() - data.StartTimestamp >= data.TimeoutTimestampTicks)
-                {
-                    Drain(innerHandle);
-                    LuminTaskSource.TrySetException(state.Handle, new TimeoutException());
-                    stateTuple.Dispose();
-                    return false;
-                }
-
-                if (LuminTaskSource.GetStatus(innerHandle) != LuminTaskStatus.Pending)
-                {
-                    try
+                    if (state.CancellationToken.IsCancellationRequested)
                     {
-                        LuminTaskSource.ToTask(innerHandle).GetAwaiter().GetResult();
-                        LuminTaskSource.TrySetResult(state.Handle);
+                        Drain(innerHandle);
+                        LuminTaskSource.TrySetCanceled(state.Handle, state.CancellationToken);
                     }
-                    catch (Exception ex)
+                    else if (Stopwatch.GetTimestamp() - data.StartTimestamp >= data.TimeoutTimestampTicks)
                     {
-                        TrySetExceptionOrCanceled(state.Handle, ex);
+                        Drain(innerHandle);
+                        LuminTaskSource.TrySetException(state.Handle, new TimeoutException());
                     }
-                    stateTuple.Dispose();
-                    return false;
+                    else if (!LuminTaskSource.ForwardIfCompleted(innerHandle, state.Handle)) return true;
                 }
-
-                return true;
-            }
-        }
-
-        private static class TimeoutPromise<T>
-        {
-            private static readonly MoveNext MoveNextAction = MoveNext;
-
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public static LuminTask<T> Create(LuminTask<T> task, TimeSpan timeout, CancellationToken cancellationToken)
-            {
-                var handle = LuminTaskResultBridge.Rent<T>();
-
-                var stateData = new TimeoutStateData
+                catch (Exception ex)
                 {
-                    StartTimestamp = Stopwatch.GetTimestamp(),
-                    TimeoutTimestampTicks = ToStopwatchTicks(timeout)
-                };
-
-                var stateTuple = StateTuple.Create((task._handle, stateData));
-                var state = new LuminTaskState(handle, cancellationToken, stateTuple);
-
-                state.OnShutdown = static stateObject =>
-                {
-                    var box = (StateTuple<(LuminTaskHandle, TimeoutStateData)>)stateObject;
-                    var input = box.Item.Item1;
-                    box.Dispose();
-                    Drain(input);
-                };
-                PlayerLoopHelper.Schedule(PlayerLoopTiming.DotNet, state, MoveNextAction);
-                return new LuminTask<T>(handle);
-            }
-
-            public static bool MoveNext(in LuminTaskState state)
-            {
-                var stateTuple = Unsafe.As<StateTuple<(LuminTaskHandle, TimeoutStateData)>>(state.State!);
-                if (stateTuple == null) return false;
-
-                var innerHandle = stateTuple.Item.Item1;
-                var data = stateTuple.Item.Item2;
-
-                if (state.CancellationToken.IsCancellationRequested)
-                {
-                    Drain(innerHandle);
-                    LuminTaskSource.TrySetCanceled(state.Handle, state.CancellationToken);
-                    stateTuple.Dispose();
-                    return false;
+                    LuminTaskSource.TrySetException(state.Handle, ex);
                 }
-
-                if (Stopwatch.GetTimestamp() - data.StartTimestamp >= data.TimeoutTimestampTicks)
-                {
-                    Drain(innerHandle);
-                    LuminTaskSource.TrySetException(state.Handle, new TimeoutException());
-                    stateTuple.Dispose();
-                    return false;
-                }
-
-                if (LuminTaskSource.GetStatus(innerHandle) != LuminTaskStatus.Pending)
-                {
-                    try
-                    {
-                        // 结果仍由泛型方法从槽位读出，句柄状态里不保存 T，也不装箱。
-                        var result = LuminTaskSource.ToTask<T>(innerHandle).GetAwaiter().GetResult();
-                        LuminTaskResultBridge.TrySetResult(state.Handle, in result);
-                    }
-                    catch (Exception ex)
-                    {
-                        TrySetExceptionOrCanceled(state.Handle, ex);
-                    }
-                    stateTuple.Dispose();
-                    return false;
-                }
-
-                return true;
+                stateTuple.Dispose();
+                return false;
             }
         }
 
@@ -666,17 +471,9 @@ namespace LuminThread
 
         public static void Forget(this LuminTask task)
         {
-            var awaiter = task.GetAwaiter();
-
-            if (awaiter.IsCompleted)
-            {
-                try { awaiter.GetResult(); }
-                catch (Exception) { }
-            }
-            else
-            {
-                ForgetBlock.Schedule(awaiter, null);
-            }
+            if (task._handle == 0) return;
+            if (task.IsCompleted) LuminTaskSource.TryForget(task._handle);
+            else ForgetBlock.Schedule(task, null);
         }
 
         public static void Forget(this LuminTask task, Action<Exception> exceptionHandler)
@@ -701,23 +498,7 @@ namespace LuminThread
         }
 
         public static void Forget<T>(this LuminTask<T> task)
-        {
-            var awaiter = task.GetAwaiter();
-
-            if (awaiter.IsCompleted)
-            {
-                try { awaiter.GetResult(); }
-                catch (Exception) { }
-            }
-            else
-            {
-                // Forget discards the result, so the non-generic block (which exits through
-                // LuminTaskSource.ConsumeVoid and returns the pooled result container on the way)
-                // covers LuminTask<T> as well. Sharing it drops the per-T ForgetBlock<T> generic
-                // instantiation entirely.
-                ForgetBlock.Schedule(awaiter, null);
-            }
-        }
+            => ((LuminTask)task).Forget();
 
         public static void Forget<T>(this LuminTask<T> task, Action<Exception> exceptionHandler)
         {
@@ -786,6 +567,29 @@ namespace LuminThread
             return ContinueWithAsyncFuncPromise<T>.Create(task, continuation, loopTiming);
         }
 
+        private static LuminTaskStatus CheckContinuationInput(ulong input, ulong output)
+        {
+            if (input == 0) return LuminTaskStatus.Succeeded;
+            var status = LuminTaskSource.GetStatus(input);
+            if (status == LuminTaskStatus.Canceled || status == LuminTaskStatus.Faulted)
+                LuminTaskSource.ForwardIfCompleted(input, output);
+            return status;
+        }
+
+        private static bool ForwardContinuation(LuminTask task, ulong output)
+        {
+            if (task._handle != 0) return LuminTaskSource.ForwardIfCompleted(task._handle, output);
+            LuminTaskSource.TrySetResult(output);
+            return true;
+        }
+
+        private static bool ForwardContinuation<T>(in LuminTask<T> task, ulong output)
+        {
+            if (task._handle != 0) return LuminTaskSource.ForwardIfCompleted(task._handle, output);
+            LuminTaskResultBridge.TrySetResult<T>(output, in task._result!);
+            return true;
+        }
+
         private static class ContinueWithActionPromise<T>
         {
             private static readonly MoveNext MoveNextAction = MoveNext;
@@ -814,18 +618,20 @@ namespace LuminThread
                 var innerTask = stateTuple.Item.Item1;
                 var continuation = stateTuple.Item.Item2;
 
-                if (innerTask.Status == LuminTaskStatus.Pending)
-                    return true;
-
                 try
                 {
-                    var result = innerTask.GetAwaiter().GetResult();
-                    continuation(result);
-                    LuminTaskSource.TrySetResult(state.Handle);
+                    var status = CheckContinuationInput(innerTask._handle, state.Handle);
+                    if (status == LuminTaskStatus.Pending) return true;
+                    if (status == LuminTaskStatus.Succeeded)
+                    {
+                        var result = innerTask.GetAwaiter().GetResult();
+                        continuation(result);
+                        LuminTaskSource.TrySetResult(state.Handle);
+                    }
                 }
                 catch (Exception ex)
                 {
-                    TrySetExceptionOrCanceled(state.Handle, ex);
+                    LuminTaskSource.TrySetException(state.Handle, ex);
                 }
 
                 stateTuple.Dispose();
@@ -861,18 +667,20 @@ namespace LuminThread
                 var innerTask = stateTuple.Item.Item1;
                 var continuation = stateTuple.Item.Item2;
 
-                if (innerTask.Status == LuminTaskStatus.Pending)
-                    return true;
-
                 try
                 {
-                    var result = innerTask.GetAwaiter().GetResult();
-                    var continuationResult = continuation(result);
-                    LuminTaskResultBridge.TrySetResult(state.Handle, in continuationResult);
+                    var status = CheckContinuationInput(innerTask._handle, state.Handle);
+                    if (status == LuminTaskStatus.Pending) return true;
+                    if (status == LuminTaskStatus.Succeeded)
+                    {
+                        var result = innerTask.GetAwaiter().GetResult();
+                        var continuationResult = continuation(result);
+                        LuminTaskResultBridge.TrySetResult(state.Handle, in continuationResult);
+                    }
                 }
                 catch (Exception ex)
                 {
-                    TrySetExceptionOrCanceled(state.Handle, ex);
+                    LuminTaskSource.TrySetException(state.Handle, ex);
                 }
 
                 stateTuple.Dispose();
@@ -921,52 +729,28 @@ namespace LuminThread
                 var innerTask = stateTuple.Item.Item1;
                 ref var data = ref stateTuple.Item.Item2;
 
-                if (!data.WaitingForContinuation)
+                try
                 {
-                    if (innerTask.Status == LuminTaskStatus.Pending)
-                        return true;
-
-                    try
+                    if (!data.WaitingForContinuation)
                     {
-                        var result = innerTask.GetAwaiter().GetResult();
-                        data.ContinuationTask = data.Continuation(result);
-                        data.WaitingForContinuation = true;
-
-                        if (data.ContinuationTask.Status != LuminTaskStatus.Pending)
+                        var status = CheckContinuationInput(innerTask._handle, state.Handle);
+                        if (status == LuminTaskStatus.Pending) return true;
+                        if (status != LuminTaskStatus.Succeeded)
                         {
-                            data.ContinuationTask.GetAwaiter().GetResult();
-                            LuminTaskSource.TrySetResult(state.Handle);
                             stateTuple.Dispose();
                             return false;
                         }
+                        var result = innerTask.GetAwaiter().GetResult();
+                        data.ContinuationTask = data.Continuation(result);
+                        data.WaitingForContinuation = true;
+                        stateTuple.Item.Item1 = default;
+                        data.Continuation = null!;
                     }
-                    catch (Exception ex)
-                    {
-                        TrySetExceptionOrCanceled(state.Handle, ex);
-                        stateTuple.Dispose();
-                        return false;
-                    }
+                    if (!ForwardContinuation(data.ContinuationTask, state.Handle)) return true;
                 }
-                else
-                {
-                    if (data.ContinuationTask.Status == LuminTaskStatus.Pending)
-                        return true;
-
-                    try
-                    {
-                        data.ContinuationTask.GetAwaiter().GetResult();
-                        LuminTaskSource.TrySetResult(state.Handle);
-                    }
-                    catch (Exception ex)
-                    {
-                        TrySetExceptionOrCanceled(state.Handle, ex);
-                    }
-
-                    stateTuple.Dispose();
-                    return false;
-                }
-
-                return true;
+                catch (Exception ex) { LuminTaskSource.TrySetException(state.Handle, ex); }
+                stateTuple.Dispose();
+                return false;
             }
         }
 
@@ -1011,52 +795,28 @@ namespace LuminThread
                 var innerTask = stateTuple.Item.Item1;
                 ref var data = ref stateTuple.Item.Item2;
 
-                if (!data.WaitingForContinuation)
+                try
                 {
-                    if (innerTask.Status == LuminTaskStatus.Pending)
-                        return true;
-
-                    try
+                    if (!data.WaitingForContinuation)
                     {
-                        var result = innerTask.GetAwaiter().GetResult();
-                        data.ContinuationTask = data.Continuation(result);
-                        data.WaitingForContinuation = true;
-
-                        if (data.ContinuationTask.Status != LuminTaskStatus.Pending)
+                        var status = CheckContinuationInput(innerTask._handle, state.Handle);
+                        if (status == LuminTaskStatus.Pending) return true;
+                        if (status != LuminTaskStatus.Succeeded)
                         {
-                            var finalResult = data.ContinuationTask.GetAwaiter().GetResult();
-                            LuminTaskResultBridge.TrySetResult(state.Handle, in finalResult);
                             stateTuple.Dispose();
                             return false;
                         }
+                        var result = innerTask.GetAwaiter().GetResult();
+                        data.ContinuationTask = data.Continuation(result);
+                        data.WaitingForContinuation = true;
+                        stateTuple.Item.Item1 = default;
+                        data.Continuation = null!;
                     }
-                    catch (Exception ex)
-                    {
-                        TrySetExceptionOrCanceled(state.Handle, ex);
-                        stateTuple.Dispose();
-                        return false;
-                    }
+                    if (!ForwardContinuation(data.ContinuationTask, state.Handle)) return true;
                 }
-                else
-                {
-                    if (data.ContinuationTask.Status == LuminTaskStatus.Pending)
-                        return true;
-
-                    try
-                    {
-                        var finalResult = data.ContinuationTask.GetAwaiter().GetResult();
-                        LuminTaskResultBridge.TrySetResult(state.Handle, in finalResult);
-                    }
-                    catch (Exception ex)
-                    {
-                        TrySetExceptionOrCanceled(state.Handle, ex);
-                    }
-
-                    stateTuple.Dispose();
-                    return false;
-                }
-
-                return true;
+                catch (Exception ex) { LuminTaskSource.TrySetException(state.Handle, ex); }
+                stateTuple.Dispose();
+                return false;
             }
         }
 
@@ -1088,18 +848,20 @@ namespace LuminThread
                 var innerTask = stateTuple.Item.Item1;
                 var continuation = stateTuple.Item.Item2;
 
-                if (innerTask.Status == LuminTaskStatus.Pending)
-                    return true;
-
                 try
                 {
-                    innerTask.GetAwaiter().GetResult();
-                    continuation();
-                    LuminTaskSource.TrySetResult(state.Handle);
+                    var status = CheckContinuationInput(innerTask._handle, state.Handle);
+                    if (status == LuminTaskStatus.Pending) return true;
+                    if (status == LuminTaskStatus.Succeeded)
+                    {
+                        innerTask.GetAwaiter().GetResult();
+                        continuation();
+                        LuminTaskSource.TrySetResult(state.Handle);
+                    }
                 }
                 catch (Exception ex)
                 {
-                    TrySetExceptionOrCanceled(state.Handle, ex);
+                    LuminTaskSource.TrySetException(state.Handle, ex);
                 }
 
                 stateTuple.Dispose();
@@ -1135,18 +897,20 @@ namespace LuminThread
                 var innerTask = stateTuple.Item.Item1;
                 var continuation = stateTuple.Item.Item2;
 
-                if (innerTask.Status == LuminTaskStatus.Pending)
-                    return true;
-
                 try
                 {
-                    innerTask.GetAwaiter().GetResult();
-                    var result = continuation();
-                    LuminTaskResultBridge.TrySetResult(state.Handle, in result);
+                    var status = CheckContinuationInput(innerTask._handle, state.Handle);
+                    if (status == LuminTaskStatus.Pending) return true;
+                    if (status == LuminTaskStatus.Succeeded)
+                    {
+                        innerTask.GetAwaiter().GetResult();
+                        var result = continuation();
+                        LuminTaskResultBridge.TrySetResult(state.Handle, in result);
+                    }
                 }
                 catch (Exception ex)
                 {
-                    TrySetExceptionOrCanceled(state.Handle, ex);
+                    LuminTaskSource.TrySetException(state.Handle, ex);
                 }
 
                 stateTuple.Dispose();
@@ -1195,52 +959,28 @@ namespace LuminThread
                 var innerTask = stateTuple.Item.Item1;
                 ref var data = ref stateTuple.Item.Item2;
 
-                if (!data.WaitingForContinuation)
+                try
                 {
-                    if (innerTask.Status == LuminTaskStatus.Pending)
-                        return true;
-
-                    try
+                    if (!data.WaitingForContinuation)
                     {
-                        innerTask.GetAwaiter().GetResult();
-                        data.ContinuationTask = data.Continuation();
-                        data.WaitingForContinuation = true;
-
-                        if (data.ContinuationTask.Status != LuminTaskStatus.Pending)
+                        var status = CheckContinuationInput(innerTask._handle, state.Handle);
+                        if (status == LuminTaskStatus.Pending) return true;
+                        if (status != LuminTaskStatus.Succeeded)
                         {
-                            data.ContinuationTask.GetAwaiter().GetResult();
-                            LuminTaskSource.TrySetResult(state.Handle);
                             stateTuple.Dispose();
                             return false;
                         }
+                        innerTask.GetAwaiter().GetResult();
+                        data.ContinuationTask = data.Continuation();
+                        data.WaitingForContinuation = true;
+                        stateTuple.Item.Item1 = default;
+                        data.Continuation = null!;
                     }
-                    catch (Exception ex)
-                    {
-                        TrySetExceptionOrCanceled(state.Handle, ex);
-                        stateTuple.Dispose();
-                        return false;
-                    }
+                    if (!ForwardContinuation(data.ContinuationTask, state.Handle)) return true;
                 }
-                else
-                {
-                    if (data.ContinuationTask.Status == LuminTaskStatus.Pending)
-                        return true;
-
-                    try
-                    {
-                        data.ContinuationTask.GetAwaiter().GetResult();
-                        LuminTaskSource.TrySetResult(state.Handle);
-                    }
-                    catch (Exception ex)
-                    {
-                        TrySetExceptionOrCanceled(state.Handle, ex);
-                    }
-
-                    stateTuple.Dispose();
-                    return false;
-                }
-
-                return true;
+                catch (Exception ex) { LuminTaskSource.TrySetException(state.Handle, ex); }
+                stateTuple.Dispose();
+                return false;
             }
         }
 
@@ -1285,52 +1025,28 @@ namespace LuminThread
                 var innerTask = stateTuple.Item.Item1;
                 ref var data = ref stateTuple.Item.Item2;
 
-                if (!data.WaitingForContinuation)
+                try
                 {
-                    if (innerTask.Status == LuminTaskStatus.Pending)
-                        return true;
-
-                    try
+                    if (!data.WaitingForContinuation)
                     {
-                        innerTask.GetAwaiter().GetResult();
-                        data.ContinuationTask = data.Continuation();
-                        data.WaitingForContinuation = true;
-
-                        if (data.ContinuationTask.Status != LuminTaskStatus.Pending)
+                        var status = CheckContinuationInput(innerTask._handle, state.Handle);
+                        if (status == LuminTaskStatus.Pending) return true;
+                        if (status != LuminTaskStatus.Succeeded)
                         {
-                            var result = data.ContinuationTask.GetAwaiter().GetResult();
-                            LuminTaskResultBridge.TrySetResult(state.Handle, in result);
                             stateTuple.Dispose();
                             return false;
                         }
+                        innerTask.GetAwaiter().GetResult();
+                        data.ContinuationTask = data.Continuation();
+                        data.WaitingForContinuation = true;
+                        stateTuple.Item.Item1 = default;
+                        data.Continuation = null!;
                     }
-                    catch (Exception ex)
-                    {
-                        TrySetExceptionOrCanceled(state.Handle, ex);
-                        stateTuple.Dispose();
-                        return false;
-                    }
+                    if (!ForwardContinuation(data.ContinuationTask, state.Handle)) return true;
                 }
-                else
-                {
-                    if (data.ContinuationTask.Status == LuminTaskStatus.Pending)
-                        return true;
-
-                    try
-                    {
-                        var result = data.ContinuationTask.GetAwaiter().GetResult();
-                        LuminTaskResultBridge.TrySetResult(state.Handle, in result);
-                    }
-                    catch (Exception ex)
-                    {
-                        TrySetExceptionOrCanceled(state.Handle, ex);
-                    }
-
-                    stateTuple.Dispose();
-                    return false;
-                }
-
-                return true;
+                catch (Exception ex) { LuminTaskSource.TrySetException(state.Handle, ex); }
+                stateTuple.Dispose();
+                return false;
             }
         }
 
@@ -1420,26 +1136,29 @@ namespace LuminThread
 
         public static async LuminTask<(bool IsCanceled, T Result)> SuppressCancellationThrow<T>(this LuminTask<T> task)
         {
-            try
-            {
-                var result = await task;
-                return (false, result);
-            }
-            catch (OperationCanceledException)
-            {
-                return (true, default);
-            }
+            if (await new CancellationCheck(task)) return (true, default!);
+            return (false, task.GetResult());
         }
 
         public static async LuminTask<bool> SuppressCancellationThrow(this LuminTask task)
         {
-            try
+            if (await new CancellationCheck(task)) return true;
+            task.GetResult();
+            return false;
+        }
+
+        internal readonly struct CancellationCheck : ICriticalNotifyCompletion
+        {
+            private readonly LuminTask _task;
+            internal CancellationCheck(LuminTask task) => _task = task;
+            public CancellationCheck GetAwaiter() => this;
+            public bool IsCompleted => _task.IsCompleted;
+            public void OnCompleted(Action continuation) => _task.OnCompleted(continuation);
+            public void UnsafeOnCompleted(Action continuation) => _task.UnsafeOnCompleted(continuation);
+            public bool GetResult()
             {
-                await task;
-                return false;
-            }
-            catch (OperationCanceledException)
-            {
+                if (_task.Status != LuminTaskStatus.Canceled) return false;
+                if (!LuminTaskSource.TryForget(_task._handle)) LuminTaskExceptionHelper.ThrowStaleHandle();
                 return true;
             }
         }

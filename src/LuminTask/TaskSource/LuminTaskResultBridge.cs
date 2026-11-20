@@ -29,6 +29,10 @@ internal static class LuminTaskResultBridge
         catch { cell.Dispose(); throw; }
     }
 
+    // Timeout and external-cancellation wrappers take ownership of the input cell at completion.
+    // No producer writes a fresh T into this slot.
+    internal static ulong RentForwarded<T>() => SlotStore.Rent(Layout<T>.Kind, null);
+
     internal static bool TrySetResult<T>(ulong handle, in T value)
     {
         long kind = Layout<T>.Kind;

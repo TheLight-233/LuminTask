@@ -95,49 +95,108 @@ internal sealed class WhenEachPromise<T> : ILuminTaskAsyncEnumerable<WhenEachRes
     {
         var tasks = Interlocked.Exchange(ref _tasks, null)
             ?? throw new InvalidOperationException("WhenEach inputs have already been consumed.");
+        if (!cancellationToken.CanBeCanceled && tasks.Length != 0 && tasks[0]._handle == 0)
+        {
+            int i = 1;
+            while (i < tasks.Length && tasks[i]._handle == 0) i++;
+            if (i == tasks.Length) return new InlineEnumerator(tasks);
+        }
         return new Enumerator(tasks, cancellationToken);
     }
 
-    private sealed class Enumerator : SlotObserver, ILuminTaskAsyncEnumerator<WhenEachResult<T>>
+    // Inline successes are already in delivery order. Snapshot values at GetAsyncEnumerator
+    // so the caller can immediately reuse its task array, even before the first MoveNext.
+    private sealed class InlineEnumerator : ILuminTaskAsyncEnumerator<WhenEachResult<T>>
     {
         private readonly object _gate = new();
+        private T[]? _values;
+        private int _index;
+        public WhenEachResult<T> Current { get; private set; }
+
+        internal InlineEnumerator(LuminTask<T>[] tasks)
+        {
+            _values = new T[tasks.Length];
+            for (int i = 0; i < tasks.Length; i++) _values[i] = tasks[i]._result!;
+        }
+
+        public LuminTask<bool> MoveNextAsync()
+        {
+            lock (_gate)
+            {
+                if (_values == null) return CompletedTasks.False();
+                Current = new WhenEachResult<T>(_values[_index]);
+                _values[_index++] = default!;
+                if (_index == _values.Length) _values = null;
+                return CompletedTasks.True();
+            }
+        }
+
+        public LuminTask DisposeAsync()
+        {
+            lock (_gate) { _values = null; Current = default; }
+            return default;
+        }
+    }
+
+    // The consumer keeps its own identity after disposal. Only the unexposed observer can be reused.
+    private sealed class Enumerator : ILuminTaskAsyncEnumerator<WhenEachResult<T>>
+    {
+        private Session? _session;
+        public WhenEachResult<T> Current { get; internal set; }
+
+        internal Enumerator(LuminTask<T>[] tasks, CancellationToken token)
+        {
+            var session = Session.Rent(token);
+            _session = session;
+            try { session.Start(this, tasks, token); }
+            catch { DisposeAsync().GetResult(); throw; }
+        }
+
+        public LuminTask<bool> MoveNextAsync() =>
+            Volatile.Read(ref _session)?.MoveNext(this) ?? CompletedTasks.False();
+
+        public LuminTask DisposeAsync()
+        {
+            Interlocked.Exchange(ref _session, null)?.Close(this);
+            return default;
+        }
+    }
+
+    private sealed class Session : SlotObserver, ILuminCacheNode
+    {
+        public ILuminCacheNode? CacheNext { get; set; }
+        private Enumerator? _owner;
         private Queue<WhenEachResult<T>>? _ready;
         private int _remaining;
         private ulong _waiter;
         private CancellationToken _token;
         private CancellationTokenRegistration _registration;
-        private bool _disposed;
+        private bool _poolable;
 
-        public WhenEachResult<T> Current { get; private set; }
+        internal static Session Rent(CancellationToken token) =>
+            token.CanBeCanceled ? new Session() : (Session?)LuminTaskIdleCache.Take(typeof(Session)) ?? new Session();
 
-        internal Enumerator(LuminTask<T>[] tasks, CancellationToken token)
+        internal void Start(Enumerator owner, LuminTask<T>[] tasks, CancellationToken token)
         {
+            _owner = owner;
             _remaining = tasks.Length;
+            _poolable = !token.CanBeCanceled;
             _token = token;
             if (token.CanBeCanceled && tasks.Length != 0)
-                _registration = token.RegisterWithoutCaptureExecutionContext(static state => ((Enumerator)state).Cancel(), this);
-
-            try
-            {
-                foreach (var task in tasks) Watch(task);
-            }
-            catch
-            {
-                DisposeAsync().GetResult();
-                throw;
-            }
+                _registration = token.RegisterWithoutCaptureExecutionContext(static state => ((Session)state).Cancel(), this);
+            foreach (var task in tasks) Watch(task);
         }
 
         private void Watch(LuminTask<T> task)
         {
+            if (task._handle != 0 && LuminTaskSource.TryRegisterObserver(task._handle, this, 0)) return;
             if (task.IsCompleted) { Observe(task); return; }
-            if (LuminTaskSource.TryRegisterObserver(task._handle, this, 0)) return;
             var observation = StateTuple.Create((this, task._handle));
             try
             {
                 task.SourceOnCompleted(static state =>
                 {
-                    var box = (StateTuple<(Enumerator Owner, ulong Handle)>)state;
+                    var box = (StateTuple<(Session Owner, ulong Handle)>)state;
                     var child = box.Item;
                     box.Dispose();
                     child.Owner.Observe(LuminTaskSource.ToTask<T>(child.Handle));
@@ -150,26 +209,35 @@ internal sealed class WhenEachPromise<T> : ILuminTaskAsyncEnumerable<WhenEachRes
 
         private void Observe(LuminTask<T> task)
         {
-            WhenEachResult<T> item;
-            try { item = new WhenEachResult<T>(task.GetResult()); }
-            catch (Exception ex) { item = new WhenEachResult<T>(ex); }
+            WhenEachResult<T> item = default;
+            if (Volatile.Read(ref _owner) != null)
+            {
+                try { item = new WhenEachResult<T>(task.GetResult()); }
+                catch (Exception ex) { item = new WhenEachResult<T>(ex); }
+            }
+            else if (task._handle != 0)
+            {
+                LuminTaskSource.TryForget(task._handle);
+            }
 
+            bool recycle;
             ulong waiter = 0;
             CancellationToken? cancellation = null;
             CancellationTokenRegistration release = default;
-            lock (_gate)
+            lock (this)
             {
-                if (--_remaining == 0)
+                recycle = --_remaining == 0 && _owner == null && _poolable;
+                if (_remaining == 0)
                 {
                     release = _registration;
                     _registration = default;
                 }
-                if (!_disposed && !_token.IsCancellationRequested)
+                if (_owner != null && !_token.IsCancellationRequested)
                 {
                     waiter = _waiter;
                     _waiter = 0;
                     if (waiter == 0) (_ready ??= new Queue<WhenEachResult<T>>()).Enqueue(item);
-                    else Current = item;
+                    else _owner.Current = item;
                 }
                 else if (_remaining == 0 && _waiter != 0)
                 {
@@ -179,7 +247,9 @@ internal sealed class WhenEachPromise<T> : ILuminTaskAsyncEnumerable<WhenEachRes
                     cancellation = _token;
                 }
             }
+            // Only captured locals may be used after publishing: a continuation can dispose and rent again.
             release.Release();
+            if (recycle) LuminTaskIdleCache.Return(this, 128);
             if (waiter != 0)
             {
                 if (cancellation.HasValue) LuminTaskSource.TrySetCanceled(waiter, cancellation.Value);
@@ -187,16 +257,16 @@ internal sealed class WhenEachPromise<T> : ILuminTaskAsyncEnumerable<WhenEachRes
             }
         }
 
-        public LuminTask<bool> MoveNextAsync()
+        internal LuminTask<bool> MoveNext(Enumerator owner)
         {
-            lock (_gate)
+            lock (this)
             {
-                if (_disposed) return CompletedTasks.False();
+                if (!ReferenceEquals(_owner, owner)) return CompletedTasks.False();
                 if (_token.IsCancellationRequested) return LuminTask.FromCanceled<bool>(_token);
                 if (_waiter != 0) throw new InvalidOperationException("A MoveNextAsync call is already pending.");
                 if (_ready is { Count: > 0 })
                 {
-                    Current = _ready.Dequeue();
+                    owner.Current = _ready.Dequeue();
                     return CompletedTasks.True();
                 }
                 if (_remaining == 0) return CompletedTasks.False();
@@ -208,7 +278,7 @@ internal sealed class WhenEachPromise<T> : ILuminTaskAsyncEnumerable<WhenEachRes
         {
             ulong waiter;
             CancellationToken token;
-            lock (_gate)
+            lock (this)
             {
                 waiter = _waiter;
                 _waiter = 0;
@@ -218,14 +288,17 @@ internal sealed class WhenEachPromise<T> : ILuminTaskAsyncEnumerable<WhenEachRes
             if (waiter != 0) LuminTaskSource.TrySetCanceled(waiter, token);
         }
 
-        public LuminTask DisposeAsync()
+        internal void Close(Enumerator owner)
         {
             ulong waiter;
+            bool reusable;
             CancellationTokenRegistration release;
-            lock (_gate)
+            lock (this)
             {
-                _disposed = true;
-                Current = default;
+                // Either Close or the last completing child returns the session. Token callbacks can outlive both.
+                reusable = _remaining == 0 && _poolable;
+                Volatile.Write(ref _owner, null);
+                owner.Current = default;
                 _ready = null;
                 waiter = _waiter;
                 _waiter = 0;
@@ -235,7 +308,7 @@ internal sealed class WhenEachPromise<T> : ILuminTaskAsyncEnumerable<WhenEachRes
             }
             release.Release();
             if (waiter != 0) LuminTaskResultBridge.TrySetResult(waiter, false);
-            return default;
+            if (reusable) LuminTaskIdleCache.Return(this, 128);
         }
     }
 }

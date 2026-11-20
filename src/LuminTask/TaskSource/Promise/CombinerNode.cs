@@ -94,7 +94,7 @@ internal abstract class CombinerNode : SlotObserver, ILuminCacheNode
         }
         if (drain)
         {
-            if (handle != 0) LuminTaskSource.Forget(handle);
+            if (handle != 0) LuminTaskSource.TryForget(handle);
         }
         else if (error != null)
         {
@@ -146,9 +146,9 @@ internal sealed class VoidJoin : CombinerNode
         try
         {
             if (tasks != null)
-                for (int i = 0; i < count; i++) join.Watch(tasks[i]._handle, i);
+                for (int i = 0; i < count; i++) join.Watch(tasks[i]._handle, any ? i : 0);
             else if (list != null)
-                for (int i = 0; i < count; i++) join.Watch(list[i]._handle, i);
+                for (int i = 0; i < count; i++) join.Watch(list[i]._handle, any ? i : 0);
             else
             {
                 join.Watch(a._handle, 0);

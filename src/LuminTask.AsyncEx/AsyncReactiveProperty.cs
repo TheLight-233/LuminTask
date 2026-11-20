@@ -287,15 +287,10 @@ internal sealed class AsyncReactivePropertyEnumerable<T> : ILuminTaskAsyncEnumer
 
         private async LuminTask<bool> Core()
         {
-            try
-            {
-                _current = await _state.WaitAsync(_ct);
-                return true;
-            }
-            catch (OperationCanceledException)
-            {
-                return false;
-            }
+            var change = _state.WaitAsync(_ct);
+            if (await new LuminTaskSafeExtensions.CancellationCheck(change)) return false;
+            _current = change.GetResult();
+            return true;
         }
 
         public LuminTask DisposeAsync() => LuminTask.CompletedTask();
