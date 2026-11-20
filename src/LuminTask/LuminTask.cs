@@ -192,7 +192,20 @@ public partial struct LuminTask : ICriticalNotifyCompletion
 [StructLayout(LayoutKind.Sequential)]
 public partial struct LuminTask<T> : ICriticalNotifyCompletion
 {
-    internal LuminTaskHandle _handle;
+    // Keep T naturally aligned. A ulong would round even the stride of a Wasm32
+    // task<int> array up to a multiple of eight. The source validates all 64 bits.
+    private uint _handleLow, _handleHigh;
+    internal LuminTaskHandle _handle
+    {
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        readonly get => ((ulong)_handleHigh << 32) | _handleLow;
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private set
+        {
+            _handleLow = unchecked((uint)value);
+            _handleHigh = (uint)(value >> 32);
+        }
+    }
 
     // Only meaningful on the synchronous completion path, where no slot exists at all; the builder
     // writes it with SetResult(T) so a method that never suspends carries its value inline.

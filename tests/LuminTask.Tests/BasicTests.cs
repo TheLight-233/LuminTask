@@ -12,6 +12,10 @@ public static class BasicTests
         var slot = typeof(LuminTask).Assembly.GetType("LuminThread.Slot")!;
         var sizeOf = typeof(System.Runtime.CompilerServices.Unsafe).GetMethod("SizeOf")!;
         Assert.Equal(24 + 4 * IntPtr.Size, (int)sizeOf.MakeGenericMethod(slot).Invoke(null, null)!);
+        Assert.Equal(12, System.Runtime.CompilerServices.Unsafe.SizeOf<LuminTask<int>>());
+        const ulong highGeneration = 0x1234_5678_0001_0001UL;
+        Assert.True(LuminTaskSource.ToTask<int>(highGeneration).Equals(LuminTaskSource.ToTask(highGeneration)));
+        Assert.False(LuminTaskSource.ToTask<int>(highGeneration).Equals(LuminTaskSource.ToTask<int>(0x0001_0001UL)));
     }
 
     public static async Task RunAll(TestRunner r)

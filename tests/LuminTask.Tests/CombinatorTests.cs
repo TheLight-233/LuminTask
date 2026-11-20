@@ -20,8 +20,58 @@ public static class CombinatorTests
         await r.Run("WhenAny (array) releases the losers' slots", WhenAnyArrayLosersReleased);
         await r.Run("array combinators serve mixed result types from one state", ArrayCombinatorsMixedResults);
         await r.Run("WhenAll (array) mixes inline and suspended children", WhenAllArrayMixedCompletion);
+        await r.Run("list combinators finish after their input lists are reused", ReuseInputLists);
+#if !DEBUG
+        await r.Run("reused input lists allocate no temporary arrays", ListAllocation);
+#endif
         await r.Run("Delay honours cancellation", DelayCancellation);
     }
+
+    private static async LuminTask ReuseInputLists()
+    {
+        var values = new List<LuminTask<int>> { LuminTask.FromResult(3), LuminTaskSource.Create<int>(out var first) };
+        var all = LuminTask.WhenAll(values);
+        values.Clear();
+        values.Add(LuminTaskSource.Create<int>(out var late));
+        values.Add(LuminTask.FromResult(9));
+        var any = LuminTask.WhenAny(values);
+        values.Clear();
+        LuminTaskSource.SetResult(first, 4);
+        var result = await all;
+        Assert.Equal(3, result[0]);
+        Assert.Equal(4, result[1]);
+        Assert.Equal((1, 9), await any);
+        LuminTaskSource.SetResult(late, 5);
+
+        var tasks = new List<LuminTask> { LuminTaskSource.Create(out var a) };
+        var allVoid = LuminTask.WhenAll(tasks);
+        tasks.Clear();
+        tasks.Add(LuminTaskSource.Create(out var b));
+        tasks.Add(LuminTask.CompletedTask());
+        var anyVoid = LuminTask.WhenAny(tasks);
+        tasks.Clear();
+        LuminTaskSource.SetResult(a);
+        await allVoid;
+        Assert.Equal(1, await anyVoid);
+        LuminTaskSource.SetResult(b);
+    }
+
+#if !DEBUG
+    private static void ListAllocation()
+    {
+        var group = new List<LuminTask> { LuminTask.CompletedTask(), LuminTask.CompletedTask() };
+        var race = new List<LuminTask<int>> { LuminTask.FromResult(3), LuminTask.FromResult(7) };
+        void Run()
+        {
+            LuminTask.WhenAll(group).GetResult();
+            LuminTask.WhenAny(race).GetResult();
+        }
+        for (int i = 0; i < 64; i++) Run();
+        var before = GC.GetAllocatedBytesForCurrentThread();
+        for (int i = 0; i < 128; i++) Run();
+        Assert.Equal(0L, GC.GetAllocatedBytesForCurrentThread() - before);
+    }
+#endif
 
     private static async LuminTask DelayTiming()
     {

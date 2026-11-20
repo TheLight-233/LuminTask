@@ -23,26 +23,10 @@ public partial struct LuminTask
         if (tasks is null)
             return FromException<int>(new ArgumentNullException(nameof(tasks)));
 
-        LuminTask[] array;
+        if (tasks is List<LuminTask> { Count: > 0 } list && list.GetType() == typeof(List<LuminTask>))
+            return new LuminTask<int>(VoidJoin.Create(true, list.Count, null, list: list));
 
-        if (tasks is LuminTask[] tasksArray)
-        {
-            array = tasksArray;
-        }
-        else if (tasks is ICollection<LuminTask> collection)
-        {
-            array = new LuminTask[collection.Count];
-            collection.CopyTo(array, 0);
-        }
-        else
-        {
-            array = tasks.ToArray();
-        }
-
-        if (array.Length == 0)
-            return FromException<int>(new InvalidOperationException("At least one task is required."));
-
-        return new LuminTask<int>(VoidJoin.Create(true, array.Length, array));
+        return WhenAny(tasks as LuminTask[] ?? tasks.ToArray());
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -52,7 +36,7 @@ public partial struct LuminTask
             return FromException<(int winArgumentIndex, T result)>(
                 new InvalidOperationException("At least one task is required."));
 
-        return new LuminTask<(int winArgumentIndex, T result)>(ArrayJoin<T>.Create(true, tasks));
+        return new LuminTask<(int winArgumentIndex, T result)>(ArrayJoin<T>.Create(true, tasks.Length, tasks));
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -61,27 +45,10 @@ public partial struct LuminTask
         if (tasks is null)
             return FromException<(int winArgumentIndex, T result)>(new ArgumentNullException(nameof(tasks)));
 
-        LuminTask<T>[] array;
+        if (tasks is List<LuminTask<T>> { Count: > 0 } list && list.GetType() == typeof(List<LuminTask<T>>))
+            return new LuminTask<(int winArgumentIndex, T result)>(ArrayJoin<T>.Create(true, list.Count, null, list: list));
 
-        if (tasks is LuminTask<T>[] tasksArray)
-        {
-            array = tasksArray;
-        }
-        else if (tasks is ICollection<LuminTask<T>> collection)
-        {
-            array = new LuminTask<T>[collection.Count];
-            collection.CopyTo(array, 0);
-        }
-        else
-        {
-            array = tasks.ToArray();
-        }
-
-        if (array.Length == 0)
-            return FromException<(int winArgumentIndex, T result)>(
-                new InvalidOperationException("At least one task is required."));
-
-        return new LuminTask<(int winArgumentIndex, T result)>(ArrayJoin<T>.Create(true, array));
+        return WhenAny(tasks as LuminTask<T>[] ?? tasks.ToArray());
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]

@@ -25,27 +25,10 @@ public partial struct LuminTask
         if (tasks == null)
             return FromResult();
 
-        LuminTask[] array;
+        if (tasks is List<LuminTask> { Count: > 0 } list && list.GetType() == typeof(List<LuminTask>))
+            return new LuminTask(VoidJoin.Create(false, list.Count, null, list: list));
 
-        if (tasks is LuminTask[] tasksArray)
-        {
-            array = tasksArray;
-        }
-        else if (tasks is ICollection<LuminTask> col)
-        {
-
-            array = new LuminTask[col.Count];
-            col.CopyTo(array, 0);
-        }
-        else
-        {
-            array = tasks.ToArray();
-        }
-
-        if (array.Length == 0)
-            return FromResult();
-
-        return new LuminTask(VoidJoin.Create(false, array.Length, array));
+        return WhenAll(tasks as LuminTask[] ?? tasks.ToArray());
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -56,7 +39,7 @@ public partial struct LuminTask
             return LuminTask<T[]>.FromResult([]);
         }
 
-        return new LuminTask<T[]>(ArrayJoin<T>.Create(false, tasks));
+        return new LuminTask<T[]>(ArrayJoin<T>.Create(false, tasks.Length, tasks));
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -65,27 +48,10 @@ public partial struct LuminTask
         if (tasks == null)
             return LuminTask<T[]>.FromResult([]);
 
-        LuminTask<T>[] array;
+        if (tasks is List<LuminTask<T>> { Count: > 0 } list && list.GetType() == typeof(List<LuminTask<T>>))
+            return new LuminTask<T[]>(ArrayJoin<T>.Create(false, list.Count, null, list: list));
 
-        if (tasks is LuminTask<T>[] tasksArray)
-        {
-            array = tasksArray;
-        }
-        else if (tasks is ICollection<LuminTask<T>> col)
-        {
-
-            array = new LuminTask<T>[col.Count];
-            col.CopyTo(array, 0);
-        }
-        else
-        {
-            array = tasks.ToArray();
-        }
-
-        if (array.Length == 0)
-            return LuminTask<T[]>.FromResult([]);
-
-        return new LuminTask<T[]>(ArrayJoin<T>.Create(false, array));
+        return WhenAll(tasks as LuminTask<T>[] ?? tasks.ToArray());
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]

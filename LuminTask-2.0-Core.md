@@ -138,6 +138,10 @@ internal struct Slot
 
 首要比较使用同一份可运行业务。包体按完整发布目录的文件字节统计，并注明压缩格式。场景预热并排空后，同时记录强制 GC 后的托管堆、Wasm 堆和目标进程工作集，各项单独报告。性能取相同业务从发起到全部完成的时间，空包差值、生成的 C++ 文本和单次挂起基准用于定位差异。
 
+WebGL 的 GC 验收同时记录每条完整业务的托管分配字节、完整帧窗口内的回收次数、回收耗时和主循环帧 P99。窗口从首个计时帧开始，延续到最后一个计时帧结束，包含 Unity 在帧末执行的回收。框架自身的预热挂起路径和调用方拥有的数组、集合分别测量。各库使用玩家的默认 GC 策略。
+
+`LuminTask<T>` 用两个 32 位字段保存完整句柄，T 保持自身的自然对齐。Wasm32 的 `LuminTask<int>[]` 每个元素占 12 B，全局 Source 的代际检查仍使用 64 位句柄。对传入的普通 `List<LuminTask>` 或 `List<LuminTask<T>>`，`WhenAll` 和 `WhenAny` 在返回前按索引登记子任务。调用者可立即清空并复用列表。返回给调用者的 `WhenAll<T>` 结果数组按原有所有权分配。
+
 普通 C# 每个实际使用的 async 方法仍有编译器生成的状态机。`Runner<TStateMachine>` 只随状态机闭合；异步结果桥仅为含引用结构体与大值租用 `StateTuple<T>`。Builder 必需的 `Await[Unsafe]OnCompleted<TAwaiter,TStateMachine>` 保持薄入口；完成、登记、池策略、组合计数和调度循环编译为非泛型实现。保留公共异构重载所需的签名和强类型读写。发布物中实际出现哪些闭合类型及代码，取决于 IL2CPP 的泛型共享和裁剪，须从产物核实。
 
 .NET 11 Runtime Async 把部分标准 Task/ValueTask 方法的挂起转换交给运行时；自定义 task-like 返回类型仍走编译器 Builder。这里借鉴同步直返、只在挂起时物化执行状态、缩短中间转发链。库可以直返底层 LuminTask 的调用直接转发。BCL 池化 Builder 的强类型状态机和缓存 Action 可用于普通 C#，其每线程及每核库存与本项目的全局驻留预算不相容。[Microsoft 的 Runtime Async 说明](https://devblogs.microsoft.com/dotnet/performance-improvements-in-net-11/) · [.NET 池化 Builder 源码](https://raw.githubusercontent.com/dotnet/runtime/v10.0.0/src/libraries/System.Private.CoreLib/src/System/Runtime/CompilerServices/PoolingAsyncValueTaskMethodBuilderT.cs)

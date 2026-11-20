@@ -89,18 +89,25 @@ public static partial class LuminTaskSource
     {
         if (continuation == null) throw new ArgumentNullException(nameof(continuation));
         if (handle == 0) { continuation(); return; }
-        OnCompleted(handle, static state => ((Action)state)(), continuation);
+        Register(handle, null, continuation);
     }
 
     internal static void OnCompleted(ulong handle, Action<object> continuation, object? state)
     {
         if (continuation == null) throw new ArgumentNullException(nameof(continuation));
+        Register(handle, continuation, state);
+    }
+
+    // An ordinary await stores its Action directly in the state field. The Registered
+    // bit distinguishes that case from a slot that has no continuation at all.
+    private static void Register(ulong handle, Action<object>? continuation, object? state)
+    {
         var page = Enter(handle, out int i, out long control);
         if (page == null) LuminTaskExceptionHelper.ThrowStaleHandle();
         if ((control & Capture) != 0)
         {
             Volatile.Write(ref page.Slots[i].Control, control);
-            _registerCaptured!(handle, continuation, state);
+            _registerCaptured!(handle, continuation ?? (static value => ((Action)value)()), state);
             return;
         }
         RegisterLocked(ref page.Slots[i], control, continuation, state);
@@ -129,7 +136,7 @@ public static partial class LuminTaskSource
         RegisterLocked(ref page.Slots[i], control, continuation, state);
     }
 
-    private static void RegisterLocked(ref Slot slot, long control, Action<object> continuation, object? state)
+    private static void RegisterLocked(ref Slot slot, long control, Action<object>? continuation, object? state)
     {
         if ((control & Registered) != 0)
         {
@@ -146,9 +153,13 @@ public static partial class LuminTaskSource
         if (ready) Invoke(continuation, state);
     }
 
-    private static void Invoke(Action<object> callback, object? state)
+    private static void Invoke(Action<object>? callback, object? state)
     {
-        try { callback(state!); }
+        try
+        {
+            if (callback != null) callback(state!);
+            else ((Action)state!)();
+        }
         catch (Exception ex) { LuminTaskScheduler.PublishUnobservedTaskException(ex); }
     }
 
@@ -202,7 +213,7 @@ public static partial class LuminTaskSource
         // A consumer may already have recycled the slot.
         discarded?.ReturnToPool();
         producer?.Published();
-        if (continuation != null) Invoke(continuation, state);
+        if ((control & Registered) != 0) Invoke(continuation, state);
     }
 
     // A claimed terminal slot remains in its page until this consumer returns it.

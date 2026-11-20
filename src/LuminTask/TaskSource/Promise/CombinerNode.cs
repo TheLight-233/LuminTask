@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using LuminThread.Utility;
@@ -122,7 +123,8 @@ internal sealed class VoidJoin : CombinerNode
     }
 
     internal static ulong Create(bool any, int count, LuminTask[]? tasks,
-        LuminTask a = default, LuminTask b = default, LuminTask c = default, LuminTask d = default)
+        LuminTask a = default, LuminTask b = default, LuminTask c = default, LuminTask d = default,
+        List<LuminTask>? list = null)
     {
         var join = (VoidJoin?)LuminTaskIdleCache.Take(typeof(VoidJoin)) ?? new VoidJoin();
         ulong handle = LuminTask.RentSlot();
@@ -131,6 +133,8 @@ internal sealed class VoidJoin : CombinerNode
         {
             if (tasks != null)
                 for (int i = 0; i < count; i++) join.Watch(tasks[i]._handle, i);
+            else if (list != null)
+                for (int i = 0; i < count; i++) join.Watch(list[i]._handle, i);
             else
             {
                 join.Watch(a._handle, 0);
@@ -152,18 +156,18 @@ internal sealed class ArrayJoin<T> : CombinerNode
     protected override int Charge => 104 + Unsafe.SizeOf<T>();
     protected override void Clear() { _winner = default!; _results = null; }
 
-    internal static ulong Create(bool any, LuminTask<T>[] tasks)
+    internal static ulong Create(bool any, int count, LuminTask<T>[]? tasks, List<LuminTask<T>>? list = null)
     {
-        var output = any ? null : new T[tasks.Length];
+        var output = any ? null : new T[count];
         var join = (ArrayJoin<T>?)LuminTaskIdleCache.Take(typeof(ArrayJoin<T>)) ?? new ArrayJoin<T>();
         ulong handle = any ? LuminTaskResultBridge.Rent<(int, T)>() : LuminTaskResultBridge.Rent<T[]>();
-        join.Begin(handle, any, tasks.Length);
+        join.Begin(handle, any, count);
         join._results = output;
         try
         {
-            for (int i = 0; i < tasks.Length; i++)
+            for (int i = 0; i < count; i++)
             {
-                var task = tasks[i];
+                var task = tasks != null ? tasks[i] : list![i];
                 if (task._handle != 0) join.Watch(task._handle, i);
                 else join.Inline(task._result!, i);
             }
