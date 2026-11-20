@@ -159,7 +159,6 @@ public partial struct LuminTask : ICriticalNotifyCompletion
     }
 
     [DebuggerHidden]
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void AwaitOnCompleted<TAwaiter, TStateMachine>(
         ref TAwaiter awaiter,
         ref TStateMachine stateMachine)
@@ -168,14 +167,13 @@ public partial struct LuminTask : ICriticalNotifyCompletion
     {
         bool first = _handle == 0;
         if (first) _handle = RentSlot();
-        var runner = LuminTaskBuilder.GetRunner(_handle, ref stateMachine, first);
+        var runner = StateMachineBox<TStateMachine>.Bind(_handle, ref stateMachine, first);
         try { awaiter.OnCompleted(runner.MoveNextAction); }
         finally { if (first) runner.Exit(); }
     }
 
     [DebuggerHidden]
     [SecuritySafeCritical]
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void AwaitUnsafeOnCompleted<TAwaiter, TStateMachine>(
         ref TAwaiter awaiter,
         ref TStateMachine stateMachine)
@@ -184,7 +182,7 @@ public partial struct LuminTask : ICriticalNotifyCompletion
     {
         bool first = _handle == 0;
         if (first) _handle = RentSlot();
-        var runner = LuminTaskBuilder.GetRunner(_handle, ref stateMachine, first);
+        var runner = StateMachineBox<TStateMachine>.Bind(_handle, ref stateMachine, first);
         try { awaiter.UnsafeOnCompleted(runner.MoveNextAction); }
         finally { if (first) runner.Exit(); }
     }
@@ -342,7 +340,6 @@ public partial struct LuminTask<T> : ICriticalNotifyCompletion
     }
 
     [DebuggerHidden]
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void AwaitOnCompleted<TAwaiter, TStateMachine>(
         ref TAwaiter awaiter,
         ref TStateMachine stateMachine)
@@ -351,14 +348,13 @@ public partial struct LuminTask<T> : ICriticalNotifyCompletion
     {
         bool first = _handle == 0;
         if (first) _handle = LuminTaskResultBridge.Rent<T>();
-        var runner = LuminTaskBuilder.GetRunner(_handle, ref stateMachine, first);
+        var runner = StateMachineBox<TStateMachine>.Bind(_handle, ref stateMachine, first);
         try { awaiter.OnCompleted(runner.MoveNextAction); }
         finally { if (first) runner.Exit(); }
     }
 
     [DebuggerHidden]
     [SecuritySafeCritical]
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void AwaitUnsafeOnCompleted<TAwaiter, TStateMachine>(
         ref TAwaiter awaiter,
         ref TStateMachine stateMachine)
@@ -367,7 +363,7 @@ public partial struct LuminTask<T> : ICriticalNotifyCompletion
     {
         bool first = _handle == 0;
         if (first) _handle = LuminTaskResultBridge.Rent<T>();
-        var runner = LuminTaskBuilder.GetRunner(_handle, ref stateMachine, first);
+        var runner = StateMachineBox<TStateMachine>.Bind(_handle, ref stateMachine, first);
         try { awaiter.UnsafeOnCompleted(runner.MoveNextAction); }
         finally { if (first) runner.Exit(); }
     }

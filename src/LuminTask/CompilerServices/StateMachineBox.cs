@@ -51,16 +51,27 @@ internal abstract class StateMachineBox : ILuminCacheNode
 
 internal sealed class StateMachineBox<TStateMachine> : StateMachineBox where TStateMachine : IAsyncStateMachine
 {
-    internal TStateMachine Machine = default!;
+    private TStateMachine _machine = default!;
     private StateMachineBox() : base(Unsafe.SizeOf<TStateMachine>()) { }
 
-    internal static StateMachineBox<TStateMachine> Rent()
+    internal static StateMachineBox Bind(ulong handle, ref TStateMachine machine, bool first)
     {
+        // The producer retains its slot until it publishes a terminal result.
+        var page = SlotStore.Find(handle, out int index)!;
+        ref var slot = ref page.Slots[index];
+        if (!first)
+        {
+            var active = (StateMachineBox)slot.ProducerState!;
+            active.ReserveResume();
+            return active;
+        }
         var runner = LuminTaskIdleCache.TakeRunner<StateMachineBox<TStateMachine>>() ?? new StateMachineBox<TStateMachine>();
         runner.Acquire();
+        runner._machine = machine;
+        slot.ProducerState = runner;
         return runner;
     }
 
-    protected override void Advance() => Machine.MoveNext();
-    protected override void Clear() => Machine = default!;
+    protected override void Advance() => _machine.MoveNext();
+    protected override void Clear() => _machine = default!;
 }

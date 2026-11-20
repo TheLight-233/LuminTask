@@ -11,18 +11,13 @@ internal static class LuminTaskResultBridge
     // IL2CPP may walk struct fields to classify T. Cache the immutable answer once per result type.
     private static class Layout<T>
     {
-        internal static readonly long Kind = Classify<T>();
+        internal static readonly long Kind = RuntimeHelpers.IsReferenceOrContainsReferences<T>()
+            ? (typeof(T).IsValueType ? LuminTaskSource.Cell : LuminTaskSource.Reference)
+            : InlineKind(Unsafe.SizeOf<T>());
     }
 
-    private static long Classify<T>()
-    {
-        if (!RuntimeHelpers.IsReferenceOrContainsReferences<T>())
-        {
-            int size = Unsafe.SizeOf<T>();
-            return size <= 16 ? (long)size << LuminTaskSource.KindShift : LuminTaskSource.Cell;
-        }
-        return typeof(T).IsValueType ? LuminTaskSource.Cell : LuminTaskSource.Reference;
-    }
+    private static long InlineKind(int size) =>
+        size <= 16 ? (long)size << LuminTaskSource.KindShift : LuminTaskSource.Cell;
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal static ulong Rent<T>()
