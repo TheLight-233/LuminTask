@@ -16,8 +16,8 @@ public partial struct LuminTask
         if (cancellationToken.IsCancellationRequested) return FromCanceled(cancellationToken);
         if (frameCount == 0) return CompletedTask();
 
-        long remaining = frameCount;
-        var handle = LuminTaskResultBridge.RentState(in remaining);
+        if (frameCount == 1) return Yield(timing, cancellationToken);
+        var handle = RentTimerSlot(frameCount, 0);
 
         PlayerLoopHelper.Schedule(timing, new LuminTaskState(handle, cancellationToken), DelayFrameStep);
 
@@ -35,11 +35,12 @@ public partial struct LuminTask
         var page = LuminTaskSource.Enter(state.Handle, out int i, out long control, pendingOnly: true);
         if (page == null) return false;
         ref var slot = ref page.Slots[i];
-        bool waiting = --slot.Data.First > 0;
-        Volatile.Write(ref slot.Control, control);
-        if (waiting) return true;
-
-        LuminTaskSource.TrySetResult(state.Handle);
+        if (--slot.Data.First > 0)
+        {
+            Volatile.Write(ref slot.Control, control);
+            return true;
+        }
+        LuminTaskSource.Publish(ref slot, state.Handle, control, LuminTaskStatus.Succeeded);
         return false;
     }
 }

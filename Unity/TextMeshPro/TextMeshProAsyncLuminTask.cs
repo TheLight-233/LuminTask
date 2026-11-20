@@ -321,7 +321,7 @@ namespace LuminThread.Unity
             IAsyncTextSelectionLuminTaskEventHandler<(string, int, int)>, 
             IAsyncEndTextSelectionLuminTaskEventHandler<(string, int, int)>
         {
-            private readonly TMP_InputField.TextSelectionEvent _selectionEvent;
+            private TMP_InputField.TextSelectionEvent _selectionEvent;
             private readonly CancellationToken _cancellationToken;
             private readonly bool _callOnce;
 
@@ -359,10 +359,11 @@ namespace LuminThread.Unity
                         var self = (AsyncTmpTextSelectionLuminTaskEventHandler)state;
                         self.DisposeFromCancellation();
                     }, this);
-                    if (_disposed)
-                        registration.Dispose();
-                    else
-                        _registration = registration;
+                    lock (this)
+                    {
+                        if (!_disposed) { _registration = registration; return; }
+                    }
+                    registration.Dispose();
                 }
             }
 
@@ -378,73 +379,71 @@ namespace LuminThread.Unity
 
             public LuminTask<(string, int, int)> ToLuminTask()
             {
-                if (_cancellationToken.IsCancellationRequested)
+                lock (this)
                 {
-                    return LuminTask.FromCanceled<(string, int, int)>(_cancellationToken);
+                    if (_cancellationToken.IsCancellationRequested)
+                    {
+                        return LuminTask.FromCanceled<(string, int, int)>(_cancellationToken);
+                    }
+
+                    if (_disposed)
+                        return LuminTask.FromCanceled<(string, int, int)>(new CancellationToken(canceled: true));
+
+                    if (_handle == 0)
+                        LuminTaskSource.Rent<(string, int, int)>(out _handle);
+
+                    return LuminTaskSource.ToTask<(string, int, int)>(_handle);
                 }
-
-                if (_disposed)
-                    return LuminTask.FromCanceled<(string, int, int)>(new CancellationToken(canceled: true));
-
-                if (_handle == 0)
-                    LuminTaskSource.Rent<(string, int, int)>(out _handle);
-
-                return LuminTaskSource.ToTask<(string, int, int)>(_handle);
             }
 
             private void Invoke(string text, int start, int end)
             {
-                if (!_cancellationToken.IsCancellationRequested)
+                ulong handle;
+                lock (this)
                 {
-                    var handle = _handle;
-                    if (handle == 0) return;
+                    if (_disposed || _cancellationToken.IsCancellationRequested || _handle == 0) return;
+                    handle = _handle;
                     _handle = 0;
-
-                    if (_callOnce)
-                    {
-                        _disposed = true;
-                        Detach();
-                    }
-
-                    LuminTaskSource.SetResult(handle, (text, start, end));
+                    if (_callOnce) _disposed = true;
                 }
+                if (_callOnce) Detach();
+                LuminTaskSource.SetResult(handle, (text, start, end));
             }
 
-            public void Dispose()
+            public void Dispose() => Close(true);
+            private void DisposeFromCancellation() => Close(false);
+
+            private void Close(bool disposeRegistration)
             {
-                if (_disposed) return;
-                _disposed = true;
-                Detach();
-
-                var handle = _handle;
-                _handle = 0;
-                if (handle != 0)
-                    LuminTaskSource.SetCanceled(handle, _cancellationToken);
-            }
-
-            private void DisposeFromCancellation()
-            {
-                if (_disposed) return;
-                _disposed = true;
-                Detach(disposeRegistration: false);
-
-                var handle = _handle;
-                _handle = 0;
-                if (handle != 0)
-                    LuminTaskSource.SetCanceled(handle, _cancellationToken);
+                ulong handle;
+                lock (this)
+                {
+                    if (_disposed) return;
+                    _disposed = true;
+                    handle = _handle;
+                    _handle = 0;
+                }
+                try { Detach(disposeRegistration); }
+                finally { if (handle != 0) LuminTaskSource.SetCanceled(handle, _cancellationToken); }
             }
 
             private void Detach(bool disposeRegistration = true)
             {
+                if (disposeRegistration) _registration.Dispose();
+                _registration = default;
+                if (_continuation == null) return;
+                if (PlayerLoopHelper.IsMainThread) RemoveListener();
+                else PlayerLoopHelper.AddContinuation(PlayerLoopTiming.Update, RemoveListener);
+            }
+
+            private void RemoveListener()
+            {
                 if (_continuation != null && _selectionEvent != null)
                 {
                     _selectionEvent.RemoveListener(_continuation);
+                    _selectionEvent = null;
                     _continuation = null;
                 }
-
-                if (disposeRegistration)
-                    _registration.Dispose();
-                _registration = default;
             }
 
             #region LuminTaskSource 实现

@@ -23,10 +23,7 @@ namespace LuminThread.Unity
                 cancellationTokenSources.Add(gameObject, cts);
                 
                 // 当GameObject被销毁时取消令牌
-                monoBehaviour.gameObject.AddComponent<CancellationTokenOnDestroy>().Initialize(cts, () =>
-                {
-                    cancellationTokenSources.Remove(gameObject);
-                });
+                gameObject.AddComponent<CancellationTokenOnDestroy>().Initialize(cts);
             }
             
             return cts.Token;
@@ -35,19 +32,20 @@ namespace LuminThread.Unity
         private class CancellationTokenOnDestroy : MonoBehaviour
         {
             private CancellationTokenSource cts;
-            private Action onDestroyCallback;
 
-            public void Initialize(CancellationTokenSource cts, Action onDestroyCallback)
+            public void Initialize(CancellationTokenSource cts)
             {
                 this.cts = cts;
-                this.onDestroyCallback = onDestroyCallback;
             }
 
             private void OnDestroy()
             {
-                cts?.Cancel();
-                cts?.Dispose();
-                onDestroyCallback?.Invoke();
+                try { cts?.Cancel(); }
+                finally
+                {
+                    cancellationTokenSources.Remove(gameObject);
+                    cts?.Dispose();
+                }
             }
         }
     }

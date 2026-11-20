@@ -86,9 +86,16 @@ public class ManagedPlayerLoop : IPlayLoopStrategy
         lock (this)
         {
             var buffers = Start();
-            buffers.Incoming.Reserve(buffers.Incoming.Count + 1);
             buffers.Active.Reserve(_accepted + 1);
-            buffers.Incoming.Put((state, moveNext));
+            // An idle manual pump can admit work straight into its next pass. While
+            // stepping, new work must still follow all survivors of the current pass.
+            if (!_timerDriven && !_running && buffers.Incoming.Count == 0)
+                buffers.Active.Put((state, moveNext));
+            else
+            {
+                buffers.Incoming.Reserve(buffers.Incoming.Count + 1);
+                buffers.Incoming.Put((state, moveNext));
+            }
             _accepted++;
         }
     }
@@ -129,21 +136,16 @@ public class ManagedPlayerLoop : IPlayLoopStrategy
         {
             if (!_timerDriven) RunContinuations(buffers);
             int count;
+            (LuminTaskState State, MoveNext Step) work = default;
             lock (this)
             {
                 int incoming = _timerDriven ? Math.Min(1000, buffers.Incoming.Count) : buffers.Incoming.Count;
                 for (int i = 0; i < incoming; i++) buffers.Active.Put(buffers.Incoming.Take());
-                count = buffers.Active.Count;
+                count = _closed ? 0 : buffers.Active.Count;
+                if (count != 0) work = buffers.Active.Take();
             }
-            for (int i = 0; i < count; i++)
+            while (count != 0)
             {
-                (LuminTaskState State, MoveNext Step) work;
-                lock (this)
-                {
-                    if (_closed) break;
-                    work = buffers.Active.Take();
-                }
-
                 bool keep = false;
                 try { keep = work.Step(work.State); }
                 catch (Exception ex)
@@ -154,10 +156,16 @@ public class ManagedPlayerLoop : IPlayLoopStrategy
 
                 lock (this)
                 {
-                    if (keep && !_closed) { buffers.Active.Put(work); continue; }
-                    _accepted--;
+                    if (keep && !_closed) buffers.Active.Put(work);
+                    else _accepted--;
+                    if (!_closed)
+                    {
+                        if (--count != 0) work = buffers.Active.Take();
+                        continue;
+                    }
                 }
                 if (keep) Cancel(work.State);
+                break;
             }
             if (_timerDriven) RunContinuations(buffers);
         }

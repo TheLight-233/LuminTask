@@ -21,12 +21,7 @@ public partial struct LuminTask
         if (millisecondsDelay == 0)
             return CompletedTask();
 
-        var timing = new Inline16
-        {
-            First = Stopwatch.GetTimestamp(),
-            Second = DelayPromise.MillisecondsToStopwatchTicks(millisecondsDelay)
-        };
-        var handle = LuminTaskResultBridge.RentState(in timing);
+        var handle = RentTimerSlot(Stopwatch.GetTimestamp(), DelayPromise.MillisecondsToStopwatchTicks(millisecondsDelay));
 
         if (cancelImmediately && cancellationToken.CanBeCanceled)
             AttachCancellation(handle, cancellationToken);
@@ -34,6 +29,15 @@ public partial struct LuminTask
         PlayerLoopHelper.Schedule(loopTiming, new LuminTaskState(handle, cancellationToken), DelayPromise.MoveNextAction);
 
         return new LuminTask(handle);
+    }
+
+    // These words are producer-owned until the task is scheduled. Its public result is void.
+    private static ulong RentTimerSlot(long first, long second)
+    {
+        var handle = RentSlot();
+        var page = SlotStore.Find(handle, out int index)!;
+        page.Slots[index].Data = new Inline16 { First = first, Second = second };
+        return handle;
     }
 
     [DebuggerHidden]

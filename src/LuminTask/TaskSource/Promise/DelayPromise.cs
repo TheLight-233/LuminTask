@@ -1,5 +1,6 @@
 using System;
 using System.Diagnostics;
+using System.Threading;
 using System.Runtime.CompilerServices;
 using LuminThread.Interface;
 using LuminThread.Utility;
@@ -19,11 +20,15 @@ internal static class DelayPromise
             return false;
         }
 
-        if (!LuminTaskResultBridge.TryReadState(state.Handle, out Inline16 timing)) return false;
-        if (Stopwatch.GetTimestamp() - timing.First < timing.Second)
+        var page = LuminTaskSource.Enter(state.Handle, out int index, out long control, pendingOnly: true);
+        if (page == null) return false;
+        ref var slot = ref page.Slots[index];
+        if (Stopwatch.GetTimestamp() - slot.Data.First < slot.Data.Second)
+        {
+            Volatile.Write(ref slot.Control, control);
             return true;
-
-        LuminTaskSource.TrySetResult(state.Handle);
+        }
+        LuminTaskSource.Publish(ref slot, state.Handle, control, LuminTaskStatus.Succeeded);
         return false;
     }
 

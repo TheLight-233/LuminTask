@@ -6,7 +6,6 @@ using UnityEngine.Events;
 using UnityEngine.UI;
 using LuminThread.TaskSource;
 using LuminThread.Utility;
-using System.Runtime.InteropServices;
 using LuminThread.Interface;
 
 namespace LuminThread.Unity
@@ -22,7 +21,7 @@ namespace LuminThread.Unity
 
         public static LuminTask OnInvokeAsync(this UnityEvent unityEvent, CancellationToken cancellationToken)
         {
-            return AsyncUnityLuminTaskEventPromise.Create(unityEvent, PlayerLoopTiming.Update, cancellationToken, true);
+            return OneShotEvent.Create(unityEvent, cancellationToken);
         }
 
         public static AsyncUnityLuminTaskEventHandler<T> GetAsyncEventHandler<T>(this UnityEvent<T> unityEvent, CancellationToken cancellationToken)
@@ -32,7 +31,7 @@ namespace LuminThread.Unity
 
         public static LuminTask<T> OnInvokeAsync<T>(this UnityEvent<T> unityEvent, CancellationToken cancellationToken)
         {
-            return AsyncUnityLuminTaskEventPromise<T>.Create(unityEvent, PlayerLoopTiming.Update, cancellationToken, true);
+            return OneShotEvent<T>.Create(unityEvent, cancellationToken);
         }
 
         #endregion
@@ -244,199 +243,119 @@ namespace LuminThread.Unity
 
         #endregion
 
-        #region AsyncUnityLuminTaskEventPromise（无返回值）
-
-        private static class AsyncUnityLuminTaskEventPromise
+        // Unity may already have snapshotted a listener when it is removed. Each subscription
+        // keeps its own identity so an old Invoke or queued poll can never complete a new wait.
+        private abstract class OneShotEventWait
         {
-            [StructLayout(LayoutKind.Sequential)]
-            private struct StateData
+            private long _handle;
+            protected readonly CancellationToken Token;
+            protected OneShotEventWait(ulong handle, CancellationToken token)
             {
-                public bool Completed;
-                public bool IsCancellationRequested;
-                public ulong Handle;
+                _handle = unchecked((long)handle);
+                Token = token;
             }
 
-            public static LuminTask Create(UnityEvent unityEvent, PlayerLoopTiming timing, CancellationToken cancellationToken, bool callOnce)
-            {
-                if (unityEvent == null)
-                    throw new ArgumentNullException(nameof(unityEvent));
-                
-                if (cancellationToken.IsCancellationRequested)
-                    return LuminTask.FromCanceled(cancellationToken);
+            protected abstract void Attach();
+            protected abstract void Detach();
 
+            protected ulong Take()
+            {
+                ulong handle = unchecked((ulong)Interlocked.Exchange(ref _handle, 0));
+                if (handle != 0) Detach();
+                return handle;
+            }
+
+            protected void Start(ulong handle)
+            {
+                try
+                {
+                    Attach();
+                    PlayerLoopHelper.AddAction(PlayerLoopTiming.Update,
+                        new LuminTaskState(handle, Token, this, Release), Poll);
+                }
+                catch
+                {
+                    Take();
+                    LuminTaskSource.SetCanceled(handle, Token);
+                    LuminTaskSource.ToTask(handle).Forget();
+                    throw;
+                }
+            }
+
+            private static readonly Action<object> Release = state => ((OneShotEventWait)state).Take();
+            private static readonly MoveNext Poll = PollCancellation;
+            private static bool PollCancellation(in LuminTaskState state)
+            {
+                var wait = (OneShotEventWait)state.State;
+                if (Volatile.Read(ref wait._handle) == 0) return false;
+                if (!state.CancellationToken.IsCancellationRequested) return true;
+                var handle = wait.Take();
+                if (handle != 0) LuminTaskSource.SetCanceled(handle, state.CancellationToken);
+                return false;
+            }
+        }
+
+        private sealed class OneShotEvent : OneShotEventWait
+        {
+            private UnityEvent _event;
+            private readonly UnityAction _invoke;
+            private OneShotEvent(UnityEvent source, ulong handle, CancellationToken token) : base(handle, token)
+            {
+                _event = source;
+                _invoke = Invoke;
+            }
+            internal static LuminTask Create(UnityEvent source, CancellationToken token)
+            {
+                if (source == null) throw new ArgumentNullException("unityEvent");
+                if (token.IsCancellationRequested) return LuminTask.FromCanceled(token);
                 var task = LuminTaskSource.Create(out ulong handle);
-                var stateData = new StateData
-                {
-                    Completed = false,
-                    IsCancellationRequested = false,
-                    Handle = handle
-                };
-
-                var stateTuple = StateTuple.Create(stateData, unityEvent);
-                var state = new LuminTaskState(handle, cancellationToken, stateTuple);
-
-                UnityAction continuation = null;
-                continuation = () =>
-                {
-                    if (stateData.Completed)
-                        return;
-
-                    stateData.Completed = true;
-                    stateData.IsCancellationRequested = cancellationToken.IsCancellationRequested;
-
-                    if (cancellationToken.IsCancellationRequested)
-                    {
-                        LuminTaskSource.SetCanceled(handle, cancellationToken);
-                    }
-                    else
-                    {
-                        LuminTaskSource.SetResult(handle);
-                    }
-
-                    if (continuation != null)
-                    {
-                        unityEvent.RemoveListener(continuation);
-                        continuation = null;
-                    }
-
-                    if (callOnce)
-                    {
-                        stateTuple.Dispose();
-                    }
-                };
-
-                unityEvent.AddListener(continuation);
-
-                PlayerLoopHelper.AddAction(timing, state, MoveNextAction);
-
+                new OneShotEvent(source, handle, token).Start(handle);
                 return task;
             }
-
-            private static readonly MoveNext MoveNextAction = MoveNext;
-
-            public static bool MoveNext(in LuminTaskState state)
+            protected override void Attach() => _event.AddListener(_invoke);
+            protected override void Detach() { _event.RemoveListener(_invoke); _event = null; }
+            private void Invoke()
             {
-                var stateTuple = state.State as StateTuple<(StateData, UnityEvent)>;
-                if (stateTuple == null)
-                    return false;
-
-                if (stateTuple.Item.Item1.Completed)
-                    return false;
-
-                if (state.CancellationToken.IsCancellationRequested)
-                {
-                    stateTuple.Item.Item1.Completed = true;
-                    stateTuple.Item.Item1.IsCancellationRequested = true;
-                    LuminTaskSource.SetCanceled(stateTuple.Item.Item1.Handle, state.CancellationToken);
-                    stateTuple.Dispose();
-                    return false;
-                }
-
-                return true;
+                var handle = Take();
+                if (handle == 0) return;
+                if (Token.IsCancellationRequested) LuminTaskSource.SetCanceled(handle, Token);
+                else LuminTaskSource.SetResult(handle);
             }
         }
 
-        #endregion
-
-        #region AsyncUnityLuminTaskEventPromise<T>（有返回值）
-
-        private static class AsyncUnityLuminTaskEventPromise<T>
+        private sealed class OneShotEvent<T> : OneShotEventWait
         {
-            [StructLayout(LayoutKind.Sequential)]
-            private struct StateData
+            private UnityEvent<T> _event;
+            private readonly UnityAction<T> _invoke;
+            private OneShotEvent(UnityEvent<T> source, ulong handle, CancellationToken token) : base(handle, token)
             {
-                public bool Completed;
-                public bool IsCancellationRequested;
-                public ulong Handle;
+                _event = source;
+                _invoke = Invoke;
             }
-
-            public static LuminTask<T> Create(UnityEvent<T> unityEvent, PlayerLoopTiming timing, CancellationToken cancellationToken, bool callOnce)
+            internal static LuminTask<T> Create(UnityEvent<T> source, CancellationToken token)
             {
-                if (unityEvent == null)
-                    throw new ArgumentNullException(nameof(unityEvent));
-                
-                if (cancellationToken.IsCancellationRequested)
-                    return LuminTask.FromCanceled<T>(cancellationToken);
-
+                if (source == null) throw new ArgumentNullException("unityEvent");
+                if (token.IsCancellationRequested) return LuminTask.FromCanceled<T>(token);
                 var task = LuminTaskSource.Create<T>(out ulong handle);
-                var stateData = new StateData
-                {
-                    Completed = false,
-                    IsCancellationRequested = false,
-                    Handle = handle
-                };
-
-                var stateTuple = StateTuple.Create(stateData, unityEvent);
-                var state = new LuminTaskState(handle, cancellationToken, stateTuple);
-
-                UnityAction<T> continuation = null;
-                continuation = (result) =>
-                {
-                    if (stateData.Completed)
-                        return;
-
-                    stateData.Completed = true;
-                    stateData.IsCancellationRequested = cancellationToken.IsCancellationRequested;
-
-                    if (cancellationToken.IsCancellationRequested)
-                    {
-                        LuminTaskSource.SetCanceled(handle, cancellationToken);
-                    }
-                    else
-                    {
-                        LuminTaskSource.SetResult(handle, result);
-                    }
-
-                    if (continuation != null)
-                    {
-                        unityEvent.RemoveListener(continuation);
-                        continuation = null;
-                    }
-
-                    if (callOnce)
-                    {
-                        stateTuple.Dispose();
-                    }
-                };
-
-                unityEvent.AddListener(continuation);
-
-                PlayerLoopHelper.AddAction(timing, state, MoveNextAction);
-
+                new OneShotEvent<T>(source, handle, token).Start(handle);
                 return task;
             }
-
-            private static readonly MoveNext MoveNextAction = MoveNext;
-
-            public static bool MoveNext(in LuminTaskState state)
+            protected override void Attach() => _event.AddListener(_invoke);
+            protected override void Detach() { _event.RemoveListener(_invoke); _event = null; }
+            private void Invoke(T result)
             {
-                var stateTuple = state.State as StateTuple<(StateData, UnityEvent<T>)>;
-                if (stateTuple == null)
-                    return false;
-
-                if (stateTuple.Item.Item1.Completed)
-                    return false;
-
-                if (state.CancellationToken.IsCancellationRequested)
-                {
-                    stateTuple.Item.Item1.Completed = true;
-                    stateTuple.Item.Item1.IsCancellationRequested = true;
-                    LuminTaskSource.SetCanceled(stateTuple.Item.Item1.Handle, state.CancellationToken);
-                    stateTuple.Dispose();
-                    return false;
-                }
-
-                return true;
+                var handle = Take();
+                if (handle == 0) return;
+                if (Token.IsCancellationRequested) LuminTaskSource.SetCanceled(handle, Token);
+                else LuminTaskSource.SetResult(handle, result);
             }
         }
-
-        #endregion
 
         #region AsyncUnityLuminTaskEventHandler（无返回值）
 
         public sealed class AsyncUnityLuminTaskEventHandler : IAsyncClickLuminTaskEventHandler, IDisposable
         {
-            private readonly UnityEvent _unityEvent;
+            private UnityEvent _unityEvent;
             private readonly CancellationToken _cancellationToken;
             private readonly bool _callOnce;
 
@@ -477,10 +396,11 @@ namespace LuminThread.Unity
                         var self = (AsyncUnityLuminTaskEventHandler)state;
                         self.DisposeFromCancellation();
                     }, this);
-                    if (_disposed)
-                        registration.Dispose();
-                    else
-                        _registration = registration;
+                    lock (this)
+                    {
+                        if (!_disposed) { _registration = registration; return; }
+                    }
+                    registration.Dispose();
                 }
             }
 
@@ -491,73 +411,71 @@ namespace LuminThread.Unity
 
             public LuminTask ToLuminTask()
             {
-                if (_cancellationToken.IsCancellationRequested)
+                lock (this)
                 {
-                    return LuminTask.FromCanceled(_cancellationToken);
+                    if (_cancellationToken.IsCancellationRequested)
+                    {
+                        return LuminTask.FromCanceled(_cancellationToken);
+                    }
+
+                    if (_disposed)
+                        return LuminTask.FromCanceled(new CancellationToken(canceled: true));
+
+                    if (_handle == 0)
+                        LuminTaskSource.Rent(out _handle);
+
+                    return LuminTaskSource.ToTask(_handle);
                 }
-
-                if (_disposed)
-                    return LuminTask.FromCanceled(new CancellationToken(canceled: true));
-
-                if (_handle == 0)
-                    LuminTaskSource.Rent(out _handle);
-
-                return LuminTaskSource.ToTask(_handle);
             }
 
             private void Invoke()
             {
-                if (!_cancellationToken.IsCancellationRequested)
+                ulong handle;
+                lock (this)
                 {
-                    var handle = _handle;
-                    if (handle == 0) return;
+                    if (_disposed || _cancellationToken.IsCancellationRequested || _handle == 0) return;
+                    handle = _handle;
                     _handle = 0;
-
-                    if (_callOnce)
-                    {
-                        _disposed = true;
-                        Detach();
-                    }
-
-                    LuminTaskSource.SetResult(handle);
+                    if (_callOnce) _disposed = true;
                 }
+                if (_callOnce) Detach();
+                LuminTaskSource.SetResult(handle);
             }
 
-            public void Dispose()
+            public void Dispose() => Close(true);
+            private void DisposeFromCancellation() => Close(false);
+
+            private void Close(bool disposeRegistration)
             {
-                if (_disposed) return;
-                _disposed = true;
-                Detach();
-
-                var handle = _handle;
-                _handle = 0;
-                if (handle != 0)
-                    LuminTaskSource.SetCanceled(handle, _cancellationToken);
-            }
-
-            private void DisposeFromCancellation()
-            {
-                if (_disposed) return;
-                _disposed = true;
-                Detach(disposeRegistration: false);
-
-                var handle = _handle;
-                _handle = 0;
-                if (handle != 0)
-                    LuminTaskSource.SetCanceled(handle, _cancellationToken);
+                ulong handle;
+                lock (this)
+                {
+                    if (_disposed) return;
+                    _disposed = true;
+                    handle = _handle;
+                    _handle = 0;
+                }
+                try { Detach(disposeRegistration); }
+                finally { if (handle != 0) LuminTaskSource.SetCanceled(handle, _cancellationToken); }
             }
 
             private void Detach(bool disposeRegistration = true)
             {
+                if (disposeRegistration) _registration.Dispose();
+                _registration = default;
+                if (_continuation == null) return;
+                if (PlayerLoopHelper.IsMainThread) RemoveListener();
+                else PlayerLoopHelper.AddContinuation(PlayerLoopTiming.Update, RemoveListener);
+            }
+
+            private void RemoveListener()
+            {
                 if (_continuation != null && _unityEvent != null)
                 {
                     _unityEvent.RemoveListener(_continuation);
+                    _unityEvent = null;
                     _continuation = null;
                 }
-
-                if (disposeRegistration)
-                    _registration.Dispose();
-                _registration = default;
             }
 
             #region LuminTaskSource 实现
@@ -572,7 +490,7 @@ namespace LuminThread.Unity
         public sealed class AsyncUnityLuminTaskEventHandler<T> : IDisposable, IAsyncValueChangedLuminTaskEventHandler<T>, IAsyncEndEditLuminTaskEventHandler<T>
         , TextMeshProAsyncLuminTask.IAsyncEndTextSelectionLuminTaskEventHandler<T>, TextMeshProAsyncLuminTask.IAsyncTextSelectionLuminTaskEventHandler<T>, TextMeshProAsyncLuminTask.IAsyncDeselectLuminTaskEventHandler<T>, TextMeshProAsyncLuminTask.IAsyncSelectLuminTaskEventHandler<T>, TextMeshProAsyncLuminTask.IAsyncSubmitLuminTaskEventHandler<T>
         {
-            private readonly UnityEvent<T> _unityEvent;
+            private UnityEvent<T> _unityEvent;
             private readonly CancellationToken _cancellationToken;
             private readonly bool _callOnce;
 
@@ -613,10 +531,11 @@ namespace LuminThread.Unity
                         var self = (AsyncUnityLuminTaskEventHandler<T>)state;
                         self.DisposeFromCancellation();
                     }, this);
-                    if (_disposed)
-                        registration.Dispose();
-                    else
-                        _registration = registration;
+                    lock (this)
+                    {
+                        if (!_disposed) { _registration = registration; return; }
+                    }
+                    registration.Dispose();
                 }
             }
 
@@ -657,73 +576,71 @@ namespace LuminThread.Unity
 
             public LuminTask<T> ToLuminTask()
             {
-                if (_cancellationToken.IsCancellationRequested)
+                lock (this)
                 {
-                    return LuminTask.FromCanceled<T>(_cancellationToken);
+                    if (_cancellationToken.IsCancellationRequested)
+                    {
+                        return LuminTask.FromCanceled<T>(_cancellationToken);
+                    }
+
+                    if (_disposed)
+                        return LuminTask.FromCanceled<T>(new CancellationToken(canceled: true));
+
+                    if (_handle == 0)
+                        LuminTaskSource.Rent<T>(out _handle);
+
+                    return LuminTaskSource.ToTask<T>(_handle);
                 }
-
-                if (_disposed)
-                    return LuminTask.FromCanceled<T>(new CancellationToken(canceled: true));
-
-                if (_handle == 0)
-                    LuminTaskSource.Rent<T>(out _handle);
-
-                return LuminTaskSource.ToTask<T>(_handle);
             }
 
             private void Invoke(T result)
             {
-                if (!_cancellationToken.IsCancellationRequested)
+                ulong handle;
+                lock (this)
                 {
-                    var handle = _handle;
-                    if (handle == 0) return;
+                    if (_disposed || _cancellationToken.IsCancellationRequested || _handle == 0) return;
+                    handle = _handle;
                     _handle = 0;
-
-                    if (_callOnce)
-                    {
-                        _disposed = true;
-                        Detach();
-                    }
-
-                    LuminTaskSource.SetResult(handle, result);
+                    if (_callOnce) _disposed = true;
                 }
+                if (_callOnce) Detach();
+                LuminTaskSource.SetResult(handle, result);
             }
 
-            public void Dispose()
+            public void Dispose() => Close(true);
+            private void DisposeFromCancellation() => Close(false);
+
+            private void Close(bool disposeRegistration)
             {
-                if (_disposed) return;
-                _disposed = true;
-                Detach();
-
-                var handle = _handle;
-                _handle = 0;
-                if (handle != 0)
-                    LuminTaskSource.SetCanceled(handle, _cancellationToken);
-            }
-
-            private void DisposeFromCancellation()
-            {
-                if (_disposed) return;
-                _disposed = true;
-                Detach(disposeRegistration: false);
-
-                var handle = _handle;
-                _handle = 0;
-                if (handle != 0)
-                    LuminTaskSource.SetCanceled(handle, _cancellationToken);
+                ulong handle;
+                lock (this)
+                {
+                    if (_disposed) return;
+                    _disposed = true;
+                    handle = _handle;
+                    _handle = 0;
+                }
+                try { Detach(disposeRegistration); }
+                finally { if (handle != 0) LuminTaskSource.SetCanceled(handle, _cancellationToken); }
             }
 
             private void Detach(bool disposeRegistration = true)
             {
+                if (disposeRegistration) _registration.Dispose();
+                _registration = default;
+                if (_continuation == null) return;
+                if (PlayerLoopHelper.IsMainThread) RemoveListener();
+                else PlayerLoopHelper.AddContinuation(PlayerLoopTiming.Update, RemoveListener);
+            }
+
+            private void RemoveListener()
+            {
                 if (_continuation != null && _unityEvent != null)
                 {
                     _unityEvent.RemoveListener(_continuation);
+                    _unityEvent = null;
                     _continuation = null;
                 }
-
-                if (disposeRegistration)
-                    _registration.Dispose();
-                _registration = default;
             }
 
             #region LuminTaskSource<T> 实现

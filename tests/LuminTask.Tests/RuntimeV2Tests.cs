@@ -16,6 +16,8 @@ internal static class RuntimeV2Tests
         await runner.Run("trim and cache pressure preserve reference-containing values", ManagedResults);
         await runner.Run("the shared cache budgets its index and preserves typed chains", CacheIndex);
         await runner.Run("scheduler trimming releases empty rings and preserves in-flight work", TrimScheduler);
+        await runner.Run("player loop defers reentrant work and keeps surviving waits first", FrameOrdering);
+        await runner.Run("frame and predicate waits observe the selected tick and token", GameplayWaits);
         await runner.Run("a late WhenAny loser and idle runner release the winner", WinnerCanBeCollected);
         await runner.Run("scheduler rejection releases its unpublished source", RejectedAdmission);
         await runner.Run("shutdown drains an accepted continuation's input", Shutdown);
@@ -61,6 +63,55 @@ internal static class RuntimeV2Tests
         pump.AddContinuation(() => ticks++);
         pump.RunCore();
         Assert.Equal(4, ticks);
+    }
+
+    private static void FrameOrdering()
+    {
+        using var pump = new ManagedPlayerLoop();
+        var seen = new List<int>();
+        int polls = 0;
+        pump.AddAction(default, (in LuminTaskState _) =>
+        {
+            seen.Add(++polls);
+            if (polls != 1) return false;
+            pump.AddAction(default, (in LuminTaskState _) => { seen.Add(3); return false; });
+            pump.RunCore();
+            return true;
+        });
+        pump.RunCore();
+        Assert.Equal("1", string.Join(",", seen));
+        pump.AddAction(default, (in LuminTaskState _) => { seen.Add(4); return false; });
+        pump.RunCore();
+        Assert.Equal("1,2,3,4", string.Join(",", seen));
+    }
+
+    private static void GameplayWaits()
+    {
+        using var pump = new ManagedPlayerLoop();
+        const PlayerLoopTiming timing = PlayerLoopTiming.LastPreUpdate;
+        PlayerLoopHelper.SetStrategy(timing, pump);
+        var frame = LuminTask.DelayFrame(3, timing);
+        var yield = LuminTask.Yield(timing);
+        var one = LuminTask.DelayFrame(1, timing);
+        var ready = new StrongBox<bool>();
+        var until = LuminTask.WaitUntil(ready, static value => value.Value, timing);
+        var still = LuminTask.WaitWhile(ready, static value => !value.Value, timing);
+        using var cancel = new CancellationTokenSource();
+        var delay = LuminTask.Delay(Timeout.Infinite, timing, cancel.Token, cancelImmediately: true);
+        pump.RunCore();
+        yield.GetResult();
+        one.GetResult();
+        Assert.False(frame.IsCompleted || until.IsCompleted || still.IsCompleted || delay.IsCompleted);
+        ready.Value = true;
+        pump.RunCore();
+        until.GetResult();
+        still.GetResult();
+        Assert.False(frame.IsCompleted);
+        cancel.Cancel();
+        Assert.True(delay.SuppressCancellationThrow().GetResult());
+        LuminTask.WaitUntilCanceled(cancel.Token, timing).GetResult();
+        pump.RunCore();
+        frame.GetResult();
     }
 
     private static void CacheIndex()

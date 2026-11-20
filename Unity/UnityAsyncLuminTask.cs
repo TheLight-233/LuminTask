@@ -481,7 +481,9 @@ namespace LuminThread.Unity
             }
 
             private void OnCompleted(AsyncOperation operation)
-                => CompleteOnMainThread(canceled: false);
+            {
+                if (ReferenceEquals(operation, Operation)) CompleteOnMainThread(canceled: false);
+            }
 
             private void OnCancelRequested()
             {
@@ -558,14 +560,19 @@ namespace LuminThread.Unity
             private static readonly Action<object> Release = state => ((AsyncOperationState)state).Dispose();
             private static readonly MoveNext MoveNextAction = MoveNext;
 
-            // Registers a directly-awaited operation's continuation on the shared control block instead of a
-            // per-await closure. The block supplies the completion signal and nothing else: each awaiter
-            // keeps its own result extraction (that is what the awaiter shape is for), so the completion it
-            // publishes is the void one and this path references no adapter type at all. One slot and one
-            // pooled block replace a display class plus a delegate - 104 B/op measured by the review probe,
-            // now zero.
+            // A direct await reads the native result from its awaiter. The operation event and
+            // the polling fallback share the same completion gate without renting a task slot.
+            private static readonly Action<object> ReleaseAwaiter = value =>
+            {
+                var state = (AsyncOperationState)value;
+                // A pending native operation still owns the continuation after the loop closes.
+                // Its completion handler detaches itself. Only the loop may recycle a finished block.
+                if (state.IsCompletionFinished) state.Dispose();
+            };
+
             internal static void RegisterAwaiterContinuation(AsyncOperation operation, Action continuation)
             {
+                if (continuation == null) throw new ArgumentNullException(nameof(continuation));
                 Create(operation, PlayerLoopTiming.Update, null, default, cancelImmediately: false,
                     AsyncOperationWriter.CompleteAwaiter, PlainCanceledWriter.Write, continuation);
             }
@@ -575,7 +582,8 @@ namespace LuminThread.Unity
                 Action<AsyncOperationState> writeCompletion, Action<AsyncOperationState, bool> writeCancellation,
                 Action? awaiterContinuation = null)
             {
-                LuminTaskSource.Rent(out var handle);
+                ulong handle = 0;
+                if (awaiterContinuation == null) LuminTaskSource.Rent(out handle);
 
                 var state = AsyncOperationStatePool.Rent();
                 state.Initialize(handle, operation, progress, cancellationToken, writeCompletion, writeCancellation, awaiterContinuation);
@@ -593,7 +601,13 @@ namespace LuminThread.Unity
                 if (awaiterContinuation == null)
                     UnityLoopWork.Add(timing, work, MoveNextAction, Release);
                 else
-                    PlayerLoopHelper.AddAction(timing, work, MoveNextAction);
+                {
+                    try
+                    {
+                        PlayerLoopHelper.AddAction(timing, new LuminTaskState(0, default, state, ReleaseAwaiter), MoveNextAction);
+                    }
+                    catch { state.Dispose(); throw; }
+                }
 
                 return handle;
             }
@@ -669,9 +683,10 @@ namespace LuminThread.Unity
 
             private static void WriteAwaiterCompletion(AsyncOperationState state)
             {
-                state.Published = LuminTaskSource.SetResult(state.Handle);
-                LuminTaskSource.ToTask(state.Handle).GetAwaiter().GetResult();
-                state.AwaiterContinuation?.Invoke();
+                state.Published = true;
+                var continuation = state.AwaiterContinuation;
+                state.AwaiterContinuation = null;
+                continuation?.Invoke();
             }
         }
 

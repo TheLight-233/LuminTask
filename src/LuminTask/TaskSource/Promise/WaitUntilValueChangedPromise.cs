@@ -23,7 +23,7 @@ internal static class WaitUntilValueChangedPromise<TTarget, TValue>
         TValue next;
         try
         {
-            var options = helper.Item;
+            ref var options = ref helper.Item;
             next = options.Monitor(options.Target);
             if (options.Comparer.Equals(options.Original, next)) return true;
         }

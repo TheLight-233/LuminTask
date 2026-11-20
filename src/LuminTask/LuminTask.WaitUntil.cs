@@ -21,7 +21,7 @@ public partial struct LuminTask
         if (cancelImmediately && cancellationToken.CanBeCanceled)
             AttachCancellation(handle, cancellationToken);
 
-        PlayerLoopHelper.Schedule(timing, new LuminTaskState(handle, cancellationToken, condition), WaitUntilPromise.MoveNextAction);
+        PlayerLoopHelper.Schedule(timing, new LuminTaskState(handle, cancellationToken, condition), WaitUntilPromise.Until);
 
         return new LuminTask(handle);
     }
@@ -37,7 +37,7 @@ public partial struct LuminTask
         if (cancelImmediately && cancellationToken.CanBeCanceled)
             AttachCancellation(handle, cancellationToken);
 
-        PlayerLoopHelper.Schedule(timing, new LuminTaskState(handle, cancellationToken, predicate), WaitUntilPromise<T>.MoveNextAction);
+        PlayerLoopHelper.Schedule(timing, new LuminTaskState(handle, cancellationToken, predicate), WaitUntilPromise<T>.Until);
 
         return new LuminTask(handle);
     }
@@ -52,7 +52,7 @@ public partial struct LuminTask
         if (cancelImmediately && cancellationToken.CanBeCanceled)
             AttachCancellation(handle, cancellationToken);
 
-        PlayerLoopHelper.Schedule(timing, new LuminTaskState(handle, cancellationToken, predicate), WaitWhilePromise.MoveNextAction);
+        PlayerLoopHelper.Schedule(timing, new LuminTaskState(handle, cancellationToken, predicate), WaitUntilPromise.While);
 
         return new LuminTask(handle);
     }
@@ -68,7 +68,7 @@ public partial struct LuminTask
         if (cancelImmediately && cancellationToken.CanBeCanceled)
             AttachCancellation(handle, cancellationToken);
 
-        PlayerLoopHelper.Schedule(timing, new LuminTaskState(handle, cancellationToken, predicate), WaitWhilePromise<T>.MoveNextAction);
+        PlayerLoopHelper.Schedule(timing, new LuminTaskState(handle, cancellationToken, predicate), WaitUntilPromise<T>.While);
 
         return new LuminTask(handle);
     }
@@ -78,14 +78,8 @@ public partial struct LuminTask
     public static LuminTask WaitUntilCanceled(CancellationToken cancellationToken,
         PlayerLoopTiming timing = PlayerLoopTiming.DotNet, bool completeImmediately = false)
     {
+        if (cancellationToken.IsCancellationRequested) return CompletedTask();
         var handle = RentSlot();
-
-        if (cancellationToken.IsCancellationRequested)
-        {
-            // Cancellation here means success, not failure.
-            LuminTaskSource.TrySetResult(handle);
-            return new LuminTask(handle);
-        }
 
         if (completeImmediately && cancellationToken.CanBeCanceled)
             AttachCancellation(handle, cancellationToken, CancellationCallbackState.CompleteCallback);
