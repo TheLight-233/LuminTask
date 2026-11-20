@@ -355,15 +355,19 @@ public static class AsyncExTests
         using var lazy = new AsyncLazy<int>(Load, AsyncLazyFlags.ExecuteOnCallingThread | AsyncLazyFlags.RetryOnFailure);
         var first = lazy.Task;
         var second = lazy.Task;
+        var third = lazy.Task;
         var original = new InvalidOperationException();
         LuminTaskSource.SetException(pending, original);
         var retried = lazy.Task;
         var follower = lazy.Task;
+        var last = lazy.Task;
         try { await first; Assert.Fail("first batch"); } catch (InvalidOperationException error) { Assert.True(error == original); }
         try { await second; Assert.Fail("second waiter"); } catch (InvalidOperationException error) { Assert.True(error == original); }
+        try { await third; Assert.Fail("third waiter"); } catch (InvalidOperationException error) { Assert.True(error == original); }
         LuminTaskSource.SetResult(pending, 35);
         Assert.Equal(35, await retried);
         Assert.Equal(35, await follower);
+        Assert.Equal(35, await last);
         Assert.Equal(35, await lazy.Task);
         Assert.Equal(2, starts);
     }

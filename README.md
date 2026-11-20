@@ -248,13 +248,16 @@ await foreach (var item in source.ConfigureAwait(false)) { }
 ## 🔗 Task / ValueTask 互操作
 
 ```csharp
-Task<int> bcl = luminTask.AsTask();          // LuminTask -> Task
-ValueTask<int> vt = luminTask;               // 隐式转换
-LuminTask<int> back = bcl.AsLuminTask();     // Task -> LuminTask
-LuminTask<int> fromVt = vt.AsLuminTask();
+Task<int> bcl = LoadAsync().AsTask();
+int first = await bcl.AsLuminTask();
+
+ValueTask<int> vt = LoadAsync().AsValueTask();
+int second = await vt.AsLuminTask();
 ```
 
 注意 `AsTask()` / `AsLuminTask()` 都会消费（或产生）一个任务源，转换后请按单次消费契约处理。由 `OperationCanceledException` 结束的异步方法、完成源与 `AsTask()` 转换都会保留取消状态与原始取消令牌。
+
+尚未完成的 `ValueTask` 默认将注册时的 `ExecutionContext` 传给转换续体。如果游戏回调无需继承注册方的 `AsyncLocal` 等上下文，可使用 `await valueTask.AsLuminTask(flowExecutionContext: false)` 省去这次捕获。此选项不指定续体运行的线程。
 
 <a id="analyzer"></a>
 ## 🛡️ 契约分析器

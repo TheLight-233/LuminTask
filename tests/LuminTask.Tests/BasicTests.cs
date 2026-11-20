@@ -39,6 +39,7 @@ public static class BasicTests
         await r.Run("result observed after completion", ResultAfterCompletion);
         await r.Run("Pending Task bridge flows registration context and preserves cancellation fallback", PendingTaskConversion);
         await r.Run("Source-backed ValueTask is consumed once on every outcome", SourceBackedConversion);
+        await r.Run("ValueTask bridge honors execution context policy at registration", ValueTaskBridgeContext);
         await r.Run("ValueTask conversions preserve results", ValueTaskConversions);
         await r.Run("CancellationToken.WaitAsync supports success/canceled modes", CancellationTokenWaitAsync);
         await r.Run("Never tasks use independent slots", NeverTasksUseIndependentSlots);
@@ -286,11 +287,43 @@ public static class BasicTests
     {
         internal ManualResetValueTaskSourceCore<int> Core;
         internal int Reads;
+        internal ValueTaskSourceOnCompletedFlags Flags;
         public int GetResult(short token) { Reads++; return Core.GetResult(token); }
         void IValueTaskSource.GetResult(short token) => GetResult(token);
         public ValueTaskSourceStatus GetStatus(short token) => Core.GetStatus(token);
         public void OnCompleted(Action<object?> callback, object? state, short token, ValueTaskSourceOnCompletedFlags flags)
-            => Core.OnCompleted(callback, state, token, flags);
+        {
+            Flags = flags;
+            Core.OnCompleted(callback, state, token, flags);
+        }
+    }
+
+    private static async LuminTask ValueTaskBridgeContext()
+    {
+        var source = new ValueSource();
+        var local = new AsyncLocal<string?>();
+        foreach (bool flow in new[] { true, false })
+        {
+            local.Value = "registration";
+            source.Core.Reset();
+            var value = new ValueTask<int>(source, source.Core.Version);
+            var bridge = flow ? value.AsLuminTask() : value.AsLuminTask(flowExecutionContext: false);
+            string? observed = null;
+            bridge.OnCompleted(() => observed = local.Value);
+            var expected = flow ? ValueTaskSourceOnCompletedFlags.FlowExecutionContext : ValueTaskSourceOnCompletedFlags.None;
+            Assert.Equal(expected, source.Flags);
+            local.Value = "publisher";
+            source.Core.SetResult(37);
+            Assert.Equal(flow ? "registration" : "publisher", observed);
+            Assert.Equal(37, bridge.GetResult());
+
+            source.Core.Reset();
+            var empty = new ValueTask(source, source.Core.Version).AsLuminTask(flowExecutionContext: flow);
+            Assert.Equal(expected, source.Flags);
+            source.Core.SetResult(0);
+            await empty;
+        }
+        Assert.Equal(4, source.Reads);
     }
 
     private static async LuminTask SourceBackedConversion()

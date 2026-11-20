@@ -31,9 +31,15 @@ public static class LuminTaskValueTaskExtensions
     }
 
     public static LuminTask AsLuminTask(this ValueTask task)
+        => task.AsLuminTask(flowExecutionContext: true);
+
+    /// <param name="task">The value task to consume once.</param>
+    /// <param name="flowExecutionContext">Whether to flow the registration context (including AsyncLocal values)
+    /// to the bridge continuation if the task suspends.</param>
+    public static LuminTask AsLuminTask(this ValueTask task, bool flowExecutionContext)
     {
         if (!task.IsCompleted)
-            return AwaitPending(task);
+            return AwaitPending(task, flowExecutionContext: flowExecutionContext);
 
         try
         {
@@ -51,9 +57,13 @@ public static class LuminTaskValueTaskExtensions
     }
 
     public static LuminTask<T> AsLuminTask<T>(this ValueTask<T> task)
+        => task.AsLuminTask(flowExecutionContext: true);
+
+    /// <inheritdoc cref="AsLuminTask(ValueTask, bool)"/>
+    public static LuminTask<T> AsLuminTask<T>(this ValueTask<T> task, bool flowExecutionContext)
     {
         if (!task.IsCompleted)
-            return AwaitPending(task);
+            return AwaitPending(task, flowExecutionContext: flowExecutionContext);
 
         try
         {
@@ -69,38 +79,51 @@ public static class LuminTaskValueTaskExtensions
         }
     }
 
-    // INotifyCompletion keeps the registration ExecutionContext, as the Task bridge did.
-    // ConfigureAwait(false) avoids dispatching back to the caller's scheduler.
+    // Scheduling and ExecutionContext flow are independent. Both paths avoid scheduler capture.
     private readonly struct ConversionAwaiter : INotifyCompletion
     {
         private readonly ValueTask _value;
-        internal ConversionAwaiter(ValueTask value) => _value = value;
+        private readonly bool _flow;
+        internal ConversionAwaiter(ValueTask value, bool flow) => (_value, _flow) = (value, flow);
         public ConversionAwaiter GetAwaiter() => this;
         public bool IsCompleted => _value.IsCompleted;
-        public void OnCompleted(Action continuation) => _value.ConfigureAwait(false).GetAwaiter().OnCompleted(continuation);
+        public void OnCompleted(Action continuation)
+        {
+            var awaiter = _value.ConfigureAwait(false).GetAwaiter();
+            if (_flow) awaiter.OnCompleted(continuation);
+            else awaiter.UnsafeOnCompleted(continuation);
+        }
         public void GetResult() => _value.GetAwaiter().GetResult();
     }
 
     private readonly struct ConversionAwaiter<T> : INotifyCompletion
     {
         private readonly ValueTask<T> _value;
-        internal ConversionAwaiter(ValueTask<T> value) => _value = value;
+        private readonly bool _flow;
+        internal ConversionAwaiter(ValueTask<T> value, bool flow) => (_value, _flow) = (value, flow);
         public ConversionAwaiter<T> GetAwaiter() => this;
         public bool IsCompleted => _value.IsCompleted;
-        public void OnCompleted(Action continuation) => _value.ConfigureAwait(false).GetAwaiter().OnCompleted(continuation);
+        public void OnCompleted(Action continuation)
+        {
+            var awaiter = _value.ConfigureAwait(false).GetAwaiter();
+            if (_flow) awaiter.OnCompleted(continuation);
+            else awaiter.UnsafeOnCompleted(continuation);
+        }
         public T GetResult() => _value.GetAwaiter().GetResult();
     }
 
-    internal static async LuminTask AwaitPending(ValueTask task, CancellationToken fallbackToken = default)
+    internal static async LuminTask AwaitPending(ValueTask task, CancellationToken fallbackToken = default,
+        bool flowExecutionContext = true)
     {
-        try { await new ConversionAwaiter(task); }
+        try { await new ConversionAwaiter(task, flowExecutionContext); }
         catch (OperationCanceledException error) when (!error.CancellationToken.CanBeCanceled && fallbackToken.CanBeCanceled)
         { throw new OperationCanceledException(fallbackToken); }
     }
 
-    internal static async LuminTask<T> AwaitPending<T>(ValueTask<T> task, CancellationToken fallbackToken = default)
+    internal static async LuminTask<T> AwaitPending<T>(ValueTask<T> task, CancellationToken fallbackToken = default,
+        bool flowExecutionContext = true)
     {
-        try { return await new ConversionAwaiter<T>(task); }
+        try { return await new ConversionAwaiter<T>(task, flowExecutionContext); }
         catch (OperationCanceledException error) when (!error.CancellationToken.CanBeCanceled && fallbackToken.CanBeCanceled)
         { throw new OperationCanceledException(fallbackToken); }
     }

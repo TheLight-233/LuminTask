@@ -53,6 +53,7 @@ namespace LuminThread.AsyncEx
         private readonly bool _retryOnFailure;
 
         private ulong _firstWaiter;
+        private ulong _secondWaiter;
         private List<ulong>? _additionalWaiters;
         private bool _isStarted;
         private bool _isCompleted;
@@ -108,6 +109,7 @@ namespace LuminThread.AsyncEx
 
                     result = LuminTaskSource.Create<T>(out var waiter);
                     if (_firstWaiter == 0) _firstWaiter = waiter;
+                    else if (_secondWaiter == 0) _secondWaiter = waiter;
                     else (_additionalWaiters ??= new List<ulong>()).Add(waiter);
                 }
 
@@ -128,7 +130,7 @@ namespace LuminThread.AsyncEx
             }
             catch (Exception ex) { error = ex; }
 
-            ulong first;
+            ulong first, second;
             List<ulong>? additional;
             lock (this)
             {
@@ -138,12 +140,15 @@ namespace LuminThread.AsyncEx
                 _isStarted = _isCompleted;
                 if (_isCompleted) _factory = null;
                 first = _firstWaiter;
+                second = _secondWaiter;
                 additional = _additionalWaiters;
                 _firstWaiter = 0;
+                _secondWaiter = 0;
                 _additionalWaiters = null;
             }
 
             Complete(first, in result, error);
+            if (second != 0) Complete(second, in result, error);
             if (additional != null)
                 foreach (var handle in additional)
                     Complete(handle, in result, error);
