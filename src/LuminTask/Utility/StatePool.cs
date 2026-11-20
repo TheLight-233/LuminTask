@@ -64,9 +64,11 @@ public class StateTuple<T> : IDisposable, IPooledResult, ILuminCacheNode
 
 public static class StatePool<T>
 {
+    private static readonly Type PoolType = typeof(StateTuple<T>);
+
     public static StateTuple<T> Create(in T item)
     {
-        var tuple = (StateTuple<T>?)LuminTaskIdleCache.Take(typeof(StateTuple<T>)) ?? new StateTuple<T>();
+        var tuple = (StateTuple<T>?)LuminTaskIdleCache.Take(PoolType) ?? new StateTuple<T>();
         tuple.Reset();
         tuple.Item = item;
         return tuple;

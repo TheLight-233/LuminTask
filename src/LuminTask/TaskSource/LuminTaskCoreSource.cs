@@ -2,7 +2,6 @@ using System;
 using System.Runtime.CompilerServices;
 using System.Runtime.ExceptionServices;
 using System.Threading;
-using LuminThread.CompilerServices;
 using LuminThread.Interface;
 using LuminThread.Utility;
 
@@ -20,6 +19,9 @@ public static partial class LuminTaskSource
     internal const long Cell = 18L << KindShift;
     private const long StatusMask = 3;
     private const long IdentityMask = ~65535L;
+    // Only ConfigureAwait opts a slot into capture. Keep the capture implementation
+    // reachable from that API so a player using only plain awaits can strip it.
+    private static volatile Action<ulong, Action<object>, object?>? _registerCaptured;
 
     public static void Trim()
     {
@@ -74,6 +76,7 @@ public static partial class LuminTaskSource
     internal static void SetContinueOnCapturedContext(ulong handle, bool capture)
     {
         if (handle == 0) return;
+        if (capture && _registerCaptured == null) _registerCaptured = RegisterCaptured;
         var page = Enter(handle, out int i, out long control);
         if (page == null) LuminTaskExceptionHelper.ThrowStaleHandle();
         bool registered = (control & Registered) != 0;
@@ -97,7 +100,7 @@ public static partial class LuminTaskSource
         if ((control & Capture) != 0)
         {
             Volatile.Write(ref page.Slots[i].Control, control);
-            RegisterCaptured(handle, continuation, state);
+            _registerCaptured!(handle, continuation, state);
             return;
         }
         RegisterLocked(ref page.Slots[i], control, continuation, state);
@@ -198,8 +201,7 @@ public static partial class LuminTaskSource
         Volatile.Write(ref slot.Control, control | (long)status);
         // A consumer may already have recycled the slot.
         discarded?.ReturnToPool();
-        if (producer is StateMachineBox runner) runner.Published();
-        else if (producer is CancellationCallbackState binding) binding.Registration.Release();
+        producer?.Published();
         if (continuation != null) Invoke(continuation, state);
     }
 

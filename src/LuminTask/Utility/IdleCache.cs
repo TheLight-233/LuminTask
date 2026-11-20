@@ -23,6 +23,7 @@ public static class LuminTaskIdleCache
     private static Bucket[]? _buckets;
     private static int _bucketCount, _indexBytes;
     private static ILuminCacheNode? _recent;
+    private static Type? _recentType;
     private static int _recentCharge;
     private static int _limit = 64 * 1024;
     private static int _bytes;
@@ -54,27 +55,14 @@ public static class LuminTaskIdleCache
         using (Gate.Enter())
         {
             var recent = _recent;
-            if (recent != null && recent.GetType() == type)
+            if (recent != null && ReferenceEquals(_recentType, type))
             {
                 _recent = null;
+                _recentType = null;
                 _bytes -= _recentCharge;
                 return recent;
             }
             return TakeFromBucket(type);
-        }
-    }
-
-    internal static T? TakeRunner<T>() where T : class, ILuminCacheNode
-    {
-        using (Gate.Enter())
-        {
-            if (_recent is T runner)
-            {
-                _recent = null;
-                _bytes -= _recentCharge;
-                return runner;
-            }
-            return _buckets == null ? null : (T?)TakeFromBucket(typeof(T));
         }
     }
 
@@ -96,13 +84,17 @@ public static class LuminTaskIdleCache
     public static void Return(ILuminCacheNode node, int charge)
     {
         if (charge <= 0) throw new ArgumentOutOfRangeException(nameof(charge));
+        Return(node, charge, node.GetType());
+    }
+
+    internal static void Return(ILuminCacheNode node, int charge, Type type)
+    {
         using (Gate.Enter())
         {
             if (charge > _limit - _bytes - _indexBytes) return;
-            // Promote every return. Leaving the first type in front permanently
-            // would send every subsequent runner type through the dictionary on every await.
-            if (_recent != null && !TryIndex(_recent, _recentCharge, _limit - _bytes - charge)) return;
+            if (_recent != null && !TryIndex(_recent, _recentType!, _recentCharge, _limit - _bytes - charge)) return;
             _recent = node;
+            _recentType = type;
             _recentCharge = charge;
             _bytes += charge;
         }
@@ -119,9 +111,8 @@ public static class LuminTaskIdleCache
 
     // Grow only when the retained replacement array fits the same budget as its objects.
     // With at least one empty bucket, lookup terminates even when all keys collide.
-    private static bool TryIndex(ILuminCacheNode node, int charge, int availableBytes)
+    private static bool TryIndex(ILuminCacheNode node, Type type, int charge, int availableBytes)
     {
-        Type type = node.GetType();
         int hash = RuntimeHelpers.GetHashCode(type);
         var table = _buckets;
         int i = table == null ? 0 : Find(table, type, hash);
@@ -178,6 +169,7 @@ public static class LuminTaskIdleCache
     private static void TrimLocked()
     {
         _recent = null;
+        _recentType = null;
         if (_buckets != null)
         {
             foreach (var bucket in _buckets)

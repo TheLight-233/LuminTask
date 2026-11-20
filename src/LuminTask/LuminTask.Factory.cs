@@ -174,7 +174,7 @@ public partial struct LuminTask<T>
 // cancelImmediately options of the loop-driven sources need it, so the allocation is confined to
 // a cold path. The same box serves both outcomes: cancel the task, or complete it successfully
 // (WaitUntilCanceled).
-internal sealed class CancellationCallbackState
+internal sealed class CancellationCallbackState : SlotProducer
 {
     internal static readonly Action<object> Callback = static state =>
     {
@@ -191,6 +191,8 @@ internal sealed class CancellationCallbackState
     internal CancellationTokenRegistration Registration;
     internal readonly LuminTaskHandle Handle;
     internal readonly CancellationToken CancellationToken;
+
+    internal override void Published() => Registration.Release();
 
     internal CancellationCallbackState(LuminTaskHandle handle, CancellationToken cancellationToken)
     {

@@ -116,7 +116,7 @@ public partial struct LuminTask : ICriticalNotifyCompletion
     {
         [DebuggerHidden]
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        get => new LuminTask(_handle);
+        get => this;
     }
 
     [DebuggerHidden]
@@ -296,7 +296,7 @@ public partial struct LuminTask<T> : ICriticalNotifyCompletion
     {
         [DebuggerHidden]
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        get => _handle.IsNull() ? new LuminTask<T>(_result!) : new LuminTask<T>(_handle);
+        get => this;
     }
 
     [DebuggerHidden]

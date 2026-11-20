@@ -19,12 +19,18 @@ internal struct Inline16
     internal long First, Second;
 }
 
+internal abstract class SlotProducer
+{
+    internal abstract void Published();
+}
+
 internal struct Slot
 {
     internal long Control;
     internal Inline16 Data;
     internal Action<object>? Continuation;
-    internal object? ContinuationState, Payload, ProducerState;
+    internal object? ContinuationState, Payload;
+    internal SlotProducer? ProducerState;
 }
 
 internal static class SlotStore

@@ -5,16 +5,14 @@ using LuminThread.Utility;
 
 namespace LuminThread.CompilerServices;
 
-internal abstract class StateMachineBox : ILuminCacheNode
+internal abstract class StateMachineBox : SlotProducer, ILuminCacheNode
 {
-    private readonly int _charge;
     private int _owners, _published;
     internal readonly Action MoveNextAction;
     public ILuminCacheNode? CacheNext { get; set; }
 
-    protected StateMachineBox(int size)
+    protected StateMachineBox()
     {
-        _charge = (size + 16 * IntPtr.Size + 7) & ~7;
         MoveNextAction = Resume;
     }
 
@@ -27,7 +25,7 @@ internal abstract class StateMachineBox : ILuminCacheNode
     }
 
     internal void ReserveResume() => Interlocked.Increment(ref _owners);
-    internal void Published() => Volatile.Write(ref _published, 1);
+    internal sealed override void Published() => Volatile.Write(ref _published, 1);
 
     private void Resume()
     {
@@ -41,18 +39,20 @@ internal abstract class StateMachineBox : ILuminCacheNode
     internal void Exit()
     {
         if (Interlocked.Decrement(ref _owners) != 0 || Volatile.Read(ref _published) == 0) return;
-        Clear();
-        LuminTaskIdleCache.Return(this, _charge);
+        ClearAndReturn();
     }
 
     protected abstract void Advance();
-    protected abstract void Clear();
+    protected abstract void ClearAndReturn();
 }
 
 internal sealed class StateMachineBox<TStateMachine> : StateMachineBox where TStateMachine : IAsyncStateMachine
 {
     private TStateMachine _machine = default!;
-    private StateMachineBox() : base(Unsafe.SizeOf<TStateMachine>()) { }
+    // IL2CPP resolves generic reflection types through its metadata table. Resolve once
+    // per state machine, while leaving all idle runner instances in the bounded cache.
+    private static readonly Type PoolType = typeof(StateMachineBox<TStateMachine>);
+    private static readonly int Charge = (Unsafe.SizeOf<TStateMachine>() + 16 * IntPtr.Size + 7) & ~7;
 
     internal static StateMachineBox Bind(ulong handle, ref TStateMachine machine, bool first)
     {
@@ -65,7 +65,7 @@ internal sealed class StateMachineBox<TStateMachine> : StateMachineBox where TSt
             active.ReserveResume();
             return active;
         }
-        var runner = LuminTaskIdleCache.TakeRunner<StateMachineBox<TStateMachine>>() ?? new StateMachineBox<TStateMachine>();
+        var runner = (StateMachineBox<TStateMachine>?)LuminTaskIdleCache.Take(PoolType) ?? new StateMachineBox<TStateMachine>();
         runner.Acquire();
         runner._machine = machine;
         slot.ProducerState = runner;
@@ -73,5 +73,9 @@ internal sealed class StateMachineBox<TStateMachine> : StateMachineBox where TSt
     }
 
     protected override void Advance() => _machine.MoveNext();
-    protected override void Clear() => _machine = default!;
+    protected override void ClearAndReturn()
+    {
+        _machine = default!;
+        LuminTaskIdleCache.Return(this, Charge, PoolType);
+    }
 }

@@ -59,7 +59,7 @@ internal struct Slot
     internal Action<object?>? Continuation;
     internal object? ContinuationState;
     internal object? Payload;               // 引用结果、强类型结果盒或故障信息
-    internal object? ProducerState;         // Runner 或需要关闭的生产端绑定
+    internal SlotProducer? ProducerState;   // Runner 或需要关闭的生产端绑定
 }
 ```
 
@@ -103,7 +103,7 @@ internal struct Slot
 
 **启动按需求发生。** 同步任务类型自身没有创建委托、表、Timer 或宿主的静态初始化器。DelayFrame、Run 等 partial 成员的缓存委托属于对应功能的惰性 holder。第一次手动 Source 只建立任务页。第一次真实挂起才接触 Runner 缓存。Unity 启动仅安装既有 timing 所需的回调并登记主线程，队列和运行状态在该 timing 有工作时才建。.NET 默认 DotNet timing 保持可用，第一次入队才启动驱动，空闲停表。
 
-**空闲对象只有一个库级所有者。** IdleCache 用普通托管类型标识（例如 `typeof(Runner<TStateMachine>)`）索引空闲链，类型必须精确匹配。租还使用短锁，临界区只查桶、摘挂节点和记账；创建对象、清理 T 和执行用户代码均在锁外。泛型叶节点直接构造自己的对象，库存里没有反射工厂或按线程复制的静态链。A 租 B 还后，A 的下一次租用能直接看到该对象。Runner 返回前清掉状态机，绑定的 Action 同 Runner 一起复用。原有 `StatePool<T>` 变为无静态库存的兼容转发层。Unity 扩展跨程序集租还专用对象时走 Core 的非泛型缓存桥，只传类型键、对象和计费大小。续体辅助对象及随库模块的空闲池都遵循同一额度。
+**空闲对象只有一个库级所有者。** IdleCache 用普通托管类型标识（例如 `typeof(Runner<TStateMachine>)`）索引空闲链，类型必须精确匹配。每个实际挂起过的状态机类型只解析一次类型键和节点费用，结果载体按已使用的 T 缓存类型键。它们随闭合类型存活，空闲对象仍由全局预算管理。租还使用短锁，临界区只查桶、摘挂节点和记账；创建对象、清理 T 和执行用户代码均在锁外。泛型叶节点直接构造自己的对象，库存里没有反射工厂或按线程复制的静态链。A 租 B 还后，A 的下一次租用能直接看到该对象。Runner 返回前清掉状态机，绑定的 Action 同 Runner 一起复用。原有 `StatePool<T>` 变为无静态库存的兼容转发层。Unity 扩展跨程序集租还专用对象时走 Core 的非泛型缓存桥，只传类型键、对象和计费大小。续体辅助对象及随库模块的空闲池都遵循同一额度。
 
 | 资源 | 保留策略 |
 | --- | --- |
@@ -135,6 +135,8 @@ internal struct Slot
 宿主队列沿用 `IPlayLoopStrategy` 对外形状，维护 timing、帧边界和已有线程切换语义。每个 timing 的入队与取批在短锁中交接，调用 step、continuation 时释放锁；重入入队的条目归入对应的后续批次。库内的多处公共 partial 工厂继续留在原程序集，宿主和可选集成通过现有边界接入。关闭宿主应先停止接纳，在安全点取消或排完已接管工作，结清绑定，最后释放缓冲。
 
 ## 8. AOT 与性能验收
+
+首要比较使用同一份可运行业务。包体按完整发布目录的文件字节统计，并注明压缩格式。场景预热并排空后，同时记录强制 GC 后的托管堆、Wasm 堆和目标进程工作集，各项单独报告。性能取相同业务从发起到全部完成的时间，空包差值、生成的 C++ 文本和单次挂起基准用于定位差异。
 
 普通 C# 每个实际使用的 async 方法仍有编译器生成的状态机。`Runner<TStateMachine>` 只随状态机闭合；异步结果桥仅为含引用结构体与大值租用 `StateTuple<T>`。Builder 必需的 `Await[Unsafe]OnCompleted<TAwaiter,TStateMachine>` 保持薄入口；完成、登记、池策略、组合计数和调度循环编译为非泛型实现。保留公共异构重载所需的签名和强类型读写。发布物中实际出现哪些闭合类型及代码，取决于 IL2CPP 的泛型共享和裁剪，须从产物核实。
 
