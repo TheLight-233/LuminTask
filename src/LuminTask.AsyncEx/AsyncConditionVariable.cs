@@ -33,7 +33,7 @@ namespace LuminThread.AsyncEx
     internal sealed class ConditionVariableState : IDisposable
     {
         private readonly AsyncLock _asyncLock;
-        private readonly IAsyncWaitQueue<bool> _waitQueue;
+        private readonly DefaultAsyncWaitQueue<bool> _waitQueue;
         private volatile bool _isDisposed;
 
         public ConditionVariableState(AsyncLock asyncLock)
@@ -50,7 +50,7 @@ namespace LuminThread.AsyncEx
 
             cancellationToken.ThrowIfCancellationRequested();
 
-            var waitTask = _waitQueue.Enqueue(cancellationToken);
+            var waitTask = _waitQueue.EnqueueWithCancellation(cancellationToken);
 
             _asyncLock.ReleaseLock();
 
@@ -111,7 +111,7 @@ namespace LuminThread.AsyncEx
 
         public void Dispose() => GetState().Dispose();
 
-        private MonitorState GetState()
+        internal MonitorState GetState()
             => _state ?? throw new InvalidOperationException("AsyncMonitor 未初始化（default 值）或已释放");
 
         /// <summary>监视器临界区句柄。Dispose 即退出。结构体，无分配。</summary>
@@ -161,6 +161,14 @@ namespace LuminThread.AsyncEx
         {
             _asyncLock = new AsyncLock();
             _conditionVariable = new AsyncConditionVariable(_asyncLock);
+        }
+
+        internal bool TryEnter(out AsyncMonitor.MonitorScope scope)
+        {
+            scope = default;
+            if (_isDisposed || !_asyncLock.GetState().TryAcquire(out var key)) return false;
+            scope = new AsyncMonitor.MonitorScope(this, key);
+            return true;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -219,8 +227,13 @@ namespace LuminThread.AsyncEx
             this AsyncMonitor monitor,
             TimeSpan timeout)
         {
-            using var cts = new CancellationTokenSource(timeout);
-            return monitor.EnterAsync(cts.Token);
+            if (timeout == Timeout.InfiniteTimeSpan) return monitor.EnterAsync();
+            if (WaitTimeout.CanAcquireImmediately(timeout) && monitor.GetState().TryEnter(out var scope))
+                return LuminTask.FromResult(scope);
+
+            var timer = new CancellationTokenSource(timeout);
+            try { return WaitTimeout.Finish(monitor.EnterAsync(timer.Token), timer); }
+            catch { timer.Dispose(); throw; }
         }
     }
 }

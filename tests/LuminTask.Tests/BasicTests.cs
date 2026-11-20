@@ -1,3 +1,4 @@
+using System.Threading.Tasks.Sources;
 using LuminThread;
 using LuminThread.AsyncEx;
 using LuminThread.Interface;
@@ -36,6 +37,8 @@ public static class BasicTests
         await r.Run("reference-containing struct round-trips", ReferenceContainingStructRoundTrips);
         await r.Run("reference-containing struct does not box", ReferenceContainingStructDoesNotBox);
         await r.Run("result observed after completion", ResultAfterCompletion);
+        await r.Run("Pending Task bridge flows registration context and preserves cancellation fallback", PendingTaskConversion);
+        await r.Run("Source-backed ValueTask is consumed once on every outcome", SourceBackedConversion);
         await r.Run("ValueTask conversions preserve results", ValueTaskConversions);
         await r.Run("CancellationToken.WaitAsync supports success/canceled modes", CancellationTokenWaitAsync);
         await r.Run("Never tasks use independent slots", NeverTasksUseIndependentSlots);
@@ -250,6 +253,67 @@ public static class BasicTests
         tcs.TrySetResult(99);
         var v = await tcs.Task;
         Assert.Equal(99, v);
+    }
+
+    private static async LuminTask PendingTaskConversion()
+    {
+        var local = new AsyncLocal<string?>();
+        var producer = new TaskCompletionSource<int>();
+        local.Value = "registration";
+        var converted = producer.Task.AsLuminTask();
+        string? seen = null;
+        var delivered = new TaskCompletionSource<int>();
+        converted.SourceOnCompleted(_ =>
+        {
+            seen = local.Value;
+            delivered.SetResult(converted.GetResult());
+        }, delivered);
+        local.Value = "completion";
+        producer.SetResult(13);
+        Assert.Equal(13, await delivered.Task);
+        Assert.Equal("registration", seen);
+        Assert.Equal("completion", local.Value);
+
+        var noToken = new TaskCompletionSource<bool>();
+        using var fallback = new CancellationTokenSource();
+        var canceled = ((Task)noToken.Task).AsLuminTask(fallback.Token);
+        noToken.SetCanceled();
+        try { await canceled; Assert.Fail("expected cancellation"); }
+        catch (OperationCanceledException error) { Assert.Equal(fallback.Token, error.CancellationToken); }
+    }
+
+    private sealed class ValueSource : IValueTaskSource<int>, IValueTaskSource
+    {
+        internal ManualResetValueTaskSourceCore<int> Core;
+        internal int Reads;
+        public int GetResult(short token) { Reads++; return Core.GetResult(token); }
+        void IValueTaskSource.GetResult(short token) => GetResult(token);
+        public ValueTaskSourceStatus GetStatus(short token) => Core.GetStatus(token);
+        public void OnCompleted(Action<object?> callback, object? state, short token, ValueTaskSourceOnCompletedFlags flags)
+            => Core.OnCompleted(callback, state, token, flags);
+    }
+
+    private static async LuminTask SourceBackedConversion()
+    {
+        var source = new ValueSource();
+        source.Core.Reset();
+        var converted = new ValueTask<int>(source, source.Core.Version).AsLuminTask();
+        source.Core.SetResult(31);
+        Assert.Equal(31, await converted);
+        source.Core.Reset();
+        var failed = new ValueTask(source, source.Core.Version).AsLuminTask();
+        var original = new InvalidOperationException("fault");
+        source.Core.SetException(original);
+        try { await failed; Assert.Fail("expected fault"); }
+        catch (InvalidOperationException error) { Assert.True(error == original); }
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+        source.Core.Reset();
+        var canceled = new ValueTask<int>(source, source.Core.Version).AsLuminTask();
+        source.Core.SetException(new OperationCanceledException(cts.Token));
+        try { await canceled; Assert.Fail("expected cancellation"); }
+        catch (OperationCanceledException error) { Assert.Equal(cts.Token, error.CancellationToken); }
+        Assert.Equal(3, source.Reads);
     }
 
     private static async LuminTask ValueTaskConversions()

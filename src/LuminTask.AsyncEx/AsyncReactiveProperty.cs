@@ -127,8 +127,9 @@ internal sealed class ReactivePropertyState<T> : IDisposable
 {
     private T _value;
     private readonly IEqualityComparer<T> _equalityComparer;
-    private readonly object _lock = new();
-    private AsyncReactivePropertyAwaiter<T>? _awaiterHead;
+    // The oldest, noncancelable waiter only needs its global source handle.
+    private ulong _firstWaiter;
+    private DefaultAsyncWaitQueue<T>? _waiters;
     internal volatile bool IsDisposed;
 
     public event Action<T>? OnValueChanged;
@@ -170,21 +171,18 @@ internal sealed class ReactivePropertyState<T> : IDisposable
     {
         OnValueChanged?.Invoke(value);
 
-        AsyncReactivePropertyAwaiter<T>? head;
-        lock (_lock)
+        ulong first;
+        WaitNode? others;
+        lock (this)
         {
-            head = _awaiterHead;
-            _awaiterHead = null;
+            first = _firstWaiter;
+            _firstWaiter = 0;
+            others = _waiters?.DetachAllNodes();
         }
 
-        var node = head;
-        while (node != null)
-        {
-            var next = node.Next;
-            node.Next = null;
-            node.TrySetResult(value);
-            node = next;
-        }
+        // New subscriptions made by continuations belong to the next change.
+        DefaultAsyncWaitQueue<T>.CompleteBatch(others, value);
+        if (first != 0) LuminTaskResultBridge.TrySetResult(first, in value);
     }
 
     private sealed class Subscription : IDisposable
@@ -211,121 +209,30 @@ internal sealed class ReactivePropertyState<T> : IDisposable
         if (IsDisposed) return LuminTask.FromCanceled<T>(cancellationToken);
         if (cancellationToken.IsCancellationRequested) return LuminTask.FromCanceled<T>(cancellationToken);
 
-        var handle = LuminTaskResultBridge.Rent<T>();
-        var awaiter = new AsyncReactivePropertyAwaiter<T>(handle);
-        var task = new LuminTask<T>(handle);
-
-        lock (_lock)
+        lock (this)
         {
-            if (IsDisposed)
-            {
-                LuminTaskSource.TrySetCanceled(handle);
-                return task;
-            }
-            awaiter.Next = _awaiterHead;
-            _awaiterHead = awaiter;
-        }
-
-        if (cancellationToken.CanBeCanceled)
-            awaiter.RegisterCancellation(cancellationToken, this);
-
-        return task;
-    }
-
-    internal void TryRemoveAwaiter(AsyncReactivePropertyAwaiter<T> awaiter)
-    {
-        lock (_lock)
-        {
-            if (_awaiterHead == awaiter)
-            {
-                _awaiterHead = awaiter.Next;
-                return;
-            }
-            var prev = _awaiterHead;
-            while (prev?.Next != null)
-            {
-                if (prev.Next == awaiter)
-                {
-                    prev.Next = awaiter.Next;
-                    return;
-                }
-                prev = prev.Next;
-            }
+            if (IsDisposed) return LuminTask.FromCanceled<T>(cancellationToken);
+            if (!cancellationToken.CanBeCanceled && _firstWaiter == 0 && (_waiters == null || _waiters.IsEmpty))
+                return LuminTaskSource.Create<T>(out _firstWaiter);
+            return (_waiters ??= new DefaultAsyncWaitQueue<T>(newestFirst: true)).EnqueueWithCancellation(cancellationToken);
         }
     }
 
     public void Dispose()
     {
-        if (IsDisposed) return;
-        IsDisposed = true;
-
-        AsyncReactivePropertyAwaiter<T>? head;
-        lock (_lock)
+        ulong first;
+        WaitNode? others;
+        lock (this)
         {
-            head = _awaiterHead;
-            _awaiterHead = null;
+            if (IsDisposed) return;
+            IsDisposed = true;
+            first = _firstWaiter;
+            _firstWaiter = 0;
+            others = _waiters?.DetachAllNodes();
+            _waiters = null;
         }
-
-        var node = head;
-        while (node != null)
-        {
-            var next = node.Next;
-            node.Next = null;
-            node.TrySetCanceled();
-            node = next;
-        }
-    }
-}
-
-internal sealed class AsyncReactivePropertyAwaiter<T>
-{
-    public AsyncReactivePropertyAwaiter<T>? Next;
-    private LuminTaskHandle _handle;
-    private CancellationTokenRegistration _registration;
-
-    public AsyncReactivePropertyAwaiter(LuminTaskHandle handle)
-    {
-        _handle = handle;
-    }
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public void TrySetResult(T value)
-    {
-        var handle = TakeHandle(ref _handle);
-        if (handle == 0) return;
-
-        LuminTaskResultBridge.TrySetResult(handle, in value);
-        _registration.Release();
-    }
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public void TrySetCanceled()
-    {
-        var handle = TakeHandle(ref _handle);
-        if (handle == 0) return;
-
-        LuminTaskSource.TrySetCanceled(handle);
-        _registration.Release();
-    }
-
-    // Interlocked has no ulong overload on netstandard2.1, so the handle is exchanged as the same
-    // bits reinterpreted as a long.
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static LuminTaskHandle TakeHandle(ref LuminTaskHandle handle)
-        => (ulong)Interlocked.Exchange(ref Unsafe.As<ulong, long>(ref handle), 0L);
-
-    public void RegisterCancellation(CancellationToken cancellationToken, ReactivePropertyState<T> parent)
-    {
-        var state = StateTuple.Create(this, parent);
-        _registration = cancellationToken.Register(
-            static state =>
-            {
-                var tuple = (StateTuple<(AsyncReactivePropertyAwaiter<T>, ReactivePropertyState<T>)>)state!;
-                tuple.Item.Item2.TryRemoveAwaiter(tuple.Item.Item1);
-                tuple.Item.Item1.TrySetCanceled();
-                tuple.Dispose();
-            },
-            state);
+        AsyncWaitQueueCore.CancelBatch(others, default);
+        if (first != 0) LuminTaskSource.TrySetCanceled(first);
     }
 }
 

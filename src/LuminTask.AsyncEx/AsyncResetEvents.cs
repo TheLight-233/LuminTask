@@ -81,7 +81,7 @@ namespace LuminThread.AsyncEx
             state.Dispose();
         }
 
-        private ManualResetEventState<T> GetState()
+        internal ManualResetEventState<T> GetState()
             => _state is { } state && state.Generation == _generation
                 ? state
                 : throw new InvalidOperationException("AsyncManualResetEvent<T> 未初始化（default 值）、已释放或句柄过期");
@@ -121,7 +121,7 @@ namespace LuminThread.AsyncEx
             state.Dispose();
         }
 
-        private AutoResetEventState GetState()
+        internal AutoResetEventState GetState()
             => _state is { } state && state.Generation == _generation
                 ? state
                 : throw new InvalidOperationException("AsyncAutoResetEvent 未初始化（default 值）、已释放或句柄过期");
@@ -157,7 +157,7 @@ namespace LuminThread.AsyncEx
             state.Dispose();
         }
 
-        private AutoResetEventState<T> GetState()
+        internal AutoResetEventState<T> GetState()
             => _state is { } state && state.Generation == _generation
                 ? state
                 : throw new InvalidOperationException("AsyncAutoResetEvent<T> 未初始化（default 值）、已释放或句柄过期");
@@ -169,7 +169,7 @@ namespace LuminThread.AsyncEx
         public int Charge => 192;
 
         private readonly object _mutex = new();
-        private readonly IAsyncWaitQueue<object> _queue;
+        private readonly DefaultAsyncWaitQueue<object> _queue;
         private volatile bool _isSet;
         private volatile bool _isDisposed;
 
@@ -209,7 +209,7 @@ namespace LuminThread.AsyncEx
                 if (_isSet)
                     return LuminTask.CompletedTask();
 
-                return _queue.Enqueue(cancellationToken);
+                return _queue.EnqueueWithCancellation(cancellationToken);
             }
         }
 
@@ -250,7 +250,7 @@ namespace LuminThread.AsyncEx
         public int Charge => 192 + Unsafe.SizeOf<T>();
 
         private readonly object _mutex = new();
-        private readonly IAsyncWaitQueue<T> _queue;
+        private readonly DefaultAsyncWaitQueue<T> _queue;
         private volatile bool _isSet;
         private T _result;
         private volatile bool _isDisposed;
@@ -292,11 +292,24 @@ namespace LuminThread.AsyncEx
                 if (_isSet)
                     return LuminTask.FromResult(_result);
 
-                return _queue.Enqueue(cancellationToken);
+                return _queue.EnqueueWithCancellation(cancellationToken);
             }
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal bool TryWait(out T result)
+        {
+            result = default!;
+            if (!Monitor.TryEnter(_mutex)) return false;
+            try
+            {
+                if (_isDisposed || !_isSet) return false;
+                result = _result;
+                return true;
+            }
+            finally { Monitor.Exit(_mutex); }
+        }
+
         public void Set(T result)
         {
             lock (_mutex)
@@ -335,7 +348,7 @@ namespace LuminThread.AsyncEx
         public int Charge => 192;
 
         private readonly object _mutex = new();
-        private readonly IAsyncWaitQueue<object> _queue;
+        private readonly DefaultAsyncWaitQueue<object> _queue;
         private volatile bool _isSet;
         private volatile bool _isDisposed;
 
@@ -375,19 +388,29 @@ namespace LuminThread.AsyncEx
                     return LuminTask.CompletedTask();
                 }
 
-                return _queue.Enqueue(cancellationToken);
+                return _queue.EnqueueWithCancellation(cancellationToken);
             }
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal bool TryWait()
+        {
+            if (!Monitor.TryEnter(_mutex)) return false;
+            try
+            {
+                if (_isDisposed || !_isSet) return false;
+                _isSet = false;
+                return true;
+            }
+            finally { Monitor.Exit(_mutex); }
+        }
+
         public void Set()
         {
             lock (_mutex)
             {
-                if (_queue.IsEmpty)
+                if (!_queue.TryDequeue(null))
                     _isSet = true;
-                else
-                    _queue.Dequeue(null);
             }
         }
 
@@ -406,7 +429,7 @@ namespace LuminThread.AsyncEx
         public int Charge => 192 + Unsafe.SizeOf<T>();
 
         private readonly object _mutex = new();
-        private readonly IAsyncWaitQueue<T> _queue;
+        private readonly DefaultAsyncWaitQueue<T> _queue;
         private volatile bool _isSet;
         private T _result;
         private volatile bool _isDisposed;
@@ -450,23 +473,34 @@ namespace LuminThread.AsyncEx
                     return LuminTask.FromResult(result);
                 }
 
-                return _queue.Enqueue(cancellationToken);
+                return _queue.EnqueueWithCancellation(cancellationToken);
             }
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal bool TryWait(out T result)
+        {
+            result = default!;
+            if (!Monitor.TryEnter(_mutex)) return false;
+            try
+            {
+                if (_isDisposed || !_isSet) return false;
+                result = _result;
+                _isSet = false;
+                _result = default!;
+                return true;
+            }
+            finally { Monitor.Exit(_mutex); }
+        }
+
         public void Set(T result)
         {
             lock (_mutex)
             {
-                if (_queue.IsEmpty)
+                if (!_queue.TryDequeue(result))
                 {
                     _isSet = true;
                     _result = result;
-                }
-                else
-                {
-                    _queue.Dequeue(result);
                 }
             }
         }
@@ -488,6 +522,8 @@ namespace LuminThread.AsyncEx
 
         private static async LuminTask WaitManualAsync(AsyncManualResetEvent evt, TimeSpan timeout)
         {
+            if (timeout == Timeout.InfiniteTimeSpan) { await evt.WaitAsync(); return; }
+            if (WaitTimeout.CanAcquireImmediately(timeout) && evt.IsSet) return;
             using var cts = new CancellationTokenSource(timeout);
             await evt.WaitAsync(cts.Token);
         }
@@ -498,6 +534,8 @@ namespace LuminThread.AsyncEx
 
         private static async LuminTask<T> WaitManualAsync<T>(AsyncManualResetEvent<T> evt, TimeSpan timeout)
         {
+            if (timeout == Timeout.InfiniteTimeSpan) return await evt.WaitAsync();
+            if (WaitTimeout.CanAcquireImmediately(timeout) && evt.GetState().TryWait(out var result)) return result;
             using var cts = new CancellationTokenSource(timeout);
             return await evt.WaitAsync(cts.Token);
         }
@@ -508,6 +546,8 @@ namespace LuminThread.AsyncEx
 
         private static async LuminTask WaitAutoAsync(AsyncAutoResetEvent evt, TimeSpan timeout)
         {
+            if (timeout == Timeout.InfiniteTimeSpan) { await evt.WaitAsync(); return; }
+            if (WaitTimeout.CanAcquireImmediately(timeout) && evt.GetState().TryWait()) return;
             using var cts = new CancellationTokenSource(timeout);
             await evt.WaitAsync(cts.Token);
         }
@@ -518,6 +558,8 @@ namespace LuminThread.AsyncEx
 
         private static async LuminTask<T> WaitAutoAsync<T>(AsyncAutoResetEvent<T> evt, TimeSpan timeout)
         {
+            if (timeout == Timeout.InfiniteTimeSpan) return await evt.WaitAsync();
+            if (WaitTimeout.CanAcquireImmediately(timeout) && evt.GetState().TryWait(out var result)) return result;
             using var cts = new CancellationTokenSource(timeout);
             return await evt.WaitAsync(cts.Token);
         }

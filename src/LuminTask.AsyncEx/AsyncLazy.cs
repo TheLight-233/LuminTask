@@ -1,6 +1,7 @@
 using System;
 using System.Runtime.CompilerServices;
 using System.Collections.Generic;
+using LuminThread.TaskSource;
 using System.Threading;
 
 namespace LuminThread.AsyncEx
@@ -47,11 +48,12 @@ namespace LuminThread.AsyncEx
 
     internal sealed class AsyncLazyState<T> : IDisposable
     {
-        private readonly object _mutex = new object();
-        private readonly Func<LuminTask<T>> _factory;
+        private Func<LuminTask<T>>? _factory;
+        private readonly bool _executeOnCallingThread;
         private readonly bool _retryOnFailure;
 
-        private readonly List<LuminTaskCompletionSource<T>> _waiters = new();
+        private ulong _firstWaiter;
+        private List<ulong>? _additionalWaiters;
         private bool _isStarted;
         private bool _isCompleted;
         private T? _result;
@@ -65,17 +67,15 @@ namespace LuminThread.AsyncEx
 
             _retryOnFailure = (flags & AsyncLazyFlags.RetryOnFailure) == AsyncLazyFlags.RetryOnFailure;
 
-            if ((flags & AsyncLazyFlags.ExecuteOnCallingThread) == AsyncLazyFlags.ExecuteOnCallingThread)
-                _factory = factory;
-            else
-                _factory = () => LuminTask.Run(factory);
+            _executeOnCallingThread = (flags & AsyncLazyFlags.ExecuteOnCallingThread) != 0;
+            _factory = factory;
         }
 
         public bool IsStarted
         {
             get
             {
-                lock (_mutex)
+                lock (this)
                     return _isStarted;
             }
         }
@@ -89,7 +89,7 @@ namespace LuminThread.AsyncEx
 
                 LuminTask<T> result;
                 var start = false;
-                lock (_mutex)
+                lock (this)
                 {
                     if (_isCompleted)
                     {
@@ -106,9 +106,9 @@ namespace LuminThread.AsyncEx
                         start = true;
                     }
 
-                    var waiter = new LuminTaskCompletionSource<T>();
-                    _waiters.Add(waiter);
-                    result = waiter.Task;
+                    result = LuminTaskSource.Create<T>(out var waiter);
+                    if (_firstWaiter == 0) _firstWaiter = waiter;
+                    else (_additionalWaiters ??= new List<ulong>()).Add(waiter);
                 }
 
                 if (start)
@@ -119,40 +119,40 @@ namespace LuminThread.AsyncEx
 
         private async LuminTask ResolveAsync()
         {
+            T result = default!;
+            Exception? error = null;
             try
             {
-                var result = await _factory().ConfigureAwait(false);
-                List<LuminTaskCompletionSource<T>> waiters;
-                lock (_mutex)
-                {
-                    _result = result;
-                    _error = null;
-                    _isCompleted = true;
-                    waiters = new List<LuminTaskCompletionSource<T>>(_waiters);
-                    _waiters.Clear();
-                }
-                foreach (var waiter in waiters)
-                    waiter.TrySetResult(result);
+                var factory = _factory!;
+                result = await (_executeOnCallingThread ? factory() : LuminTask.Run(factory)).ConfigureAwait(false);
             }
-            catch (Exception exception)
+            catch (Exception ex) { error = ex; }
+
+            ulong first;
+            List<ulong>? additional;
+            lock (this)
             {
-                List<LuminTaskCompletionSource<T>> waiters;
-                lock (_mutex)
-                {
-                    _error = exception;
-                    _isCompleted = !_retryOnFailure;
-                    _isStarted = _retryOnFailure ? false : true;
-                    waiters = new List<LuminTaskCompletionSource<T>>(_waiters);
-                    _waiters.Clear();
-                }
-                foreach (var waiter in waiters)
-                {
-                    if (exception is OperationCanceledException canceled)
-                        waiter.TrySetCanceled(canceled.CancellationToken);
-                    else
-                        waiter.TrySetException(exception);
-                }
+                _result = result;
+                _error = error;
+                _isCompleted = error == null || !_retryOnFailure;
+                _isStarted = _isCompleted;
+                if (_isCompleted) _factory = null;
+                first = _firstWaiter;
+                additional = _additionalWaiters;
+                _firstWaiter = 0;
+                _additionalWaiters = null;
             }
+
+            Complete(first, in result, error);
+            if (additional != null)
+                foreach (var handle in additional)
+                    Complete(handle, in result, error);
+        }
+
+        private static void Complete(ulong handle, in T result, Exception? error)
+        {
+            if (error == null) LuminTaskResultBridge.TrySetResult(handle, in result);
+            else LuminTaskSource.TrySetException(handle, error);
         }
 
         public void Dispose()

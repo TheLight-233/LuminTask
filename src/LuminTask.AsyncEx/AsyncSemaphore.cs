@@ -34,7 +34,7 @@ namespace LuminThread.AsyncEx
 
         public void Dispose() => GetState().Dispose();
 
-        private SemaphoreState GetState()
+        internal SemaphoreState GetState()
             => _state ?? throw new InvalidOperationException("AsyncSemaphore 未初始化（default 值）或已释放");
     }
 
@@ -57,7 +57,7 @@ namespace LuminThread.AsyncEx
         private static int s_nextId = 1;
 
         private readonly object _mutex = new object();
-        private readonly IAsyncWaitQueue<object> _queue;
+        private readonly DefaultAsyncWaitQueue<object> _queue;
         private long _count;
         private int _id;
         private volatile bool _isDisposed;
@@ -100,8 +100,20 @@ namespace LuminThread.AsyncEx
                     return LuminTask.CompletedTask();
                 }
 
-                return _queue.Enqueue(cancellationToken);
+                return _queue.EnqueueWithCancellation(cancellationToken);
             }
+        }
+
+        internal bool TryAcquire()
+        {
+            if (!Monitor.TryEnter(_mutex)) return false;
+            try
+            {
+                if (_isDisposed || _count == 0) return false;
+                _count--;
+                return true;
+            }
+            finally { Monitor.Exit(_mutex); }
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -117,9 +129,8 @@ namespace LuminThread.AsyncEx
             {
                 checked { var test = _count + releaseCount; }
 
-                while (releaseCount > 0 && !_queue.IsEmpty)
+                while (releaseCount > 0 && _queue.TryDequeue(null))
                 {
-                    _queue.Dequeue(null);
                     releaseCount--;
                 }
 
@@ -156,6 +167,12 @@ namespace LuminThread.AsyncEx
 
         private static async LuminTask WaitWithTimeoutAsync(AsyncSemaphore semaphore, TimeSpan timeout)
         {
+            if (timeout == Timeout.InfiniteTimeSpan) { await semaphore.WaitAsync(); return; }
+            if (WaitTimeout.CanAcquireImmediately(timeout))
+            {
+                var state = semaphore.GetState();
+                if (state.TryAcquire()) return;
+            }
             using var cts = new CancellationTokenSource(timeout);
             await semaphore.WaitAsync(cts.Token);
         }
@@ -166,6 +183,12 @@ namespace LuminThread.AsyncEx
 
         private static async LuminTask<SemaphoreReleaser> LockWithTimeoutAsync(AsyncSemaphore semaphore, TimeSpan timeout)
         {
+            if (timeout == Timeout.InfiniteTimeSpan) return await semaphore.LockAsync();
+            if (WaitTimeout.CanAcquireImmediately(timeout))
+            {
+                var state = semaphore.GetState();
+                if (state.TryAcquire()) return new SemaphoreReleaser(state);
+            }
             using var cts = new CancellationTokenSource(timeout);
             return await semaphore.LockAsync(cts.Token);
         }

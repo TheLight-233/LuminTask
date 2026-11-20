@@ -82,6 +82,8 @@ internal static class WaitNodePool
 /// </summary>
 internal abstract class AsyncWaitQueueCore : IWaitNodeOwner
 {
+    private readonly bool _newestFirst;
+    protected AsyncWaitQueueCore(bool newestFirst) => _newestFirst = newestFirst;
     protected abstract ulong RentResultSlot();
     private WaitNode? _head;
     private WaitNode? _tail;
@@ -201,7 +203,7 @@ internal abstract class AsyncWaitQueueCore : IWaitNodeOwner
     }
 
     /// <summary>锁内摘下整个队列，返回头节点；调用方在锁外逐个完成。</summary>
-    protected WaitNode? DetachAllNodes()
+    internal WaitNode? DetachAllNodes()
     {
         lock (_queueLock)
         {
@@ -220,6 +222,13 @@ internal abstract class AsyncWaitQueueCore : IWaitNodeOwner
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private void AppendLocked(WaitNode node)
     {
+        if (_newestFirst && _head != null)
+        {
+            node.Next = _head;
+            _head.Previous = node;
+            _head = node;
+            return;
+        }
         if (_tail == null)
         {
             _head = _tail = node;
@@ -274,10 +283,10 @@ internal abstract class AsyncWaitQueueCore : IWaitNodeOwner
         return true;
     }
 
-    public void CancelAll(CancellationToken cancellationToken)
-    {
-        var head = DetachAllNodes();
+    public void CancelAll(CancellationToken cancellationToken) => CancelBatch(DetachAllNodes(), cancellationToken);
 
+    internal static void CancelBatch(WaitNode? head, CancellationToken cancellationToken)
+    {
         for (var node = head; node != null;)
         {
             var next = node.Next;
@@ -295,6 +304,8 @@ internal abstract class AsyncWaitQueueCore : IWaitNodeOwner
 /// </summary>
 internal sealed class DefaultAsyncWaitQueue<T> : AsyncWaitQueueCore, IAsyncWaitQueue<T>
 {
+    internal DefaultAsyncWaitQueue(bool newestFirst = false) : base(newestFirst) { }
+
     protected override ulong RentResultSlot() => LuminTaskResultBridge.Rent<T>();
     public LuminTask<T> Enqueue()
     {
@@ -325,9 +336,11 @@ internal sealed class DefaultAsyncWaitQueue<T> : AsyncWaitQueueCore, IAsyncWaitQ
         return true;
     }
 
-    public void DequeueAll(T? result = default)
+    public void DequeueAll(T? result = default) => CompleteBatch(DetachAllNodes(), result);
+
+    internal static void CompleteBatch(WaitNode? head, T? result)
     {
-        for (var node = DetachAllNodes(); node != null;)
+        for (var node = head; node != null;)
         {
             var next = node.Next;
             CompleteNode(node, result);
@@ -341,6 +354,24 @@ internal sealed class DefaultAsyncWaitQueue<T> : AsyncWaitQueueCore, IAsyncWaitQ
         ReleaseRegistration(node);
         LuminTaskResultBridge.TrySetResult(node.Handle, in result);
         WaitNodePool.Return(node);
+    }
+}
+
+internal static class WaitTimeout
+{
+    // Let the runtime enforce its platform-specific range and sub-millisecond rounding.
+    internal static bool CanAcquireImmediately(TimeSpan timeout) =>
+        timeout.Ticks >= TimeSpan.TicksPerMillisecond &&
+        timeout.Ticks <= (long)int.MaxValue * TimeSpan.TicksPerMillisecond;
+
+    internal static async LuminTask Finish(LuminTask wait, CancellationTokenSource timer)
+    {
+        using (timer) await wait.ConfigureAwait(false);
+    }
+
+    internal static async LuminTask<T> Finish<T>(LuminTask<T> wait, CancellationTokenSource timer)
+    {
+        using (timer) return await wait.ConfigureAwait(false);
     }
 }
 
@@ -361,14 +392,13 @@ internal static class AsyncWaitQueueExtensions
         var task = queue.Enqueue();
 
         if (cancellationToken.CanBeCanceled)
-        {
-            cancellationToken.Register(() =>
-            {
-                queue.TryCancel(task, cancellationToken);
-            }, useSynchronizationContext: false);
-        }
-
+            RegisterCustomCancellation(queue, task, cancellationToken);
         return task;
+    }
+
+    private static void RegisterCustomCancellation<T>(IAsyncWaitQueue<T> queue, LuminTask<T> task, CancellationToken token)
+    {
+        token.Register(() => queue.TryCancel(task, token), useSynchronizationContext: false);
     }
 }
 public sealed class LuminDeque<T> : IDisposable, IEnumerable<T>

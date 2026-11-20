@@ -62,16 +62,7 @@ namespace LuminThread
             if (task is null) throw new ArgumentNullException(nameof(task));
             if (task.IsCompleted) return ConvertCompletedTask(task, cancellationToken);
 
-            var handle = LuminTaskResultBridge.Rent<T>();
-            var state = StateTuple.Create((handle, cancellationToken));
-            task.ContinueWith(
-                static (completed, boxedState) => CompleteTaskConversion(completed, boxedState),
-                state,
-                CancellationToken.None,
-                TaskContinuationOptions.ExecuteSynchronously,
-                TaskScheduler.Default);
-
-            return new LuminTask<T>(handle);
+            return LuminTaskValueTaskExtensions.AwaitPending(new ValueTask<T>(task), cancellationToken);
         }
 
         public static LuminTask AsLuminTask(this Task task, CancellationToken cancellationToken = default)
@@ -79,16 +70,7 @@ namespace LuminThread
             if (task is null) throw new ArgumentNullException(nameof(task));
             if (task.IsCompleted) return ConvertCompletedTask(task, cancellationToken);
 
-            var handle = LuminTask.RentSlot();
-            var state = StateTuple.Create((handle, cancellationToken));
-            task.ContinueWith(
-                static (completed, boxedState) => CompleteTaskConversion(completed, boxedState),
-                state,
-                CancellationToken.None,
-                TaskContinuationOptions.ExecuteSynchronously,
-                TaskScheduler.Default);
-
-            return new LuminTask(handle);
+            return LuminTaskValueTaskExtensions.AwaitPending(new ValueTask(task), cancellationToken);
         }
 
         private static LuminTask<T> ConvertCompletedTask<T>(Task<T> task, CancellationToken fallbackToken)
@@ -124,50 +106,6 @@ namespace LuminThread
             }
         }
 
-        private static void CompleteTaskConversion<T>(Task<T> task, object? boxedState)
-        {
-            var state = (StateTuple<(LuminTaskHandle, CancellationToken)>)boxedState!;
-            var handle = state.Item.Item1;
-            var fallbackToken = state.Item.Item2;
-            state.Dispose();
-
-            try
-            {
-                var result = task.GetAwaiter().GetResult();
-                LuminTaskResultBridge.TrySetResult(handle, in result);
-            }
-            catch (OperationCanceledException canceled)
-            {
-                LuminTaskSource.TrySetCanceled(handle, SelectCancellationToken(canceled, fallbackToken));
-            }
-            catch (Exception exception)
-            {
-                LuminTaskSource.TrySetException(handle, exception);
-            }
-        }
-
-        private static void CompleteTaskConversion(Task task, object? boxedState)
-        {
-            var state = (StateTuple<(LuminTaskHandle, CancellationToken)>)boxedState!;
-            var handle = state.Item.Item1;
-            var fallbackToken = state.Item.Item2;
-            state.Dispose();
-
-            try
-            {
-                task.GetAwaiter().GetResult();
-                LuminTaskSource.TrySetResult(handle);
-            }
-            catch (OperationCanceledException canceled)
-            {
-                LuminTaskSource.TrySetCanceled(handle, SelectCancellationToken(canceled, fallbackToken));
-            }
-            catch (Exception exception)
-            {
-                LuminTaskSource.TrySetException(handle, exception);
-            }
-        }
-
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static CancellationToken SelectCancellationToken(
             OperationCanceledException exception,
@@ -187,49 +125,10 @@ namespace LuminThread
                 LuminTaskSource.TrySetException(handle, exception);
         }
 
-        // Timeout/cancellation only stops waiting; it does not transfer ownership of the
-        // single-consumer source back to its producer. Keep a lightweight continuation attached
-        // so the abandoned inner task is consumed and can release its native source when it
-        // eventually completes.
-        private static void Drain(LuminTask task)
-        {
-            var awaiter = task.GetAwaiter();
-            if (awaiter.IsCompleted)
-            {
-                try { awaiter.GetResult(); }
-                catch (Exception) { }
-                return;
-            }
-
-            awaiter.SourceOnCompleted(static state =>
-            {
-                var pendingAwaiter = (LuminTask)state;
-                try { pendingAwaiter.GetResult(); }
-                catch (Exception) { }
-            }, awaiter);
-        }
-
-        private static void Drain<T>(LuminTask<T> task)
-        {
-            var awaiter = task.GetAwaiter();
-            if (awaiter.IsCompleted)
-            {
-                try { awaiter.GetResult(); }
-                catch (Exception) { }
-                return;
-            }
-
-            awaiter.SourceOnCompleted(static state =>
-            {
-                var pendingAwaiter = (LuminTask<T>)state;
-                try { pendingAwaiter.GetResult(); }
-                catch (Exception) { }
-            }, awaiter);
-        }
-
-        // 句柄版排空：进入 Timeout 的内层任务已确认 Pending，只保留句柄即可在放弃等待后
-        // 仍然消费掉它，让它的槽位（与池化结果容器）在完成时被释放。
-        private static void Drain(LuminTaskHandle handle) => Drain(LuminTaskSource.ToTask(handle));
+        // The losing source still needs one consumer when it eventually finishes.
+        private static void Drain(LuminTask task) => task.Forget();
+        private static void Drain<T>(LuminTask<T> task) => task.Forget();
+        private static void Drain(LuminTaskHandle handle) => LuminTaskSource.ToTask(handle).Forget();
 
         public static Task<T> AsTask<T>(this LuminTask<T> task)
         {

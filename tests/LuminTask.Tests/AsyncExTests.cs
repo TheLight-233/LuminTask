@@ -21,6 +21,11 @@ public static class AsyncExTests
         await r.Run("AsyncLazy initializes once", LazyInitOnce);
         await r.Run("AsyncMonitor enter/wait/pulse", Monitor);
         await r.Run("AsyncResetEvent timeout remains armed", ResetEventTimeout);
+        await r.Run("Queued readers can release inline", ReadersReleaseInline);
+        await r.Run("Contended countdown, reader, writer and monitor deadlines expire", ContendedDeadlines, 5000);
+        await r.Run("Timed fast paths consume exactly one signal or permit", ReadyDeadlines);
+        await r.Run("AsyncLazy retry keeps overlapping waiter batches separate", RetryWithWaiters);
+        await r.Run("Reactive waiters keep order, reentrancy and cancellation identity", ReactiveDelivery);
         await r.Run("AsyncSemaphore timeout remains armed", SemaphoreTimeout);
     }
 
@@ -282,4 +287,112 @@ public static class AsyncExTests
         {
         }
     }
+    private static async LuminTask ReadersReleaseInline()
+    {
+        using var rw = new AsyncReaderWriterLock();
+        var writer = await rw.WriterLockAsync();
+        var completions = new LuminTask[256];
+        async LuminTask Read() { using var reader = await rw.ReaderLockAsync(); }
+        for (int i = 0; i < completions.Length; ++i) completions[i] = Read();
+        writer.Dispose();
+        await LuminTask.WhenAll(completions);
+        using var last = await rw.WriterLockAsync(TimeSpan.FromSeconds(1));
+    }
+
+    private static async LuminTask ContendedDeadlines()
+    {
+        var timeout = TimeSpan.FromMilliseconds(25);
+        using var countdown = new AsyncCountdownEvent(1);
+        using var rw = new AsyncReaderWriterLock();
+        using var monitor = new AsyncMonitor();
+        using var writer = await rw.WriterLockAsync();
+        using var scope = await monitor.EnterAsync();
+        var count = countdown.WaitAsync(timeout);
+        var reader = rw.ReaderLockAsync(timeout);
+        var otherWriter = rw.WriterLockAsync(timeout);
+        var contender = monitor.EnterAsync(timeout);
+        try { await count; Assert.Fail("countdown"); } catch (OperationCanceledException) { }
+        try { using var key = await reader; Assert.Fail("reader"); } catch (OperationCanceledException) { }
+        try { using var key = await otherWriter; Assert.Fail("writer"); } catch (OperationCanceledException) { }
+        try { using var key = await contender; Assert.Fail("monitor"); } catch (OperationCanceledException) { }
+    }
+
+    private static async LuminTask ReadyDeadlines()
+    {
+        var timeout = TimeSpan.FromSeconds(2);
+        using var auto = new AsyncAutoResetEvent<int>();
+        using var manual = new AsyncManualResetEvent<int>();
+        using var semaphore = new AsyncSemaphore(1);
+        using var rw = new AsyncReaderWriterLock();
+        auto.Set(17);
+        Assert.Equal(17, await auto.WaitAsync(timeout));
+        Assert.False(auto.IsSet);
+        var waiting = auto.WaitAsync(Timeout.InfiniteTimeSpan);
+        Assert.False(waiting.IsCompleted);
+        auto.Set(21);
+        Assert.Equal(21, await waiting);
+        manual.Set(12);
+        Assert.Equal(12, await manual.WaitAsync(timeout));
+        Assert.Equal(12, await manual.WaitAsync(timeout));
+        using (await semaphore.LockAsync(timeout)) Assert.Equal(0L, semaphore.CurrentCount);
+        Assert.Equal(1L, semaphore.CurrentCount);
+        try { await semaphore.WaitAsync(TimeSpan.FromMilliseconds(-2)); Assert.Fail("invalid timeout"); }
+        catch (ArgumentOutOfRangeException) { }
+        Assert.Equal(1L, semaphore.CurrentCount);
+        using (await rw.ReaderLockAsync(timeout)) { using var second = await rw.ReaderLockAsync(timeout); }
+        using (await rw.WriterLockAsync(timeout)) { }
+    }
+
+    private static async LuminTask RetryWithWaiters()
+    {
+        ulong pending = 0;
+        int starts = 0;
+        LuminTask<int> Load()
+        {
+            ++starts;
+            return LuminTaskSource.Create<int>(out pending);
+        }
+        using var lazy = new AsyncLazy<int>(Load, AsyncLazyFlags.ExecuteOnCallingThread | AsyncLazyFlags.RetryOnFailure);
+        var first = lazy.Task;
+        var second = lazy.Task;
+        var original = new InvalidOperationException();
+        LuminTaskSource.SetException(pending, original);
+        var retried = lazy.Task;
+        var follower = lazy.Task;
+        try { await first; Assert.Fail("first batch"); } catch (InvalidOperationException error) { Assert.True(error == original); }
+        try { await second; Assert.Fail("second waiter"); } catch (InvalidOperationException error) { Assert.True(error == original); }
+        LuminTaskSource.SetResult(pending, 35);
+        Assert.Equal(35, await retried);
+        Assert.Equal(35, await follower);
+        Assert.Equal(35, await lazy.Task);
+        Assert.Equal(2, starts);
+    }
+
+    private static async LuminTask ReactiveDelivery()
+    {
+        var property = new AsyncReactiveProperty<int>(0);
+        using var token = new CancellationTokenSource();
+        var canceled = property.WaitAsync(token.Token);
+        token.Cancel();
+        try { await canceled; Assert.Fail("expected cancellation"); }
+        catch (OperationCanceledException error) { Assert.Equal(token.Token, error.CancellationToken); }
+
+        var order = new List<int>();
+        async LuminTask Listen(int id)
+        {
+            await property.WaitAsync();
+            order.Add(id);
+            if (id == 2) { await property.WaitAsync(); order.Add(3); }
+        }
+        var first = Listen(1);
+        var second = Listen(2);
+        property.Value = 1;
+        Assert.True(order.SequenceEqual(new[] { 2, 1 }));
+        property.Value = 2;
+        await first;
+        await second;
+        Assert.True(order.SequenceEqual(new[] { 2, 1, 3 }));
+        property.Dispose();
+    }
+
 }

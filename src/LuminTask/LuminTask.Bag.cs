@@ -234,4 +234,9 @@ public struct LuminTaskState
         State = state;
         OnShutdown = null;
     }
+
+    /// <summary>Releases adapter-owned state when queued work is discarded during loop shutdown.</summary>
+    public LuminTaskState(LuminTaskHandle handle, CancellationToken cancellationToken, object state, Action<object> onShutdown)
+        : this(handle, cancellationToken, state) => OnShutdown = onShutdown;
+
 }

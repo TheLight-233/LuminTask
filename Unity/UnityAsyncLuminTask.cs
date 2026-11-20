@@ -499,10 +499,14 @@ namespace LuminThread.Unity
                 if (Interlocked.Exchange(ref _pooled, 1) != 0)
                     return;
 
-                // A completer is still inside its gate (another thread, or a user exception escaped
-                // MoveNext mid-completion): the only safe move is to abandon the block to the GC.
+                // Detach on the loop thread. A synchronous continuation can shut the loop
+                // down from inside completion; that block must not be handed to a new operation.
                 if (IsCompleting)
+                {
+                    Operation.completed -= _onCompleted;
+                    Registration.Dispose();
                     return;
+                }
 
                 try
                 {
@@ -551,6 +555,7 @@ namespace LuminThread.Unity
 
         private static class AsyncOperationPromise
         {
+            private static readonly Action<object> Release = state => ((AsyncOperationState)state).Dispose();
             private static readonly MoveNext MoveNextAction = MoveNext;
 
             // Registers a directly-awaited operation's continuation on the shared control block instead of a
@@ -584,7 +589,11 @@ namespace LuminThread.Unity
 
                 operation.completed += state.CompletedCallback;
 
-                PlayerLoopHelper.AddAction(timing, new LuminTaskState(handle, cancellationToken, state), MoveNextAction);
+                var work = new LuminTaskState(handle, cancellationToken, state);
+                if (awaiterContinuation == null)
+                    UnityLoopWork.Add(timing, work, MoveNextAction, Release);
+                else
+                    PlayerLoopHelper.AddAction(timing, work, MoveNextAction);
 
                 return handle;
             }
@@ -613,7 +622,12 @@ namespace LuminThread.Unity
                     return true;
                 }
 
-                asyncOperationState.Progress?.Report(operation.progress);
+                try { asyncOperationState.Progress?.Report(operation.progress); }
+                catch
+                {
+                    asyncOperationState.Dispose();
+                    throw;
+                }
 
                 if (operation.isDone)
                 {

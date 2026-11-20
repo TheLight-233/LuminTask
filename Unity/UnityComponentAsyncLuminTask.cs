@@ -89,65 +89,55 @@ namespace LuminThread.Unity
                 // Register cancellation
                 if (cancellationToken.CanBeCanceled)
                 {
-                    stateTuple.Item.Item1.Registration = cancellationToken.Register(static s =>
-                    {
-                        var taskState = (LuminTaskState)s;
-                        var tuple = (StateTuple<(PromiseState, AudioSource)>)taskState.State!;
-                        
-                        // Stop audio on cancel
-                        if (tuple.Item.Item2 != null)
-                        {
-                            tuple.Item.Item2.Stop();
-                        }
-                        
-                        LuminTaskSource.SetCanceled(tuple.Item.Item1.Handle, taskState.CancellationToken);
-                        // 回调自身在途：仅清引用，释放交给 MoveNext。
-                        tuple.Item.Item1.Registration = default;
-                    }, state);
+                    stateTuple.Item.Item1.Registration = UnityLoopWork.RegisterCancellation(state.Handle, cancellationToken);
                 }
 
                 // Add to player loop
-                PlayerLoopHelper.AddAction(timing, state, MoveNextAction);
+                UnityLoopWork.Add(timing, state, MoveNextAction, Release);
 
                 return task;
             }
+
+            private static readonly Action<object> Release = state =>
+            {
+                var tuple = (StateTuple<(PromiseState, AudioSource)>)state;
+                tuple.Item.Item1.Registration.Dispose();
+                tuple.Dispose();
+            };
 
             private static readonly MoveNext MoveNextAction = MoveNext;
 
             static bool MoveNext(in LuminTaskState state)
             {
                 var tuple = (StateTuple<(PromiseState, AudioSource)>)state.State!;
-
-                if (tuple.Item.Item1.Completed)
+                bool keep = false;
+                try
                 {
-                    tuple.Dispose();
-                    return false;
-                }
+                    if (tuple.Item.Item1.Completed) return false;
 
-                if (state.CancellationToken.IsCancellationRequested)
-                {
-                    tuple.Item.Item1.Completed = true;
-                    if (tuple.Item.Item2 != null)
+                    if (state.CancellationToken.IsCancellationRequested)
                     {
-                        tuple.Item.Item2.Stop();
+                        tuple.Item.Item1.Completed = true;
+                        if (tuple.Item.Item2 != null)
+                        {
+                            tuple.Item.Item2.Stop();
+                        }
+                        LuminTaskSource.SetCanceled(tuple.Item.Item1.Handle, state.CancellationToken);
+                        return false;
                     }
-                    LuminTaskSource.SetCanceled(tuple.Item.Item1.Handle, state.CancellationToken);
-                    tuple.Item.Item1.Registration.Dispose();
-                    tuple.Dispose();
-                    return false;
-                }
 
-                // Check if audio is still playing
-                if (tuple.Item.Item2 == null || !tuple.Item.Item2.isPlaying)
-                {
-                    tuple.Item.Item1.Completed = true;
-                    LuminTaskSource.SetResult(tuple.Item.Item1.Handle);
-                    tuple.Item.Item1.Registration.Dispose();
-                    tuple.Dispose();
-                    return false;
-                }
+                    // Check if audio is still playing
+                    if (tuple.Item.Item2 == null || !tuple.Item.Item2.isPlaying)
+                    {
+                        tuple.Item.Item1.Completed = true;
+                        LuminTaskSource.SetResult(tuple.Item.Item1.Handle);
+                        return false;
+                    }
 
-                return true;
+                    keep = true;
+                    return true;
+                }
+                finally { if (!keep) Release(tuple); }
             }
         }
 
@@ -236,78 +226,74 @@ namespace LuminThread.Unity
                 // Register cancellation
                 if (cancellationToken.CanBeCanceled)
                 {
-                    stateTuple.Item.Item1.Registration = cancellationToken.Register(static s =>
-                    {
-                        var taskState = (LuminTaskState)s;
-                        var tuple = (StateTuple<(PromiseState, Animator, int)>)taskState.State!;
-                        LuminTaskSource.SetCanceled(tuple.Item.Item1.Handle, taskState.CancellationToken);
-                        // 回调自身在途：仅清引用，释放交给 MoveNext。
-                        tuple.Item.Item1.Registration = default;
-                    }, state);
+                    stateTuple.Item.Item1.Registration = UnityLoopWork.RegisterCancellation(state.Handle, cancellationToken);
                 }
 
                 // Add to player loop
-                PlayerLoopHelper.AddAction(timing, state, MoveNextAction);
+                UnityLoopWork.Add(timing, state, MoveNextAction, Release);
 
                 return task;
             }
+
+            private static readonly Action<object> Release = state =>
+            {
+                var tuple = (StateTuple<(PromiseState, Animator, int)>)state;
+                tuple.Item.Item1.Registration.Dispose();
+                tuple.Dispose();
+            };
 
             private static readonly MoveNext MoveNextAction = MoveNext;
 
             static bool MoveNext(in LuminTaskState state)
             {
                 var tuple = (StateTuple<(PromiseState, Animator, int)>)state.State!;
-
-                if (tuple.Item.Item1.Completed)
+                bool keep = false;
+                try
                 {
-                    tuple.Dispose();
-                    return false;
-                }
+                    if (tuple.Item.Item1.Completed) return false;
 
-                if (state.CancellationToken.IsCancellationRequested)
-                {
-                    tuple.Item.Item1.Completed = true;
-                    LuminTaskSource.SetCanceled(tuple.Item.Item1.Handle, state.CancellationToken);
-                    tuple.Item.Item1.Registration.Dispose();
-                    tuple.Dispose();
-                    return false;
-                }
-
-                if (tuple.Item.Item2 == null)
-                {
-                    tuple.Item.Item1.Completed = true;
-                    LuminTaskSource.SetException(tuple.Item.Item1.Handle, new Exception("Animator is null"));
-                    tuple.Item.Item1.Registration.Dispose();
-                    tuple.Dispose();
-                    return false;
-                }
-
-                var animatorStateInfo = tuple.Item.Item2.GetCurrentAnimatorStateInfo(tuple.Item.Item3);
-
-                // If waiting for specific state, check if we're in it
-                if (tuple.Item.Item1.WaitingForState)
-                {
-                    if (animatorStateInfo.shortNameHash == tuple.Item.Item1.StateHash)
+                    if (state.CancellationToken.IsCancellationRequested)
                     {
-                        tuple.Item.Item1.WaitingForState = false; // Now wait for it to complete
+                        tuple.Item.Item1.Completed = true;
+                        LuminTaskSource.SetCanceled(tuple.Item.Item1.Handle, state.CancellationToken);
+                        return false;
                     }
-                    else
+
+                    if (tuple.Item.Item2 == null)
                     {
-                        return true; // Keep waiting for state
+                        tuple.Item.Item1.Completed = true;
+                        LuminTaskSource.SetException(tuple.Item.Item1.Handle, new Exception("Animator is null"));
+                        return false;
                     }
-                }
 
-                // Check if animation is complete (normalized time >= 1)
-                if (animatorStateInfo.normalizedTime >= 1.0f && !tuple.Item.Item2.IsInTransition(tuple.Item.Item3))
-                {
-                    tuple.Item.Item1.Completed = true;
-                    LuminTaskSource.SetResult(tuple.Item.Item1.Handle);
-                    tuple.Item.Item1.Registration.Dispose();
-                    tuple.Dispose();
-                    return false;
-                }
+                    var animatorStateInfo = tuple.Item.Item2.GetCurrentAnimatorStateInfo(tuple.Item.Item3);
 
-                return true;
+                    // If waiting for specific state, check if we're in it
+                    if (tuple.Item.Item1.WaitingForState)
+                    {
+                        if (animatorStateInfo.shortNameHash == tuple.Item.Item1.StateHash)
+                        {
+                            tuple.Item.Item1.WaitingForState = false; // Now wait for it to complete
+                        }
+                        else
+                        {
+                            keep = true;
+                            return true; // Keep waiting for state
+                        }
+                    }
+
+                    // Check if animation is complete (normalized time >= 1)
+                    if (animatorStateInfo.normalizedTime >= 1.0f && !tuple.Item.Item2.IsInTransition(tuple.Item.Item3))
+                    {
+                        tuple.Item.Item1.Completed = true;
+                        LuminTaskSource.SetResult(tuple.Item.Item1.Handle);
+                        return false;
+                    }
+
+                    keep = true;
+                    return true;
+                }
+                finally { if (!keep) Release(tuple); }
             }
         }
 
@@ -371,73 +357,62 @@ namespace LuminThread.Unity
                 // Register cancellation
                 if (cancellationToken.CanBeCanceled)
                 {
-                    stateTuple.Item.Item1.Registration = cancellationToken.Register(static s =>
-                    {
-                        var taskState = (LuminTaskState)s;
-                        var tuple = (StateTuple<(PromiseState, ParticleSystem)>)taskState.State!;
-                        
-                        if (tuple.Item.Item2 != null)
-                        {
-                            tuple.Item.Item2.Stop(tuple.Item.Item1.WithChildren);
-                        }
-                        
-                        LuminTaskSource.SetCanceled(tuple.Item.Item1.Handle, taskState.CancellationToken);
-                        // 回调自身在途：仅清引用，释放交给 MoveNext。
-                        tuple.Item.Item1.Registration = default;
-                    }, state);
+                    stateTuple.Item.Item1.Registration = UnityLoopWork.RegisterCancellation(state.Handle, cancellationToken);
                 }
 
                 // Add to player loop
-                PlayerLoopHelper.AddAction(timing, state, MoveNextAction);
+                UnityLoopWork.Add(timing, state, MoveNextAction, Release);
 
                 return task;
             }
+
+            private static readonly Action<object> Release = state =>
+            {
+                var tuple = (StateTuple<(PromiseState, ParticleSystem)>)state;
+                tuple.Item.Item1.Registration.Dispose();
+                tuple.Dispose();
+            };
 
             private static readonly MoveNext MoveNextAction = MoveNext;
 
             static bool MoveNext(in LuminTaskState state)
             {
                 var tuple = (StateTuple<(PromiseState, ParticleSystem)>)state.State!;
-
-                if (tuple.Item.Item1.Completed)
+                bool keep = false;
+                try
                 {
-                    tuple.Dispose();
-                    return false;
-                }
+                    if (tuple.Item.Item1.Completed) return false;
 
-                if (state.CancellationToken.IsCancellationRequested)
-                {
-                    tuple.Item.Item1.Completed = true;
-                    if (tuple.Item.Item2 != null)
+                    if (state.CancellationToken.IsCancellationRequested)
                     {
-                        tuple.Item.Item2.Stop(tuple.Item.Item1.WithChildren);
+                        tuple.Item.Item1.Completed = true;
+                        if (tuple.Item.Item2 != null)
+                        {
+                            tuple.Item.Item2.Stop(tuple.Item.Item1.WithChildren);
+                        }
+                        LuminTaskSource.SetCanceled(tuple.Item.Item1.Handle, state.CancellationToken);
+                        return false;
                     }
-                    LuminTaskSource.SetCanceled(tuple.Item.Item1.Handle, state.CancellationToken);
-                    tuple.Item.Item1.Registration.Dispose();
-                    tuple.Dispose();
-                    return false;
-                }
 
-                if (tuple.Item.Item2 == null)
-                {
-                    tuple.Item.Item1.Completed = true;
-                    LuminTaskSource.SetException(tuple.Item.Item1.Handle, new Exception("ParticleSystem is null"));
-                    tuple.Item.Item1.Registration.Dispose();
-                    tuple.Dispose();
-                    return false;
-                }
+                    if (tuple.Item.Item2 == null)
+                    {
+                        tuple.Item.Item1.Completed = true;
+                        LuminTaskSource.SetException(tuple.Item.Item1.Handle, new Exception("ParticleSystem is null"));
+                        return false;
+                    }
 
-                // Check if particle system has stopped
-                if (!tuple.Item.Item2.IsAlive(tuple.Item.Item1.WithChildren))
-                {
-                    tuple.Item.Item1.Completed = true;
-                    LuminTaskSource.SetResult(tuple.Item.Item1.Handle);
-                    tuple.Item.Item1.Registration.Dispose();
-                    tuple.Dispose();
-                    return false;
-                }
+                    // Check if particle system has stopped
+                    if (!tuple.Item.Item2.IsAlive(tuple.Item.Item1.WithChildren))
+                    {
+                        tuple.Item.Item1.Completed = true;
+                        LuminTaskSource.SetResult(tuple.Item.Item1.Handle);
+                        return false;
+                    }
 
-                return true;
+                    keep = true;
+                    return true;
+                }
+                finally { if (!keep) Release(tuple); }
             }
         }
 
@@ -472,6 +447,7 @@ namespace LuminThread.Unity
             struct PromiseState
             {
                 public bool Completed;
+                public VideoPlayer.EventHandler Callback;
                 public CancellationTokenRegistration Registration;
                 public ulong Handle;
             }
@@ -495,75 +471,67 @@ namespace LuminThread.Unity
                 // Register cancellation
                 if (cancellationToken.CanBeCanceled)
                 {
-                    stateTuple.Item.Item1.Registration = cancellationToken.Register(static s =>
-                    {
-                        var taskState = (LuminTaskState)s;
-                        var tuple = (StateTuple<(PromiseState, VideoPlayer)>)taskState.State!;
-                        
-                        if (tuple.Item.Item2 != null)
-                        {
-                            tuple.Item.Item2.Stop();
-                        }
-                        
-                        LuminTaskSource.SetCanceled(tuple.Item.Item1.Handle, taskState.CancellationToken);
-                        // 回调自身在途：仅清引用，释放交给 MoveNext / OnCompleted。
-                        tuple.Item.Item1.Registration = default;
-                    }, state);
+                    stateTuple.Item.Item1.Registration = UnityLoopWork.RegisterCancellation(state.Handle, cancellationToken);
                 }
 
                 // Setup completion callback
-                VideoPlayer.EventHandler loopPointReached = _ => OnCompleted(state);
-                videoPlayer.loopPointReached += loopPointReached;
+                stateTuple.Item.Item1.Callback = _ => OnCompleted(state);
+                videoPlayer.loopPointReached += stateTuple.Item.Item1.Callback;
 
                 // Add to player loop for error checking
-                PlayerLoopHelper.AddAction(timing, state, MoveNextAction);
+                UnityLoopWork.Add(timing, state, MoveNextAction, Release);
 
                 return task;
             }
+
+            private static readonly Action<object> Release = state =>
+            {
+                var tuple = (StateTuple<(PromiseState, VideoPlayer)>)state;
+                if (tuple.Item.Item2 != null) tuple.Item.Item2.loopPointReached -= tuple.Item.Item1.Callback;
+                tuple.Item.Item1.Registration.Dispose();
+                tuple.Dispose();
+            };
 
             private static readonly MoveNext MoveNextAction = MoveNext;
 
             static bool MoveNext(in LuminTaskState state)
             {
                 var tuple = (StateTuple<(PromiseState, VideoPlayer)>)state.State!;
-
-                if (tuple.Item.Item1.Completed)
+                bool keep = false;
+                try
                 {
-                    tuple.Dispose();
-                    return false;
-                }
+                    if (tuple.Item.Item1.Completed) return false;
 
-                if (state.CancellationToken.IsCancellationRequested)
-                {
-                    tuple.Item.Item1.Completed = true;
-                    if (tuple.Item.Item2 != null)
+                    if (state.CancellationToken.IsCancellationRequested)
                     {
-                        tuple.Item.Item2.Stop();
+                        tuple.Item.Item1.Completed = true;
+                        if (tuple.Item.Item2 != null)
+                        {
+                            tuple.Item.Item2.Stop();
+                        }
+                        LuminTaskSource.SetCanceled(tuple.Item.Item1.Handle, state.CancellationToken);
+                        return false;
                     }
-                    LuminTaskSource.SetCanceled(tuple.Item.Item1.Handle, state.CancellationToken);
-                    tuple.Item.Item1.Registration.Dispose();
-                    tuple.Dispose();
-                    return false;
-                }
 
-                // Check for errors
-                if (tuple.Item.Item2 == null)
-                {
-                    tuple.Item.Item1.Completed = true;
-                    LuminTaskSource.SetException(tuple.Item.Item1.Handle, new Exception("VideoPlayer is null"));
-                    tuple.Item.Item1.Registration.Dispose();
-                    tuple.Dispose();
-                    return false;
-                }
+                    // Check for errors
+                    if (tuple.Item.Item2 == null)
+                    {
+                        tuple.Item.Item1.Completed = true;
+                        LuminTaskSource.SetException(tuple.Item.Item1.Handle, new Exception("VideoPlayer is null"));
+                        return false;
+                    }
 
-                return true;
+                    keep = true;
+                    return true;
+                }
+                finally { if (!keep) Release(tuple); }
             }
 
             static void OnCompleted(LuminTaskState state)
             {
                 var tuple = (StateTuple<(PromiseState, VideoPlayer)>)state.State!;
 
-                if (tuple.Item.Item1.Completed)
+                if (tuple.Item.Item1.Handle != state.Handle || tuple.Item.Item1.Completed)
                 {
                     return;
                 }
@@ -578,8 +546,6 @@ namespace LuminThread.Unity
                     LuminTaskSource.SetResult(tuple.Item.Item1.Handle);
                 }
 
-                tuple.Item.Item1.Registration.Dispose();
-                tuple.Dispose();
             }
         }
 

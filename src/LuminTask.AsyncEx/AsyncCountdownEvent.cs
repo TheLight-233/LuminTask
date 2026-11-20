@@ -75,7 +75,7 @@ namespace LuminThread.AsyncEx
         public int Charge => 192;
 
         private readonly object _mutex = new();
-        private readonly IAsyncWaitQueue<object> _queue;
+        private readonly DefaultAsyncWaitQueue<object> _queue;
         private volatile int _currentCount;
         private volatile bool _isDisposed;
 
@@ -119,7 +119,7 @@ namespace LuminThread.AsyncEx
                 if (_currentCount == 0)
                     return LuminTask.CompletedTask();
 
-                return _queue.Enqueue(cancellationToken);
+                return _queue.EnqueueWithCancellation(cancellationToken);
             }
         }
 
@@ -260,8 +260,13 @@ namespace LuminThread.AsyncEx
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static LuminTask WaitAsync(this AsyncCountdownEvent evt, TimeSpan timeout)
         {
-            using var cts = new CancellationTokenSource(timeout);
-            return evt.WaitAsync(cts.Token);
+            if (timeout == Timeout.InfiniteTimeSpan) return evt.WaitAsync();
+            if (WaitTimeout.CanAcquireImmediately(timeout) && evt.IsSet)
+                return LuminTask.CompletedTask();
+
+            var timer = new CancellationTokenSource(timeout);
+            try { return WaitTimeout.Finish(evt.WaitAsync(timer.Token), timer); }
+            catch { timer.Dispose(); throw; }
         }
     }
 }

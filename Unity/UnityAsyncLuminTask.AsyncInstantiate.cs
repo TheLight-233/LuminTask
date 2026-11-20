@@ -7,14 +7,10 @@
 #if UNITY_2022_SUPPORT || UNITY_2023_3_OR_NEWER
 
 using System;
-using System.Runtime.CompilerServices;
-using System.Runtime.InteropServices;
 using System.Threading;
 using UnityEngine;
 using LuminThread;
 using LuminThread.Interface;
-using LuminThread.TaskSource;
-using LuminThread.Utility;
 
 namespace LuminThread.Unity
 {
@@ -41,7 +37,7 @@ namespace LuminThread.Unity
                 return LuminTask.FromCanceled<UnityEngine.Object[]>(cancellationToken);
             if (asyncOperation.isDone) 
                 return LuminTask.FromResult(asyncOperation.Result);
-            return AsyncInstantiateOperationPromise.Create(asyncOperation, timing, progress, cancellationToken, cancelImmediately);
+            return UnityAsyncLuminTask.AwaitInstantiation(asyncOperation, timing, progress, cancellationToken, cancelImmediately);
         }
 
         public static LuminTask<T[]> WithCancellation<T>(this AsyncInstantiateOperation<T> asyncOperation, CancellationToken cancellationToken)
@@ -64,228 +60,52 @@ namespace LuminThread.Unity
             if (cancellationToken.IsCancellationRequested) 
                 return LuminTask.FromCanceled<T[]>(cancellationToken);
             if (asyncOperation.isDone) 
-                return LuminTask.FromResult(asyncOperation.Result);
-            return AsyncInstantiateOperationPromise<T>.Create(asyncOperation, timing, progress, cancellationToken, cancelImmediately);
+                return LuminTask.FromResult(UnityAsyncLuminTask.ReadInstances<T>(asyncOperation));
+            return UnityAsyncLuminTask.AwaitInstantiation<T>(asyncOperation, timing, progress, cancellationToken, cancelImmediately);
         }
 
-        private static class AsyncInstantiateOperationPromise
+    }
+
+    public static partial class UnityAsyncLuminTask
+    {
+        internal static LuminTask<UnityEngine.Object[]> AwaitInstantiation(AsyncInstantiateOperation operation,
+            PlayerLoopTiming timing, IProgress<float> progress, CancellationToken token, bool immediate)
         {
-            [StructLayout(LayoutKind.Sequential)]
-            private struct StateData
-            {
-                public bool Completed;
-                public bool IsCancellationRequested;
-                public CancellationTokenRegistration Registration;
-                public ulong Handle;
-            }
-
-            public static LuminTask<UnityEngine.Object[]> Create(AsyncInstantiateOperation asyncOperation, PlayerLoopTiming timing, IProgress<float> progress, CancellationToken cancellationToken, bool cancelImmediately)
-            {
-                var task = LuminTaskSource.Create<UnityEngine.Object[]>(out ulong handle);
-                var stateData = new StateData
-                {
-                    Completed = false,
-                    IsCancellationRequested = false,
-                    Handle = handle
-                };
-
-                var stateTuple = StateTuple.Create(stateData, progress, asyncOperation);
-                var state = new LuminTaskState(handle, cancellationToken, stateTuple);
-                
-                Action<AsyncOperation> continuation = null;
-                continuation = _ =>
-                {
-                    if (stateData.Completed)
-                        return;
-                        
-                    stateData.Completed = true;
-                    stateData.IsCancellationRequested = cancellationToken.IsCancellationRequested;
-                    stateTuple.Item.Item1.Completed = true;
-                    stateTuple.Item.Item1.IsCancellationRequested = stateData.IsCancellationRequested;
-                    
-                    if (cancellationToken.IsCancellationRequested)
-                    {
-                        LuminTaskSource.SetCanceled(handle, cancellationToken);
-                    }
-                    else
-                    {
-                        LuminTaskSource.SetResult(handle, asyncOperation.Result);
-                    }
-                    
-                    if (continuation != null)
-                    {
-                        asyncOperation.completed -= continuation;
-                        continuation = null;
-                    }
-
-                    stateTuple.Item.Item1.Registration.Dispose();
-                    stateTuple.Dispose();
-                };
-
-                asyncOperation.completed += continuation;
-
-                if (cancelImmediately && cancellationToken.CanBeCanceled)
-                {
-                    stateTuple.Item.Item1.Registration = cancellationToken.Register(() =>
-                    {
-                        stateData.Completed = true;
-                        stateData.IsCancellationRequested = true;
-                        LuminTaskSource.SetCanceled(handle, cancellationToken);
-                    });
-                }
-
-                PlayerLoopHelper.AddAction(timing, state, MoveNextAction);
-
-                return task;
-            }
-
-            private static readonly MoveNext MoveNextAction = MoveNext;
-
-            public static bool MoveNext(in LuminTaskState state)
-            {
-                var stateTuple = state.State as StateTuple<(StateData, IProgress<float>, AsyncInstantiateOperation)>;
-                if (stateTuple == null)
-                    return false;
-
-                var asyncOperation = stateTuple.Item.Item3;
-
-                if (stateTuple.Item.Item1.Completed)
-                    return false;
-
-                if (state.CancellationToken.IsCancellationRequested)
-                {
-                    stateTuple.Item.Item1.Completed = true;
-                    stateTuple.Item.Item1.IsCancellationRequested = true;
-                    LuminTaskSource.SetCanceled(stateTuple.Item.Item1.Handle, state.CancellationToken);
-                    stateTuple.Item.Item1.Registration.Dispose();
-                    stateTuple.Dispose();
-                    return false;
-                }
-
-                var progress = stateTuple.Item.Item2;
-                progress?.Report(asyncOperation.progress);
-
-                if (asyncOperation.isDone)
-                {
-                    stateTuple.Item.Item1.Completed = true;
-                    LuminTaskSource.SetResult(stateTuple.Item.Item1.Handle, asyncOperation.Result);
-                    stateTuple.Item.Item1.Registration.Dispose();
-                    stateTuple.Dispose();
-                    return false;
-                }
-
-                return true;
-            }
+            var handle = AsyncOperationPromise.Create(operation, timing, progress, token, immediate,
+                InstantiateWriter.Write, PlainCanceledWriter.Write);
+            return LuminTaskSource.ToTask<UnityEngine.Object[]>(handle);
         }
 
-        private static class AsyncInstantiateOperationPromise<T> where T : UnityEngine.Object
+        internal static LuminTask<T[]> AwaitInstantiation<T>(AsyncInstantiateOperation<T> operation,
+            PlayerLoopTiming timing, IProgress<float> progress, CancellationToken token, bool immediate) where T : UnityEngine.Object
         {
-            [StructLayout(LayoutKind.Sequential)]
-            private struct StateData
-            {
-                public bool Completed;
-                public bool IsCancellationRequested;
-                public CancellationTokenRegistration Registration;
-                public ulong Handle;
-            }
+            var handle = AsyncOperationPromise.Create(operation, timing, progress, token, immediate,
+                InstantiateWriter<T>.Write, PlainCanceledWriter.Write);
+            return LuminTaskSource.ToTask<T[]>(handle);
+        }
 
-            public static LuminTask<T[]> Create(AsyncInstantiateOperation<T> asyncOperation, PlayerLoopTiming timing, IProgress<float> progress, CancellationToken cancellationToken, bool cancelImmediately)
-            {
-                var task = LuminTaskSource.Create<T[]>(out ulong handle);
-                var stateData = new StateData
-                {
-                    Completed = false,
-                    IsCancellationRequested = false,
-                    Handle = handle
-                };
+        // Unity 2022 can expose an Object[] through its T[] property by reinterpreting
+        // the reference. Return an array whose actual runtime element type supports T[].
+        internal static T[] ReadInstances<T>(AsyncInstantiateOperation operation) where T : UnityEngine.Object
+        {
+            var result = operation.Result;
+            if (result == null || result is T[]) return (T[])result;
+            if (result.Length == 0) return Array.Empty<T>();
+            var typed = new T[result.Length];
+            Array.Copy(result, typed, result.Length);
+            return typed;
+        }
 
-                var stateTuple = StateTuple.Create(stateData, progress, asyncOperation);
-                var state = new LuminTaskState(handle, cancellationToken, stateTuple);
-                
-                Action<AsyncOperation> continuation = null;
-                continuation = _ =>
-                {
-                    if (stateData.Completed)
-                        return;
-                        
-                    stateData.Completed = true;
-                    stateData.IsCancellationRequested = cancellationToken.IsCancellationRequested;
-                    stateTuple.Item.Item1.Completed = true;
-                    stateTuple.Item.Item1.IsCancellationRequested = stateData.IsCancellationRequested;
-                    
-                    if (cancellationToken.IsCancellationRequested)
-                    {
-                        LuminTaskSource.SetCanceled(handle, cancellationToken);
-                    }
-                    else
-                    {
-                        LuminTaskSource.SetResult(handle, asyncOperation.Result);
-                    }
-                    
-                    if (continuation != null)
-                    {
-                        asyncOperation.completed -= continuation;
-                        continuation = null;
-                    }
+        private static class InstantiateWriter
+        {
+            internal static readonly Action<AsyncOperationState> Write = state =>
+                state.Published = LuminTaskSource.SetResult(state.Handle, ((AsyncInstantiateOperation)state.Operation).Result);
+        }
 
-                    stateTuple.Item.Item1.Registration.Dispose();
-                    stateTuple.Dispose();
-                };
-
-                asyncOperation.completed += continuation;
-
-                if (cancelImmediately && cancellationToken.CanBeCanceled)
-                {
-                    stateTuple.Item.Item1.Registration = cancellationToken.Register(() =>
-                    {
-                        stateData.Completed = true;
-                        stateData.IsCancellationRequested = true;
-                        LuminTaskSource.SetCanceled(handle, cancellationToken);
-                    });
-                }
-
-                PlayerLoopHelper.AddAction(timing, state, MoveNextAction);
-
-                return task;
-            }
-
-            private static readonly MoveNext MoveNextAction = MoveNext;
-
-            public static bool MoveNext(in LuminTaskState state)
-            {
-                var stateTuple = state.State as StateTuple<(StateData, IProgress<float>, AsyncInstantiateOperation<T>)>;
-                if (stateTuple == null)
-                    return false;
-
-                var asyncOperation = stateTuple.Item.Item3;
-
-                if (stateTuple.Item.Item1.Completed)
-                    return false;
-
-                if (state.CancellationToken.IsCancellationRequested)
-                {
-                    stateTuple.Item.Item1.Completed = true;
-                    stateTuple.Item.Item1.IsCancellationRequested = true;
-                    LuminTaskSource.SetCanceled(stateTuple.Item.Item1.Handle, state.CancellationToken);
-                    stateTuple.Item.Item1.Registration.Dispose();
-                    stateTuple.Dispose();
-                    return false;
-                }
-
-                var progress = stateTuple.Item.Item2;
-                progress?.Report(asyncOperation.progress);
-
-                if (asyncOperation.isDone)
-                {
-                    stateTuple.Item.Item1.Completed = true;
-                    LuminTaskSource.SetResult(stateTuple.Item.Item1.Handle, asyncOperation.Result);
-                    stateTuple.Item.Item1.Registration.Dispose();
-                    stateTuple.Dispose();
-                    return false;
-                }
-
-                return true;
-            }
+        private static class InstantiateWriter<T> where T : UnityEngine.Object
+        {
+            internal static readonly Action<AsyncOperationState> Write = state =>
+                state.Published = LuminTaskSource.SetResult(state.Handle, ReadInstances<T>((AsyncInstantiateOperation)state.Operation));
         }
     }
 }

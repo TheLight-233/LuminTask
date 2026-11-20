@@ -26,7 +26,7 @@ namespace LuminThread.AsyncEx
 
         public void Dispose() => GetState().Dispose();
 
-        private ReaderWriterLockState GetState()
+        internal ReaderWriterLockState GetState()
             => _state ?? throw new InvalidOperationException("AsyncReaderWriterLock 未初始化（default 值）或已释放");
     }
 
@@ -59,10 +59,11 @@ namespace LuminThread.AsyncEx
         private static int s_nextId = 1;
 
         private readonly object _mutex = new object();
-        private readonly IAsyncWaitQueue<ReaderKey> _readerQueue;
-        private readonly IAsyncWaitQueue<WriterKey> _writerQueue;
+        private readonly DefaultAsyncWaitQueue<ReaderKey> _readerQueue;
+        private readonly DefaultAsyncWaitQueue<WriterKey> _writerQueue;
 
         private int _locksHeld;
+        private bool _dispatching;
         private int _id;
         private volatile bool _isDisposed;
 
@@ -93,14 +94,27 @@ namespace LuminThread.AsyncEx
 
             lock (_mutex)
             {
-                if (_locksHeld >= 0 && _writerQueue.IsEmpty)
+                if (TryAcquireReaderLocked())
                 {
-                    _locksHeld++;
                     return LuminTask.FromResult(new ReaderKey(this));
                 }
 
-                return _readerQueue.Enqueue(cancellationToken);
+                return _readerQueue.EnqueueWithCancellation(cancellationToken);
             }
+        }
+
+        private bool TryAcquireReaderLocked()
+        {
+            if (_locksHeld < 0 || !_writerQueue.IsEmpty) return false;
+            _locksHeld++;
+            return true;
+        }
+
+        internal bool TryAcquireReader()
+        {
+            if (!Monitor.TryEnter(_mutex)) return false;
+            try { return !_isDisposed && TryAcquireReaderLocked(); }
+            finally { Monitor.Exit(_mutex); }
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -114,14 +128,27 @@ namespace LuminThread.AsyncEx
 
             lock (_mutex)
             {
-                if (_locksHeld == 0)
+                if (TryAcquireWriterLocked())
                 {
-                    _locksHeld = -1;
                     return LuminTask.FromResult(new WriterKey(this));
                 }
 
-                return _writerQueue.Enqueue(cancellationToken);
+                return _writerQueue.EnqueueWithCancellation(cancellationToken);
             }
+        }
+
+        private bool TryAcquireWriterLocked()
+        {
+            if (_locksHeld != 0) return false;
+            _locksHeld = -1;
+            return true;
+        }
+
+        internal bool TryAcquireWriter()
+        {
+            if (!Monitor.TryEnter(_mutex)) return false;
+            try { return !_isDisposed && TryAcquireWriterLocked(); }
+            finally { Monitor.Exit(_mutex); }
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -153,19 +180,29 @@ namespace LuminThread.AsyncEx
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void ReleaseWaitersNoLock()
         {
-            if (!_writerQueue.IsEmpty && _locksHeld == 0)
+            // Grant before publishing. A continuation may immediately release its key and
+            // queue more work on the same thread. The outer dispatcher drains that work.
+            if (_dispatching) return;
+            _dispatching = true;
+            try
             {
-                _locksHeld = -1;
-                _writerQueue.Dequeue(new WriterKey(this));
-            }
-            else if (!_readerQueue.IsEmpty && _locksHeld >= 0)
-            {
-                while (!_readerQueue.IsEmpty)
+                while (_locksHeld >= 0)
                 {
-                    _readerQueue.Dequeue(new ReaderKey(this));
-                    _locksHeld++;
+                    if (!_writerQueue.IsEmpty)
+                    {
+                        if (_locksHeld != 0) break;
+                        _locksHeld = -1;
+                        if (!_writerQueue.TryDequeue(new WriterKey(this))) _locksHeld = 0;
+                    }
+                    else
+                    {
+                        if (_readerQueue.IsEmpty) break;
+                        _locksHeld++;
+                        if (!_readerQueue.TryDequeue(new ReaderKey(this))) _locksHeld--;
+                    }
                 }
             }
+            finally { _dispatching = false; }
         }
 
         public void Dispose()
@@ -184,15 +221,25 @@ namespace LuminThread.AsyncEx
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static LuminTask<ReaderKey> ReaderLockAsync(this AsyncReaderWriterLock rwLock, TimeSpan timeout)
         {
-            using var cts = new CancellationTokenSource(timeout);
-            return rwLock.ReaderLockAsync(cts.Token);
+            if (timeout == Timeout.InfiniteTimeSpan) return rwLock.ReaderLockAsync();
+            if (WaitTimeout.CanAcquireImmediately(timeout) && rwLock.GetState().TryAcquireReader())
+                return LuminTask.FromResult(new ReaderKey(rwLock.GetState()));
+
+            var timer = new CancellationTokenSource(timeout);
+            try { return WaitTimeout.Finish(rwLock.ReaderLockAsync(timer.Token), timer); }
+            catch { timer.Dispose(); throw; }
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static LuminTask<WriterKey> WriterLockAsync(this AsyncReaderWriterLock rwLock, TimeSpan timeout)
         {
-            using var cts = new CancellationTokenSource(timeout);
-            return rwLock.WriterLockAsync(cts.Token);
+            if (timeout == Timeout.InfiniteTimeSpan) return rwLock.WriterLockAsync();
+            if (WaitTimeout.CanAcquireImmediately(timeout) && rwLock.GetState().TryAcquireWriter())
+                return LuminTask.FromResult(new WriterKey(rwLock.GetState()));
+
+            var timer = new CancellationTokenSource(timeout);
+            try { return WaitTimeout.Finish(rwLock.WriterLockAsync(timer.Token), timer); }
+            catch { timer.Dispose(); throw; }
         }
     }
 }

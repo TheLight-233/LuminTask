@@ -41,35 +41,28 @@ namespace LuminThread.Unity
                 }
 
                 var task = LuminTaskSource.Create(out ulong handle);
-                var state = new LuminTaskState(handle, cancellationToken, StateTuple.Create(handle, jobHandle));
+                var state = new LuminTaskState(handle, cancellationToken, StateTuple.Create(jobHandle));
 
-                PlayerLoopHelper.AddAction(timing, state, MoveNextAction);
+                UnityLoopWork.Add(timing, state, MoveNextAction, Release);
 
                 return task;
             }
 
             private static readonly MoveNext MoveNextAction = MoveNext;
 
+            private static readonly Action<object> Release = state => ((StateTuple<JobHandle>)state).Dispose();
+
             public static bool MoveNext(in LuminTaskState state)
             {
-                var tuple = (StateTuple<(ulong, JobHandle)>)state.State!;
-                var jobHandle = tuple.Item.Item2;
-
-                if (state.CancellationToken.IsCancellationRequested)
-                {
-                    jobHandle.Complete();
-                    LuminTaskSource.SetCanceled(tuple.Item.Item1, state.CancellationToken);
-                    return false;
-                }
-
-                if (jobHandle.IsCompleted)
-                {
-                    jobHandle.Complete();
-                    LuminTaskSource.SetResult(tuple.Item.Item1);
-                    return false;
-                }
-
-                return true;
+                var tuple = (StateTuple<JobHandle>)state.State!;
+                var job = tuple.Item;
+                var canceled = state.CancellationToken.IsCancellationRequested;
+                if (!canceled && !job.IsCompleted) return true;
+                tuple.Dispose();
+                job.Complete();
+                if (canceled) LuminTaskSource.SetCanceled(state.Handle, state.CancellationToken);
+                else LuminTaskSource.SetResult(state.Handle);
+                return false;
             }
         }
 

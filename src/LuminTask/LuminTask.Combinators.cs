@@ -11,6 +11,27 @@ public partial struct LuminTask
     {
         if (tasks == null) throw new ArgumentNullException(nameof(tasks));
 
+        if (tasks is LuminTask[] array)
+        {
+            foreach (var task in array)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                await task.ConfigureAwait(false);
+            }
+            return;
+        }
+
+        if (tasks is List<LuminTask> list && list.GetType() == typeof(List<LuminTask>))
+        {
+            // The struct enumerator keeps List's mutation checks across suspension.
+            foreach (var task in list)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                await task.ConfigureAwait(false);
+            }
+            return;
+        }
+
         foreach (var task in tasks)
         {
             cancellationToken.ThrowIfCancellationRequested();

@@ -11,6 +11,71 @@ namespace LuminThread.Unity
 {
     public static class YooAssetAsyncLuminTask
     {
+        private struct WaitState
+        {
+            public HandleBase Resource;
+            public IProgress<float> Progress;
+            public bool ReleaseOnCancel;
+            public CancellationTokenRegistration Registration;
+        }
+
+        private static readonly Action<object> ReleaseState = state =>
+        {
+            var box = (StateTuple<WaitState>)state;
+            box.Item.Registration.Dispose();
+            box.Dispose();
+        };
+
+        private static readonly MoveNext Poll = MoveNext;
+
+        private static ulong Schedule(HandleBase resource, PlayerLoopTiming timing, IProgress<float> progress,
+            CancellationToken token, bool releaseOnCancel)
+        {
+            LuminTaskSource.Rent(out var source);
+            var box = StateTuple.Create(new WaitState { Resource = resource, Progress = progress, ReleaseOnCancel = releaseOnCancel });
+            if (token.CanBeCanceled)
+                box.Item.Registration = UnityLoopWork.RegisterCancellation(source, token);
+            UnityLoopWork.Add(timing, new LuminTaskState(source, token, box), Poll, ReleaseState);
+            return source;
+        }
+
+        private static bool MoveNext(in LuminTaskState state)
+        {
+            var box = (StateTuple<WaitState>)state.State;
+            var resource = box.Item.Resource;
+            bool keep = false;
+            try
+            {
+                if (state.CancellationToken.IsCancellationRequested)
+                {
+                    if (box.Item.ReleaseOnCancel && resource.IsValid) resource.Release();
+                    LuminTaskSource.SetCanceled(state.Handle, state.CancellationToken);
+                }
+                else if (resource.IsDone)
+                {
+                    if (resource.Status == EOperationStatus.Failed)
+                        LuminTaskSource.SetException(state.Handle, new Exception(resource.LastError));
+                    else
+                        LuminTaskSource.SetResult(state.Handle, resource);
+                }
+                else
+                {
+                    if (resource.IsValid) box.Item.Progress?.Report(resource.Progress);
+                    keep = true;
+                }
+                return keep;
+            }
+            finally { if (!keep) ReleaseState(box); }
+        }
+
+        // YooAsset 2.1 exposes release on each concrete handle. SDKs with HandleBase.Release
+        // bind the instance method directly.
+        private static void Release(this HandleBase resource)
+        {
+            if (resource is IDisposable disposable) disposable.Dispose();
+            else if (resource is SceneHandle scene) scene.UnloadAsync();
+        }
+
         #region HandleBase (基类，无返回值)
 
         public static LuminTask GetAwaiter(this HandleBase handle)
@@ -52,115 +117,16 @@ namespace LuminThread.Unity
 
         public struct HandleBaseLuminTaskConfiguredSource
         {
-struct PromiseState
-            {
-                public bool Completed;
-                public bool AutoReleaseWhenCanceled;
-                public CancellationTokenRegistration Registration;
-                public ulong Handle;
-            }
-
-            public static LuminTask Create(
-                HandleBase handle, 
-                PlayerLoopTiming timing, 
-                IProgress<float> progress, 
-                CancellationToken cancellationToken, 
-                bool autoReleaseWhenCanceled)
+            public static LuminTask Create(HandleBase handle, PlayerLoopTiming timing, IProgress<float> progress,
+                CancellationToken cancellationToken, bool autoReleaseWhenCanceled)
             {
                 if (cancellationToken.IsCancellationRequested)
-                {
                     return LuminTask.FromCanceled(cancellationToken);
-                }
-
-                var task = LuminTaskSource.Create(out ulong taskHandle);
-
-                var promiseState = new PromiseState
-                {
-                    Completed = false,
-                    AutoReleaseWhenCanceled = autoReleaseWhenCanceled,
-                    Handle = taskHandle
-                };
-
-                var stateTuple = StateTuple.Create(promiseState, handle, progress);
-                var state = new LuminTaskState(taskHandle, cancellationToken, stateTuple);
-
-                // 添加取消注册
-                if (cancellationToken.CanBeCanceled)
-                {
-                    stateTuple.Item.Item1.Registration = cancellationToken.Register(static s =>
-                    {
-                        var taskState = (LuminTaskState)s;
-                        var tuple = (StateTuple<(PromiseState, HandleBase, IProgress<float>)>)taskState.State!;
-
-                        if (tuple.Item.Item1.AutoReleaseWhenCanceled && tuple.Item.Item2.IsValid)
-                        {
-                            tuple.Item.Item2.Release();
-                        }
-                        LuminTaskSource.SetCanceled(tuple.Item.Item1.Handle, taskState.CancellationToken);
-                        
-                        // 回调自身在途：仅清引用，避免 Dispose 自己造成死锁；释放交给 MoveNext 完成路径。
-                        tuple.Item.Item1.Registration = default;
-                        tuple.Dispose();
-                    }, state);
-                }
-
-                PlayerLoopHelper.AddAction(timing, state, MoveNextAction);
-
-                return task;
+                var source = Schedule(handle, timing, progress, cancellationToken, autoReleaseWhenCanceled);
+                return LuminTaskSource.ToTask(source);
             }
 
-            private static readonly MoveNext MoveNextAction = MoveNext;
-
-            public static bool MoveNext(in LuminTaskState state)
-            {
-                var tuple = (StateTuple<(PromiseState, HandleBase, IProgress<float>)>)state.State!;
-
-                if (tuple.Item.Item1.Completed)
-                {
-                    tuple.Dispose();
-                    return false;
-                }
-
-                if (state.CancellationToken.IsCancellationRequested)
-                {
-                    tuple.Item.Item1.Completed = true;
-                    if (tuple.Item.Item1.AutoReleaseWhenCanceled && tuple.Item.Item2.IsValid)
-                    {
-                        tuple.Item.Item2.Release();
-                    }
-                    LuminTaskSource.SetCanceled(tuple.Item.Item1.Handle, state.CancellationToken);
-                    tuple.Item.Item1.Registration.Dispose();
-                    tuple.Dispose();
-                    return false;
-                }
-
-                // 检查是否完成
-                if (tuple.Item.Item2.IsDone)
-                {
-                    tuple.Item.Item1.Completed = true;
-                    
-                    if (tuple.Item.Item2.Status == EOperationStatus.Failed)
-                    {
-                        LuminTaskSource.SetException(tuple.Item.Item1.Handle, new Exception(tuple.Item.Item2.LastError));
-                    }
-                    else
-                    {
-                        LuminTaskSource.SetResult(tuple.Item.Item1.Handle);
-                    }
-                    
-                    tuple.Item.Item1.Registration.Dispose();
-                    tuple.Dispose();
-                    return false;
-                }
-
-                // 报告进度
-                if (tuple.Item.Item3 != null && tuple.Item.Item2.IsValid)
-                {
-                    tuple.Item.Item3.Report(tuple.Item.Item2.Progress);
-                }
-
-                return true;
-            }
+            public static bool MoveNext(in LuminTaskState state) => YooAssetAsyncLuminTask.MoveNext(state);
         }
 
         #endregion
@@ -204,117 +170,18 @@ struct PromiseState
             return AssetHandleLuminTaskConfiguredSource.Create(handle, timing, progress, cancellationToken, autoReleaseWhenCanceled);
         }
 
-public struct AssetHandleLuminTaskConfiguredSource
+        public struct AssetHandleLuminTaskConfiguredSource
         {
-            struct PromiseState
-            {
-                public bool Completed;
-                public bool AutoReleaseWhenCanceled;
-                public CancellationTokenRegistration Registration;
-                public ulong Handle;
-            }
-
-            public static LuminTask<AssetHandle> Create(
-                AssetHandle handle, 
-                PlayerLoopTiming timing, 
-                IProgress<float> progress, 
-                CancellationToken cancellationToken, 
-                bool autoReleaseWhenCanceled)
+            public static LuminTask<AssetHandle> Create(AssetHandle handle, PlayerLoopTiming timing, IProgress<float> progress,
+                CancellationToken cancellationToken, bool autoReleaseWhenCanceled)
             {
                 if (cancellationToken.IsCancellationRequested)
-                {
                     return LuminTask.FromCanceled<AssetHandle>(cancellationToken);
-                }
-
-                var task = LuminTaskSource.Create<AssetHandle>(out ulong taskHandle);
-
-                var promiseState = new PromiseState
-                {
-                    Completed = false,
-                    AutoReleaseWhenCanceled = autoReleaseWhenCanceled,
-                    Handle = taskHandle
-                };
-
-                var stateTuple = StateTuple.Create(promiseState, handle, progress);
-                var state = new LuminTaskState(taskHandle, cancellationToken, stateTuple);
-
-                // 添加取消注册
-                if (cancellationToken.CanBeCanceled)
-                {
-                    stateTuple.Item.Item1.Registration = cancellationToken.Register(static s =>
-                    {
-                        var taskState = (LuminTaskState)s;
-                        var tuple = (StateTuple<(PromiseState, AssetHandle, IProgress<float>)>)taskState.State!;
-
-                        if (tuple.Item.Item1.AutoReleaseWhenCanceled && tuple.Item.Item2.IsValid)
-                        {
-                            tuple.Item.Item2.Release();
-                        }
-                        LuminTaskSource.SetCanceled(tuple.Item.Item1.Handle, taskState.CancellationToken);
-                        
-                        // 回调自身在途：仅清引用，避免 Dispose 自己造成死锁；释放交给 MoveNext 完成路径。
-                        tuple.Item.Item1.Registration = default;
-                        tuple.Dispose();
-                    }, state);
-                }
-
-                PlayerLoopHelper.AddAction(timing, state, MoveNextAction);
-
-                return task;
+                var source = Schedule(handle, timing, progress, cancellationToken, autoReleaseWhenCanceled);
+                return LuminTaskSource.ToTask<AssetHandle>(source);
             }
 
-            private static readonly MoveNext MoveNextAction = MoveNext;
-
-            public static bool MoveNext(in LuminTaskState state)
-            {
-                var tuple = (StateTuple<(PromiseState, AssetHandle, IProgress<float>)>)state.State!;
-
-                if (tuple.Item.Item1.Completed)
-                {
-                    tuple.Dispose();
-                    return false;
-                }
-
-                if (state.CancellationToken.IsCancellationRequested)
-                {
-                    tuple.Item.Item1.Completed = true;
-                    if (tuple.Item.Item1.AutoReleaseWhenCanceled && tuple.Item.Item2.IsValid)
-                    {
-                        tuple.Item.Item2.Release();
-                    }
-                    LuminTaskSource.SetCanceled(tuple.Item.Item1.Handle, state.CancellationToken);
-                    tuple.Item.Item1.Registration.Dispose();
-                    tuple.Dispose();
-                    return false;
-                }
-
-                // 检查是否完成
-                if (tuple.Item.Item2.IsDone)
-                {
-                    tuple.Item.Item1.Completed = true;
-                    
-                    if (tuple.Item.Item2.Status == EOperationStatus.Failed)
-                    {
-                        LuminTaskSource.SetException(tuple.Item.Item1.Handle, new Exception(tuple.Item.Item2.LastError));
-                    }
-                    else
-                    {
-                        LuminTaskSource.SetResult(tuple.Item.Item1.Handle, tuple.Item.Item2);
-                    }
-                    
-                    tuple.Item.Item1.Registration.Dispose();
-                    tuple.Dispose();
-                    return false;
-                }
-
-                // 报告进度
-                if (tuple.Item.Item3 != null && tuple.Item.Item2.IsValid)
-                {
-                    tuple.Item.Item3.Report(tuple.Item.Item2.Progress);
-                }
-
-                return true;
-            }
+            public static bool MoveNext(in LuminTaskState state) => YooAssetAsyncLuminTask.MoveNext(state);
         }
 
         #endregion
@@ -358,117 +225,18 @@ public struct AssetHandleLuminTaskConfiguredSource
             return SceneHandleLuminTaskConfiguredSource.Create(handle, timing, progress, cancellationToken, autoReleaseWhenCanceled);
         }
 
-public struct SceneHandleLuminTaskConfiguredSource
+        public struct SceneHandleLuminTaskConfiguredSource
         {
-            struct PromiseState
-            {
-                public bool Completed;
-                public bool AutoReleaseWhenCanceled;
-                public CancellationTokenRegistration Registration;
-                public ulong Handle;
-            }
-
-            public static LuminTask<SceneHandle> Create(
-                SceneHandle handle, 
-                PlayerLoopTiming timing, 
-                IProgress<float> progress, 
-                CancellationToken cancellationToken, 
-                bool autoReleaseWhenCanceled = false)
+            public static LuminTask<SceneHandle> Create(SceneHandle handle, PlayerLoopTiming timing, IProgress<float> progress,
+                CancellationToken cancellationToken, bool autoReleaseWhenCanceled = false)
             {
                 if (cancellationToken.IsCancellationRequested)
-                {
                     return LuminTask.FromCanceled<SceneHandle>(cancellationToken);
-                }
-
-                var task = LuminTaskSource.Create<SceneHandle>(out ulong taskHandle);
-
-                var promiseState = new PromiseState
-                {
-                    Completed = false,
-                    AutoReleaseWhenCanceled = autoReleaseWhenCanceled,
-                    Handle = taskHandle
-                };
-
-                var stateTuple = StateTuple.Create(promiseState, handle, progress);
-                var state = new LuminTaskState(taskHandle, cancellationToken, stateTuple);
-
-                // 添加取消注册
-                if (cancellationToken.CanBeCanceled)
-                {
-                    stateTuple.Item.Item1.Registration = cancellationToken.Register(static s =>
-                    {
-                        var taskState = (LuminTaskState)s;
-                        var tuple = (StateTuple<(PromiseState, SceneHandle, IProgress<float>)>)taskState.State!;
-
-                        if (tuple.Item.Item1.AutoReleaseWhenCanceled && tuple.Item.Item2.IsValid)
-                        {
-                            tuple.Item.Item2.Release();
-                        }
-                        LuminTaskSource.SetCanceled(tuple.Item.Item1.Handle, taskState.CancellationToken);
-                        
-                        // 回调自身在途：仅清引用，避免 Dispose 自己造成死锁；释放交给 MoveNext 完成路径。
-                        tuple.Item.Item1.Registration = default;
-                        tuple.Dispose();
-                    }, state);
-                }
-
-                PlayerLoopHelper.AddAction(timing, state, MoveNextAction);
-
-                return task;
+                var source = Schedule(handle, timing, progress, cancellationToken, autoReleaseWhenCanceled);
+                return LuminTaskSource.ToTask<SceneHandle>(source);
             }
 
-            private static readonly MoveNext MoveNextAction = MoveNext;
-
-            public static bool MoveNext(in LuminTaskState state)
-            {
-                var tuple = (StateTuple<(PromiseState, SceneHandle, IProgress<float>)>)state.State!;
-
-                if (tuple.Item.Item1.Completed)
-                {
-                    tuple.Dispose();
-                    return false;
-                }
-
-                if (state.CancellationToken.IsCancellationRequested)
-                {
-                    tuple.Item.Item1.Completed = true;
-                    if (tuple.Item.Item1.AutoReleaseWhenCanceled && tuple.Item.Item2.IsValid)
-                    {
-                        tuple.Item.Item2.Release();
-                    }
-                    LuminTaskSource.SetCanceled(tuple.Item.Item1.Handle, state.CancellationToken);
-                    tuple.Item.Item1.Registration.Dispose();
-                    tuple.Dispose();
-                    return false;
-                }
-
-                // 检查是否完成
-                if (tuple.Item.Item2.IsDone)
-                {
-                    tuple.Item.Item1.Completed = true;
-                    
-                    if (tuple.Item.Item2.Status == EOperationStatus.Failed)
-                    {
-                        LuminTaskSource.SetException(tuple.Item.Item1.Handle, new Exception(tuple.Item.Item2.LastError));
-                    }
-                    else
-                    {
-                        LuminTaskSource.SetResult(tuple.Item.Item1.Handle, tuple.Item.Item2);
-                    }
-                    
-                    tuple.Item.Item1.Registration.Dispose();
-                    tuple.Dispose();
-                    return false;
-                }
-
-                // 报告进度
-                if (tuple.Item.Item3 != null && tuple.Item.Item2.IsValid)
-                {
-                    tuple.Item.Item3.Report(tuple.Item.Item2.Progress);
-                }
-
-                return true;
-            }
+            public static bool MoveNext(in LuminTaskState state) => YooAssetAsyncLuminTask.MoveNext(state);
         }
 
         #endregion
@@ -512,117 +280,18 @@ public struct SceneHandleLuminTaskConfiguredSource
             return RawFileHandleLuminTaskConfiguredSource.Create(handle, timing, progress, cancellationToken, autoReleaseWhenCanceled);
         }
 
-public struct RawFileHandleLuminTaskConfiguredSource
+        public struct RawFileHandleLuminTaskConfiguredSource
         {
-            struct PromiseState
-            {
-                public bool Completed;
-                public bool AutoReleaseWhenCanceled;
-                public CancellationTokenRegistration Registration;
-                public ulong Handle;
-            }
-
-            public static LuminTask<RawFileHandle> Create(
-                RawFileHandle handle, 
-                PlayerLoopTiming timing, 
-                IProgress<float> progress, 
-                CancellationToken cancellationToken, 
-                bool autoReleaseWhenCanceled)
+            public static LuminTask<RawFileHandle> Create(RawFileHandle handle, PlayerLoopTiming timing, IProgress<float> progress,
+                CancellationToken cancellationToken, bool autoReleaseWhenCanceled)
             {
                 if (cancellationToken.IsCancellationRequested)
-                {
                     return LuminTask.FromCanceled<RawFileHandle>(cancellationToken);
-                }
-
-                var task = LuminTaskSource.Create<RawFileHandle>(out ulong taskHandle);
-
-                var promiseState = new PromiseState
-                {
-                    Completed = false,
-                    AutoReleaseWhenCanceled = autoReleaseWhenCanceled,
-                    Handle = taskHandle
-                };
-
-                var stateTuple = StateTuple.Create(promiseState, handle, progress);
-                var state = new LuminTaskState(taskHandle, cancellationToken, stateTuple);
-
-                // 添加取消注册
-                if (cancellationToken.CanBeCanceled)
-                {
-                    stateTuple.Item.Item1.Registration = cancellationToken.Register(static s =>
-                    {
-                        var taskState = (LuminTaskState)s;
-                        var tuple = (StateTuple<(PromiseState, RawFileHandle, IProgress<float>)>)taskState.State!;
-
-                        if (tuple.Item.Item1.AutoReleaseWhenCanceled && tuple.Item.Item2.IsValid)
-                        {
-                            tuple.Item.Item2.Release();
-                        }
-                        LuminTaskSource.SetCanceled(tuple.Item.Item1.Handle, taskState.CancellationToken);
-                        
-                        // 回调自身在途：仅清引用，避免 Dispose 自己造成死锁；释放交给 MoveNext 完成路径。
-                        tuple.Item.Item1.Registration = default;
-                        tuple.Dispose();
-                    }, state);
-                }
-
-                PlayerLoopHelper.AddAction(timing, state, MoveNextAction);
-
-                return task;
+                var source = Schedule(handle, timing, progress, cancellationToken, autoReleaseWhenCanceled);
+                return LuminTaskSource.ToTask<RawFileHandle>(source);
             }
 
-            private static readonly MoveNext MoveNextAction = MoveNext;
-
-            public static bool MoveNext(in LuminTaskState state)
-            {
-                var tuple = (StateTuple<(PromiseState, RawFileHandle, IProgress<float>)>)state.State!;
-
-                if (tuple.Item.Item1.Completed)
-                {
-                    tuple.Dispose();
-                    return false;
-                }
-
-                if (state.CancellationToken.IsCancellationRequested)
-                {
-                    tuple.Item.Item1.Completed = true;
-                    if (tuple.Item.Item1.AutoReleaseWhenCanceled && tuple.Item.Item2.IsValid)
-                    {
-                        tuple.Item.Item2.Release();
-                    }
-                    LuminTaskSource.SetCanceled(tuple.Item.Item1.Handle, state.CancellationToken);
-                    tuple.Item.Item1.Registration.Dispose();
-                    tuple.Dispose();
-                    return false;
-                }
-
-                // 检查是否完成
-                if (tuple.Item.Item2.IsDone)
-                {
-                    tuple.Item.Item1.Completed = true;
-                    
-                    if (tuple.Item.Item2.Status == EOperationStatus.Failed)
-                    {
-                        LuminTaskSource.SetException(tuple.Item.Item1.Handle, new Exception(tuple.Item.Item2.LastError));
-                    }
-                    else
-                    {
-                        LuminTaskSource.SetResult(tuple.Item.Item1.Handle, tuple.Item.Item2);
-                    }
-                    
-                    tuple.Item.Item1.Registration.Dispose();
-                    tuple.Dispose();
-                    return false;
-                }
-
-                // 报告进度
-                if (tuple.Item.Item3 != null && tuple.Item.Item2.IsValid)
-                {
-                    tuple.Item.Item3.Report(tuple.Item.Item2.Progress);
-                }
-
-                return true;
-            }
+            public static bool MoveNext(in LuminTaskState state) => YooAssetAsyncLuminTask.MoveNext(state);
         }
 
         #endregion
@@ -666,117 +335,18 @@ public struct RawFileHandleLuminTaskConfiguredSource
             return SubAssetsHandleLuminTaskConfiguredSource.Create(handle, timing, progress, cancellationToken, autoReleaseWhenCanceled);
         }
 
-public struct SubAssetsHandleLuminTaskConfiguredSource
+        public struct SubAssetsHandleLuminTaskConfiguredSource
         {
-            struct PromiseState
-            {
-                public bool Completed;
-                public bool AutoReleaseWhenCanceled;
-                public CancellationTokenRegistration Registration;
-                public ulong Handle;
-            }
-
-            public static LuminTask<SubAssetsHandle> Create(
-                SubAssetsHandle handle, 
-                PlayerLoopTiming timing, 
-                IProgress<float> progress, 
-                CancellationToken cancellationToken, 
-                bool autoReleaseWhenCanceled)
+            public static LuminTask<SubAssetsHandle> Create(SubAssetsHandle handle, PlayerLoopTiming timing, IProgress<float> progress,
+                CancellationToken cancellationToken, bool autoReleaseWhenCanceled)
             {
                 if (cancellationToken.IsCancellationRequested)
-                {
                     return LuminTask.FromCanceled<SubAssetsHandle>(cancellationToken);
-                }
-
-                var task = LuminTaskSource.Create<SubAssetsHandle>(out ulong taskHandle);
-
-                var promiseState = new PromiseState
-                {
-                    Completed = false,
-                    AutoReleaseWhenCanceled = autoReleaseWhenCanceled,
-                    Handle = taskHandle
-                };
-
-                var stateTuple = StateTuple.Create(promiseState, handle, progress);
-                var state = new LuminTaskState(taskHandle, cancellationToken, stateTuple);
-
-                // 添加取消注册
-                if (cancellationToken.CanBeCanceled)
-                {
-                    stateTuple.Item.Item1.Registration = cancellationToken.Register(static s =>
-                    {
-                        var taskState = (LuminTaskState)s;
-                        var tuple = (StateTuple<(PromiseState, SubAssetsHandle, IProgress<float>)>)taskState.State!;
-
-                        if (tuple.Item.Item1.AutoReleaseWhenCanceled && tuple.Item.Item2.IsValid)
-                        {
-                            tuple.Item.Item2.Release();
-                        }
-                        LuminTaskSource.SetCanceled(tuple.Item.Item1.Handle, taskState.CancellationToken);
-                        
-                        // 回调自身在途：仅清引用，避免 Dispose 自己造成死锁；释放交给 MoveNext 完成路径。
-                        tuple.Item.Item1.Registration = default;
-                        tuple.Dispose();
-                    }, state);
-                }
-
-                PlayerLoopHelper.AddAction(timing, state, MoveNextAction);
-
-                return task;
+                var source = Schedule(handle, timing, progress, cancellationToken, autoReleaseWhenCanceled);
+                return LuminTaskSource.ToTask<SubAssetsHandle>(source);
             }
 
-            private static readonly MoveNext MoveNextAction = MoveNext;
-
-            public static bool MoveNext(in LuminTaskState state)
-            {
-                var tuple = (StateTuple<(PromiseState, SubAssetsHandle, IProgress<float>)>)state.State!;
-
-                if (tuple.Item.Item1.Completed)
-                {
-                    tuple.Dispose();
-                    return false;
-                }
-
-                if (state.CancellationToken.IsCancellationRequested)
-                {
-                    tuple.Item.Item1.Completed = true;
-                    if (tuple.Item.Item1.AutoReleaseWhenCanceled && tuple.Item.Item2.IsValid)
-                    {
-                        tuple.Item.Item2.Release();
-                    }
-                    LuminTaskSource.SetCanceled(tuple.Item.Item1.Handle, state.CancellationToken);
-                    tuple.Item.Item1.Registration.Dispose();
-                    tuple.Dispose();
-                    return false;
-                }
-
-                // 检查是否完成
-                if (tuple.Item.Item2.IsDone)
-                {
-                    tuple.Item.Item1.Completed = true;
-                    
-                    if (tuple.Item.Item2.Status == EOperationStatus.Failed)
-                    {
-                        LuminTaskSource.SetException(tuple.Item.Item1.Handle, new Exception(tuple.Item.Item2.LastError));
-                    }
-                    else
-                    {
-                        LuminTaskSource.SetResult(tuple.Item.Item1.Handle, tuple.Item.Item2);
-                    }
-                    
-                    tuple.Item.Item1.Registration.Dispose();
-                    tuple.Dispose();
-                    return false;
-                }
-
-                // 报告进度
-                if (tuple.Item.Item3 != null && tuple.Item.Item2.IsValid)
-                {
-                    tuple.Item.Item3.Report(tuple.Item.Item2.Progress);
-                }
-
-                return true;
-            }
+            public static bool MoveNext(in LuminTaskState state) => YooAssetAsyncLuminTask.MoveNext(state);
         }
 
         #endregion

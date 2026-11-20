@@ -28,7 +28,7 @@ namespace LuminThread.AsyncEx
 
         public void Dispose() => GetState().Dispose();
 
-        private LockState GetState()
+        internal LockState GetState()
             => _state ?? throw new InvalidOperationException("AsyncLock 未初始化（default 值）或已释放");
 
         /// <summary>锁作用域句柄。Dispose 即释放。结构体，获取锁无分配。</summary>
@@ -92,6 +92,20 @@ namespace LuminThread.AsyncEx
 
                 return _waitQueue.Enqueue(cancellationToken);
             }
+        }
+
+        internal bool TryAcquire(out AsyncLock.ReleaseScope scope)
+        {
+            scope = default;
+            if (!Monitor.TryEnter(_mutex)) return false;
+            try
+            {
+                if (_isDisposed || _locked) return false;
+                _locked = true;
+                scope = new AsyncLock.ReleaseScope(this);
+                return true;
+            }
+            finally { Monitor.Exit(_mutex); }
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

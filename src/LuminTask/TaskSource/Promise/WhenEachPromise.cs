@@ -98,7 +98,7 @@ internal sealed class WhenEachPromise<T> : ILuminTaskAsyncEnumerable<WhenEachRes
         return new Enumerator(tasks, cancellationToken);
     }
 
-    private sealed class Enumerator : ILuminTaskAsyncEnumerator<WhenEachResult<T>>
+    private sealed class Enumerator : SlotObserver, ILuminTaskAsyncEnumerator<WhenEachResult<T>>
     {
         private readonly object _gate = new();
         private Queue<WhenEachResult<T>>? _ready;
@@ -131,6 +131,7 @@ internal sealed class WhenEachPromise<T> : ILuminTaskAsyncEnumerable<WhenEachRes
         private void Watch(LuminTask<T> task)
         {
             if (task.IsCompleted) { Observe(task); return; }
+            if (LuminTaskSource.TryRegisterObserver(task._handle, this, 0)) return;
             var observation = StateTuple.Create((this, task._handle));
             try
             {
@@ -144,6 +145,8 @@ internal sealed class WhenEachPromise<T> : ILuminTaskAsyncEnumerable<WhenEachRes
             }
             catch { observation.Dispose(); throw; }
         }
+
+        internal override void Completed(ulong handle, int index) => Observe(LuminTaskSource.ToTask<T>(handle));
 
         private void Observe(LuminTask<T> task)
         {
