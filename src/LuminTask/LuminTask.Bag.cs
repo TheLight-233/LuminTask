@@ -29,7 +29,8 @@ internal struct Slot
 
 internal static class SlotStore
 {
-    internal const int PageSize = 64;
+    private const int PageShift = 5;
+    internal const int PageSize = 1 << PageShift;
     private const int MaxSlots = short.MaxValue;
     private const int MaxPages = (MaxSlots + PageSize - 1) / PageSize;
     private const long LastGeneration = (1L << 48) - 1;
@@ -57,9 +58,11 @@ internal static class SlotStore
 
     private static readonly StorageGate Gate = new();
     private static Entry[] _directory = Array.Empty<Entry>();
+    private static long _discardedGeneration;
     private static Page? _available;
     private static int _capacity, _live, _unavailable, _peakLive;
     internal static int Capacity => Volatile.Read(ref _capacity);
+    internal static int DirectoryEntrySize => Unsafe.SizeOf<Entry>();
     internal static int Live => Volatile.Read(ref _live);
     internal static int Available { get { using (Gate.Enter()) return _capacity - _live - _unavailable; } }
 
@@ -113,6 +116,7 @@ internal static class SlotStore
         {
             var larger = new Entry[Math.Min(MaxPages, Math.Max(1, number * 2))];
             Array.Copy(_directory, larger, number);
+            for (int i = number; i < larger.Length; i++) larger[i].Generation = _discardedGeneration;
             Volatile.Write(ref _directory, larger);
         }
         var page = new Page(number);
@@ -127,7 +131,7 @@ internal static class SlotStore
         int index = (ushort)handle - 1;
         offset = index & (PageSize - 1);
         var directory = Volatile.Read(ref _directory);
-        int number = index >> 6;
+        int number = index >> PageShift;
         if ((uint)number >= (uint)directory.Length || index >= MaxSlots) return null;
         return Volatile.Read(ref directory[number].Page);
     }
@@ -155,23 +159,37 @@ internal static class SlotStore
         using (Gate.Enter())
         {
             _available = null;
+            int keep = 0;
             for (int i = _directory.Length - 1; i >= 0; i--)
             {
                 ref var entry = ref _directory[i];
                 var page = entry.Page;
-                if (page == null) continue;
-                page.Next = null;
-                if (page.Used == 0 && (i != 0 || entry.Generation == LastGeneration))
+                if (page != null)
                 {
-                    Volatile.Write(ref entry.Page, null);
-                    _capacity -= page.Slots.Length;
-                    if (entry.Generation == LastGeneration) _unavailable -= page.Slots.Length;
+                    page.Next = null;
+                    if (page.Used == 0)
+                    {
+                        Volatile.Write(ref entry.Page, null);
+                        _capacity -= page.Slots.Length;
+                        if (entry.Generation == LastGeneration) _unavailable -= page.Slots.Length;
+                    }
+                    else if (page.Used < page.Slots.Length && entry.Generation != LastGeneration)
+                    {
+                        page.Next = _available;
+                        _available = page;
+                    }
                 }
-                else if (page.Used < page.Slots.Length && entry.Generation != LastGeneration)
-                {
-                    page.Next = _available;
-                    _available = page;
-                }
+                // Exhausted page numbers stay retired. Recreated directory entries start
+                // above every generation previously issued from the discarded suffix.
+                if (keep != 0) continue;
+                if (entry.Page != null || entry.Generation == LastGeneration) keep = i + 1;
+                else _discardedGeneration = Math.Max(_discardedGeneration, entry.Generation);
+            }
+            if (keep < _directory.Length)
+            {
+                var compact = keep == 0 ? Array.Empty<Entry>() : new Entry[keep];
+                Array.Copy(_directory, compact, keep);
+                Volatile.Write(ref _directory, compact);
             }
         }
     }

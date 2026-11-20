@@ -18,6 +18,7 @@ public static class ResultStorageTests
         await runner.Run("zero inline result keeps its cold block alive", ZeroResultSurvivesTrim);
         await runner.Run("page allocator preserves exclusive ownership under contention", ConcurrentRentalAndTrim);
         await runner.Run("page allocator reaches its full 16-bit capacity", FullCapacity);
+        await runner.Run("trimming an idle source drops every page without reviving handles", TrimDirectory);
         await runner.Run("exhausted generations retire without leaks or stale aliases", RetiredGeneration);
         await runner.Run("pending and duplicate consumption are rejected", ConsumeRequiresTerminalState);
         await runner.Run("shared cache respects the global byte cap", StatePoolBound);
@@ -253,9 +254,36 @@ public static class ResultStorageTests
         Assert.Equal(0, LuminTaskBag.GetLiveCount());
     }
 
+    private static void TrimDirectory()
+    {
+        var handles = new ulong[257];
+        for (int i = 0; i < handles.Length; i++) LuminTaskSource.Rent(out handles[i]);
+        foreach (ulong handle in handles)
+        {
+            Assert.True(LuminTaskSource.SetResult(handle));
+            LuminTaskSource.ToTask(handle).GetResult();
+        }
+        LuminTaskSource.Trim();
+        var idle = LuminTaskSource.GetStorageStatistics();
+        Assert.Equal(0, idle.BackedSlots);
+        Assert.Equal(0, idle.DirectoryEntries);
+        var fresh = new ulong[handles.Length];
+        for (int i = 0; i < fresh.Length; i++) LuminTaskSource.Rent(out fresh[i]);
+        foreach (ulong handle in handles) Assert.False(LuminTaskSource.SetResult(handle));
+        foreach (ulong handle in fresh)
+        {
+            Assert.True(LuminTaskSource.SetResult(handle));
+            LuminTaskSource.ToTask(handle).GetResult();
+        }
+    }
+
     private static void RetiredGeneration()
     {
         LuminTaskSource.Trim();
+        var warm = LuminTaskSource.Create(out var seed);
+        LuminTaskSource.SetResult(seed);
+        warm.GetResult();
+        int pageSize = LuminTaskBag.Capacity;
         var store = typeof(LuminTask).Assembly.GetType("LuminThread.SlotStore")!;
         var directory = (Array)store.GetField("_directory", BindingFlags.Static | BindingFlags.NonPublic)!.GetValue(null)!;
         var entry = directory.GetValue(0)!;
@@ -266,7 +294,7 @@ public static class ResultStorageTests
         LuminTaskSource.SetResult(last);
         task.GetResult();
         var next = LuminTaskSource.Create(out var fresh);
-        Assert.True((ushort)fresh > 64);
+        Assert.True((ushort)fresh > pageSize);
         Assert.False(LuminTaskSource.SetResult(last));
         LuminTaskSource.SetResult(fresh);
         next.GetResult();

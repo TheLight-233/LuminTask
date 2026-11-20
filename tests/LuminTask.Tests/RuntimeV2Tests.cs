@@ -13,6 +13,8 @@ internal static class RuntimeV2Tests
         await runner.Run("a callback delivered after failed registration cannot resume a recycled machine", FailedRegistration);
         await runner.Run("two consumers and two producers each have exactly one winner", ConcurrentOwnership);
         await runner.Run("trim and cache pressure preserve reference-containing values", ManagedResults);
+        await runner.Run("the shared cache budgets its index and preserves typed chains", CacheIndex);
+        await runner.Run("scheduler trimming releases empty rings and preserves in-flight work", TrimScheduler);
         await runner.Run("a late WhenAny loser and idle runner release the winner", WinnerCanBeCollected);
         await runner.Run("scheduler rejection releases its unpublished source", RejectedAdmission);
         await runner.Run("shutdown drains an accepted continuation's input", Shutdown);
@@ -22,6 +24,69 @@ internal static class RuntimeV2Tests
 #if !DEBUG
         await runner.Run("cross-thread suspension reuses its runner", CrossThreadAllocation);
 #endif
+    }
+
+    private sealed class Node<T> : ILuminCacheNode
+    {
+        public ILuminCacheNode? CacheNext { get; set; }
+    }
+
+    private static void TrimScheduler()
+    {
+        using var pump = new ManagedPlayerLoop();
+        PlayerLoopHelper.SetStrategy(PlayerLoopTiming.PreUpdate, pump);
+        LuminTaskSource.Trim();
+        long baseline = LuminTaskSource.GetStorageStatistics().SchedulerArrayBytes;
+        int ticks = 0;
+        pump.AddAction(default, (in LuminTaskState _) =>
+        {
+            LuminTaskSource.Trim();
+            return ++ticks == 1;
+        });
+        pump.RunCore();
+        pump.RunCore();
+        Assert.Equal(2, ticks);
+        pump.AddContinuation(() => ticks++);
+        pump.RunCore();
+        LuminTaskSource.Trim();
+        Assert.Equal(baseline, LuminTaskSource.GetStorageStatistics().SchedulerArrayBytes);
+        pump.AddContinuation(() => ticks++);
+        pump.RunCore();
+        Assert.Equal(4, ticks);
+    }
+
+    private static void CacheIndex()
+    {
+        int limit = LuminTaskIdleCache.MaxIdleObjectBytes;
+        ILuminCacheNode[] nodes = [new Node<int>(), new Node<string>(), new Node<byte>(), new Node<double>(),
+            new Node<short>(), new Node<object>(), new Node<long>(), new Node<char>(), new Node<float>()];
+        try
+        {
+            LuminTaskSource.Trim();
+            LuminTaskIdleCache.MaxIdleObjectBytes = 4096;
+            for (int round = 0; round < nodes.Length; round++)
+            {
+                foreach (var node in nodes) LuminTaskIdleCache.Return(node, 48);
+                var s = LuminTaskSource.GetStorageStatistics();
+                Assert.Equal(nodes.Length * 48, s.IdleObjectBytes);
+                Assert.True(s.IdleIndexBytes > 0);
+                for (int i = 0; i < nodes.Length; i++)
+                {
+                    var expected = nodes[(i * 5 + round) % nodes.Length];
+                    Assert.True(ReferenceEquals(expected, LuminTaskIdleCache.Take(expected.GetType())));
+                    Assert.True(expected.CacheNext == null);
+                }
+            }
+            LuminTaskIdleCache.MaxIdleObjectBytes = 96;
+            foreach (var node in nodes) LuminTaskIdleCache.Return(node, 48);
+            Assert.Equal(48, LuminTaskIdleCache.RetainedBytes);
+            Assert.Equal(0, LuminTaskSource.GetStorageStatistics().IdleIndexBytes);
+        }
+        finally
+        {
+            LuminTaskSource.Trim();
+            LuminTaskIdleCache.MaxIdleObjectBytes = limit;
+        }
     }
 
     private sealed class ImmediateAwaiter : ICriticalNotifyCompletion

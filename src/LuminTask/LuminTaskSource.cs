@@ -23,8 +23,9 @@ public static partial class LuminTaskSource
     public static LuminTaskStorageStatistics GetStorageStatistics()
     {
         SlotStore.Snapshot(out int live, out int capacity, out int peak, out int directoryLength);
+        Utility.LuminTaskIdleCache.Snapshot(out int objectBytes, out int indexBytes);
         return new LuminTaskStorageStatistics(live, capacity, peak, directoryLength,
-            Utility.LuminTaskIdleCache.RetainedBytes, PlayerLoopHelper.GetBufferBytes());
+            objectBytes, indexBytes, PlayerLoopHelper.GetBufferBytes());
     }
 
     /// <summary>
@@ -98,16 +99,18 @@ public static partial class LuminTaskSource
 public readonly struct LuminTaskStorageStatistics
 {
     public readonly int ActiveSlots, BackedSlots, PeakActiveSlots, DirectoryEntries;
-    public readonly int IdleObjectBytes;
-    public readonly long SlotArrayBytes, SchedulerArrayBytes;
+    public readonly int IdleObjectBytes, IdleIndexBytes;
+    public readonly long SlotArrayBytes, DirectoryArrayBytes, SchedulerArrayBytes;
 
-    internal LuminTaskStorageStatistics(int live, int capacity, int peak, int directoryLength, int idleBytes, long bufferBytes)
+    internal LuminTaskStorageStatistics(int live, int capacity, int peak, int directoryLength, int idleBytes, int indexBytes, long bufferBytes)
     {
         ActiveSlots = live;
         BackedSlots = capacity;
         PeakActiveSlots = peak;
         DirectoryEntries = directoryLength;
         IdleObjectBytes = idleBytes;
+        IdleIndexBytes = indexBytes;
+        DirectoryArrayBytes = (long)directoryLength * SlotStore.DirectoryEntrySize;
         SlotArrayBytes = (long)capacity * Unsafe.SizeOf<Slot>();
         SchedulerArrayBytes = bufferBytes;
     }

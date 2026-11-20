@@ -38,13 +38,15 @@ public class ManagedPlayerLoop : IPlayLoopStrategy
 
         internal void Trim(int reserved)
         {
-            int size = CapacityFor(Math.Max(Count, reserved));
+            int needed = Math.Max(Count, reserved);
+            if (needed == 0) { this = default; return; }
+            int size = CapacityFor(needed);
             if (_items != null && size < _items.Length) Resize(size);
         }
 
         private static int CapacityFor(int count)
         {
-            int size = 64;
+            int size = 8;
             while (size < count) size = checked(size * 2);
             return size;
         }
@@ -120,7 +122,7 @@ public class ManagedPlayerLoop : IPlayLoopStrategy
         if (buffers == null) return;
         lock (this)
         {
-            if (_running || _closed) return;
+            if (_running || _closed || !ReferenceEquals(buffers, _buffers)) return;
             _running = true;
         }
         try
@@ -207,6 +209,13 @@ public class ManagedPlayerLoop : IPlayLoopStrategy
         lock (this)
         {
             if (_buffers == null) return;
+            if (!_running && _accepted == 0 && _buffers.Continuations.Count == 0)
+            {
+                _buffers = null;
+                _timer?.Dispose();
+                _timer = null;
+                return;
+            }
             _buffers.Incoming.Trim(0);
             _buffers.Active.Trim(_accepted);
             _buffers.Continuations.Trim(0);
